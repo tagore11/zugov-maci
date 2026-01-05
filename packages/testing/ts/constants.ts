@@ -157,6 +157,25 @@ export const testProcessMessagesFullWasmPath = path.resolve(
   "./zkeys/MessageProcessorFull_10-20-2_test/MessageProcessorFull_10-20-2_test_js/MessageProcessorFull_10-20-2_test.wasm",
 );
 
+// TODO: paths are wrong
+// Process messages Ranked paths
+// export const testProcessMessageRankedZkeyPath = path.resolve(
+//   root,
+//   "./zkeys/MessageProcessorRanked_10-20-2_test/MessageProcessorRanked_10-20-2_test.0.zkey",
+// );
+// export const testProcessMessagesRankedWitnessPath = path.resolve(
+//   root,
+//   "./zkeys/MessageProcessorFull_10-20-2_test/MessageProcessorFull_10-20-2_test_cpp/MessageProcessorFull_10-20-2_test",
+// );
+// export const testProcessMessagesRankedWitnessDatPath = path.resolve(
+//   root,
+//   "./zkeys/MessageProcessorFull_10-20-2_test/MessageProcessorFull_10-20-2_test_cpp/MessageProcessorFull_10-20-2_test.dat",
+// );
+// export const testProcessMessagesRankedWasmPath = path.resolve(
+//   root,
+//   "./zkeys/MessageProcessorFull_10-20-2_test/MessageProcessorFull_10-20-2_test_js/MessageProcessorFull_10-20-2_test.wasm",
+// );
+
 // Tally votes QV paths
 export const testTallyVotesZkeyPath = path.resolve(
   root,
@@ -244,6 +263,25 @@ export const testTallyVotesFullWasmPath = path.resolve(
   "./zkeys/VoteTallyNonQv_10-1-2_test/VoteTallyNonQv_10-1-2_test_js/VoteTallyNonQv_10-1-2_test.wasm",
 );
 
+// // TODO: paths are worng
+// // Tally votes Ranked paths
+// export const testTallyVotesRankedZkeyPath = path.resolve(
+//   root,
+//   "./zkeys/VoteTallyNonQv_10-1-2_test/VoteTallyNonQv_10-1-2_test.0.zkey",
+// );
+// export const testTallyVotesRankedWitnessPath = path.resolve(
+//   root,
+//   "./zkeys/VoteTallyNonQv_10-1-2_test/VoteTallyNonQv_10-1-2_test_cpp/VoteTallyNonQv_10-1-2_test",
+// );
+// export const testTallyVotesRankedWitnessDatPath = path.resolve(
+//   root,
+//   "./zkeys/VoteTallyNonQv_10-1-2_test/VoteTallyNonQv_10-1-2_test_cpp/VoteTallyNonQv_10-1-2_test.dat",
+// );
+// export const testTallyVotesRankedWasmPath = path.resolve(
+//   root,
+//   "./zkeys/VoteTallyNonQv_10-1-2_test/VoteTallyNonQv_10-1-2_test_js/VoteTallyNonQv_10-1-2_test.wasm",
+// );
+
 export const checkVerifyingKeysArgs: Omit<ICheckVerifyingKeysArgs, "verifyingKeysRegistry" | "signer"> = {
   stateTreeDepth: STATE_TREE_DEPTH,
   tallyProcessingStateTreeDepth: TALLY_PROCESSING_STATE_TREE_DEPTH,
@@ -300,6 +338,10 @@ const zkeysByMode = {
   [EMode.FULL]: {
     messageProcessorZkeyPath: testProcessMessageFullZkeyPath,
     voteTallyZkeyPath: testTallyVotesFullZkeyPath,
+  },
+  [EMode.RANKED]: {
+    messageProcessorZkeyPath: "", // testProcessMessageRankedZkeyPath,
+    voteTallyZkeyPath: "", // testTallyVotesRankedZkeyPath,
   },
 };
 

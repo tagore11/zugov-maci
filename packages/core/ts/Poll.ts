@@ -49,8 +49,9 @@ import type {
 } from "./utils/types";
 import type { PathElements } from "@maci-protocol/crypto";
 
-import { EMode, STATE_TREE_ARITY, VOTE_OPTION_TREE_ARITY } from "./utils/constants";
+import { EMode, MAX_RANKED_VOTE_OPTIONS, STATE_TREE_ARITY, VOTE_OPTION_TREE_ARITY } from "./utils/constants";
 import { ProcessMessageErrors, ProcessMessageError } from "./utils/errors";
+import { unpackVoteOptions } from "./utils/ranked";
 
 /**
  * A representation of the Poll contract.
@@ -340,12 +341,20 @@ export class Poll implements IPoll {
       }
 
       // If the vote option index is invalid, do nothing
-      if (command.voteOptionIndex < 0n || command.voteOptionIndex >= BigInt(this.voteOptions)) {
+      if (this.mode === EMode.RANKED) {
+        const votes = unpackVoteOptions(command.voteOptionIndex, Number(this.voteOptions));
+        votes.forEach((vote) => {
+          if (vote < 0n || vote > this.voteOptions) {
+            throw new ProcessMessageError(ProcessMessageErrors.InvalidVoteOptionIndex);
+          }
+        });
+      } else if (command.voteOptionIndex < 0n || command.voteOptionIndex >= BigInt(this.voteOptions)) {
         throw new ProcessMessageError(ProcessMessageErrors.InvalidVoteOptionIndex);
       }
 
       const voteOptionIndex = Number(command.voteOptionIndex);
-      const originalVoteWeight = ballot.votes[voteOptionIndex];
+      const originalVoteWeight =
+        this.mode === EMode.RANKED ? ballot.votes[MAX_RANKED_VOTE_OPTIONS] : ballot.votes[voteOptionIndex];
 
       const voiceCreditsLeft = this.getVoiceCreditsLeft({
         stateLeaf,
@@ -375,10 +384,16 @@ export class Poll implements IPoll {
       // increase the nonce
       newBallot.nonce += 1n;
       // we change the vote for this exact vote option
-      newBallot.votes[voteOptionIndex] = command.newVoteWeight;
-
+      if (this.mode === EMode.NON_QV || this.mode === EMode.QV) {
+        newBallot.votes[voteOptionIndex] = command.newVoteWeight;
+      }
       if (this.mode === EMode.FULL) {
         newBallot.votes = newBallot.votes.map((votes, index) => (voteOptionIndex === index ? votes : 0n));
+      }
+      if (this.mode === EMode.RANKED) {
+        const votes = unpackVoteOptions(command.voteOptionIndex, Number(this.voteOptions));
+        newBallot.votes = votes.map((vote) => vote * command.newVoteWeight);
+        newBallot.votes[MAX_RANKED_VOTE_OPTIONS] = command.newVoteWeight;
       }
 
       // calculate the path elements for the state tree given the original state tree (before any changes)
@@ -396,7 +411,9 @@ export class Poll implements IPoll {
         voteTree.insert(ballot.votes[i]);
       }
       // calculate the path elements for the vote option tree given the original vote option tree (before any changes)
-      const { pathElements: originalVoteWeightsPathElements } = voteTree.generateProof(voteOptionIndex);
+      const { pathElements: originalVoteWeightsPathElements } = voteTree.generateProof(
+        this.mode === EMode.RANKED ? Number(this.voteOptions) : voteOptionIndex,
+      );
       // we return the data which is then to be used in the processMessage circuit
       // to generate a proof of processing
       return {
@@ -440,7 +457,8 @@ export class Poll implements IPoll {
       }
 
       case EMode.NON_QV:
-      case EMode.FULL: {
+      case EMode.FULL:
+      case EMode.RANKED: {
         // for non quadratic voting, we simply remove the exponentiation
         // for full credits voting, it will be zero
         return stateLeaf.voiceCreditBalance + originalVoteWeight - newVoteWeight;

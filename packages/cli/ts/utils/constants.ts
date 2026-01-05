@@ -9,4 +9,5 @@ export const MODE_NAME_TO_ENUM: Record<string, EMode> = {
   qv: EMode.QV,
   "non-qv": EMode.NON_QV,
   full: EMode.FULL,
+  ranked: EMode.RANKED,
 };

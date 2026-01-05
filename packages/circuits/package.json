@@ -38,12 +38,15 @@
     "test:verifySignature": "pnpm run mocha-test ts/__tests__/VerifySignature.test.ts",
     "test:privateToPublicKey": "pnpm run mocha-test ts/__tests__/PrivateToPublicKey.test.ts",
     "test:calculateTotal": "pnpm run mocha-test ts/__tests__/CalculateTotal.test.ts",
-    "test:messageProcessor": "pnpm run mocha-test ts/__tests__/MessageProcessor.test.ts",
+    "test:messageProcessor": "pnpm run mocha-test ts/__tests__/MessageProcessor.ts",
     "test:voteTally": "pnpm run mocha-test ts/__tests__/VoteTally.test.ts",
     "test:ceremonyParams": "pnpm run mocha-test ts/__tests__/CeremonyParams.test.ts",
     "test:incrementalQuinaryTree": "pnpm run mocha-test ts/__tests__/IncrementalQuinaryTree.test.ts",
     "test:pollJoining": "pnpm run mocha-test ts/__tests__/PollJoining.test.ts",
-    "test:pollJoined": "pnpm run mocha-test ts/__tests__/PollJoined.test.ts"
+    "test:pollJoined": "pnpm run mocha-test ts/__tests__/PollJoined.test.ts",
+    "test:unpackRankedVoteOption": "pnpm run mocha-test ts/__tests__/UnpackRankedVoteOption.test.ts",
+    "test:messageProcessorFull": "pnpm run mocha-test ts/__tests__/MessageProcessorFull.test.ts",
+    "test:messageProcessorRanked": "pnpm run mocha-test ts/__tests__/MessageProcessorRanked.test.ts"
   },
   "dependencies": {
     "@zk-kit/circuits": "^0.4.0",
@@ -56,13 +59,13 @@
   },
   "devDependencies": {
     "@types/chai": "^4.3.11",
-    "@types/chai-as-promised": "^8.0.2",
+    "@types/chai-as-promised": "7.1.6",
     "@types/mocha": "^10.0.10",
     "@types/node": "^24.2.0",
     "@types/snarkjs": "^0.7.9",
     "@zk-kit/baby-jubjub": "^1.0.3",
     "chai": "^4.3.10",
-    "chai-as-promised": "^8.0.1",
+    "chai-as-promised": "7.1.1",
     "fast-check": "^4.2.0",
     "glob": "^11.0.3",
     "mocha": "^11.7.2",

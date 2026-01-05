@@ -127,6 +127,7 @@ task("prove", "Command to generate proofs")
         [EMode.QV]: "qv",
         [EMode.NON_QV]: "nonQv",
         [EMode.FULL]: "full",
+        [EMode.RANKED]: "ranked",
       };
 
       const mode = deployment.getDeployConfigField<EMode | null>(EContracts.Poll, "mode") ?? EMode.QV;
