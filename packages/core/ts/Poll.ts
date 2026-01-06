@@ -186,8 +186,12 @@ export class Poll implements IPoll {
 
     this.pollNullifiers = new Map<bigint, boolean>();
 
-    this.tallyResult = new Array(this.maxVoteOptions).fill(0n) as bigint[];
-    this.perVoteOptionSpentVoiceCredits = new Array(this.maxVoteOptions).fill(0n) as bigint[];
+    this.tallyResult = new Array(this.mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : this.maxVoteOptions).fill(
+      0n,
+    ) as bigint[];
+    this.perVoteOptionSpentVoiceCredits = new Array(
+      this.mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : this.maxVoteOptions,
+    ).fill(0n) as bigint[];
 
     // we put a blank state leaf to prevent a DoS attack
     this.emptyBallot = Ballot.generateBlank(this.maxVoteOptions, treeDepths.voteOptionTreeDepth);
@@ -1051,6 +1055,8 @@ export class Poll implements IPoll {
       throw new Error("You must process the messages first");
     }
 
+    const maxOptions = this.mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : this.maxVoteOptions;
+
     const batchSize = this.batchSizes.tallyBatchSize;
 
     assert(this.hasUntalliedBallots(), "No more ballots to tally");
@@ -1150,7 +1156,11 @@ export class Poll implements IPoll {
       voteCountsData.push(newVoteCounts.counts);
 
       // for each possible vote option we loop and calculate
-      for (let j = 0; j < this.maxVoteOptions; j += 1) {
+      if (this.mode === EMode.RANKED) {
+        this.totalSpentVoiceCredits += this.ballots[i].votes[MAX_RANKED_VOTE_OPTIONS];
+      }
+
+      for (let j = 0; j < maxOptions; j += 1) {
         const votes = this.ballots[i].votes[j];
 
         this.tallyResult[j] += votes;
@@ -1161,15 +1171,15 @@ export class Poll implements IPoll {
 
           // the total spent voice credits will be the sum of the squares of the votes
           this.totalSpentVoiceCredits += votes * votes;
-        } else {
+        } else if (this.mode !== EMode.RANKED) {
           // the total spent voice credits will be the sum of the votes
           this.totalSpentVoiceCredits += votes;
         }
       }
     }
 
-    const emptyBallot = new Ballot(this.maxVoteOptions, this.treeDepths.voteOptionTreeDepth);
-    const emptyVoteCounts = new VoteCounts(this.maxVoteOptions, this.treeDepths.voteOptionTreeDepth);
+    const emptyBallot = new Ballot(maxOptions, this.treeDepths.voteOptionTreeDepth);
+    const emptyVoteCounts = new VoteCounts(maxOptions, this.treeDepths.voteOptionTreeDepth);
 
     // pad the ballots array
     while (ballots.length < batchSize) {
@@ -1231,7 +1241,11 @@ export class Poll implements IPoll {
       batchStartIndex + batchSize,
     );
 
-    const votes = ballots.map((x) => x.votes);
+    let votes = ballots.map((x) => x.votes);
+    if (this.mode === EMode.RANKED) {
+      votes = votes.map((vote) => vote.slice(0, MAX_RANKED_VOTE_OPTIONS));
+    }
+    const voteWeights = ballots.map((x) => x.votes[MAX_RANKED_VOTE_OPTIONS]);
 
     // Don't include these inputs in the circuit inputs until individual vote counts are implemented
     const excludedCircuitInputs = ["voteCountsData", "voteCountsPathElements", "voteCounts", "voteCountsRoot"];
@@ -1250,6 +1264,7 @@ export class Poll implements IPoll {
           ballots: ballots.map((x) => x.asCircuitInputs()),
           ballotPathElements: ballotSubrootProof!.pathElements,
           votes,
+          ...(this.mode === EMode.RANKED && { voteWeights }),
           voteCountsRoot,
           voteCounts: voteCounts.map((x) => x.asCircuitInputs()),
           voteCountsPathElements: voteCountsSubrootProof!.pathElements,
@@ -1300,10 +1315,13 @@ export class Poll implements IPoll {
       if (this.ballots.length <= i) {
         break;
       }
-
-      for (let j = 0; j < this.tallyResult.length; j += 1) {
-        const vote = BigInt(`${this.ballots[i].votes[j]}`);
-        subtotal += mode === EMode.QV ? vote * vote : vote;
+      if (this.mode === EMode.RANKED) {
+        subtotal += this.ballots[i].votes[MAX_RANKED_VOTE_OPTIONS];
+      } else {
+        for (let j = 0; j < this.tallyResult.length; j += 1) {
+          const vote = BigInt(`${this.ballots[i].votes[j]}`);
+          subtotal += mode === EMode.QV ? vote * vote : vote;
+        }
       }
     }
 
@@ -1332,7 +1350,8 @@ export class Poll implements IPoll {
         break;
       }
 
-      for (let j = 0; j < this.tallyResult.length; j += 1) {
+      const maxOptions = this.mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : this.tallyResult.length;
+      for (let j = 0; j < maxOptions; j += 1) {
         const vote = this.ballots[i].votes[j];
         leaves[j] += mode === EMode.QV ? vote * vote : vote;
       }

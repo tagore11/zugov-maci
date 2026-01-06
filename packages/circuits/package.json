@@ -46,7 +46,8 @@
     "test:pollJoined": "pnpm run mocha-test ts/__tests__/PollJoined.test.ts",
     "test:unpackRankedVoteOption": "pnpm run mocha-test ts/__tests__/UnpackRankedVoteOption.test.ts",
     "test:messageProcessorFull": "pnpm run mocha-test ts/__tests__/MessageProcessorFull.test.ts",
-    "test:messageProcessorRanked": "pnpm run mocha-test ts/__tests__/MessageProcessorRanked.test.ts"
+    "test:messageProcessorRanked": "pnpm run mocha-test ts/__tests__/MessageProcessorRanked.test.ts",
+    "test:voteTallyRanked": "pnpm run mocha-test ts/__tests__/VoteTallyRanked.test.ts"
   },
   "dependencies": {
     "@zk-kit/circuits": "^0.4.0",

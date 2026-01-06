@@ -5,10 +5,21 @@ import { type WitnessTester } from "circomkit";
 
 import { type IVoteTallyInputs } from "../types";
 
-import { STATE_TREE_DEPTH, duration, maxVoteOptions, messageBatchSize, voiceCreditBalance } from "./utils/constants";
-import { generateRandomIndex, circomkitInstance } from "./utils/utils";
+import {
+  MAX_RANKED_VOTE_OPTIONS,
+  STATE_TREE_DEPTH,
+  duration,
+  messageBatchSize,
+  voiceCreditBalance,
+} from "./utils/constants";
+import {
+  generateRandomIndex,
+  circomkitInstance,
+  packRankedVotesTo50Bits,
+  generateRandomVoteArray,
+} from "./utils/utils";
 
-describe("VoteTally circuit", function test() {
+describe("VoteTallyRanked circuit", function test() {
   this.timeout(900000);
 
   const treeDepths = {
@@ -31,12 +42,11 @@ describe("VoteTally circuit", function test() {
     "ballots",
     "ballotPathElements",
     "votes",
+    "voteWeights",
     "currentResults",
     "currentResultsRootSalt",
     "currentSpentVoiceCreditSubtotal",
     "currentSpentVoiceCreditSubtotalSalt",
-    "currentPerVoteOptionSpentVoiceCredits",
-    "currentPerVoteOptionSpentVoiceCreditsRootSalt",
     "newResultsRootSalt",
     "newPerVoteOptionSpentVoiceCreditsRootSalt",
     "newSpentVoiceCreditSubtotalSalt",
@@ -44,21 +54,13 @@ describe("VoteTally circuit", function test() {
 
   let circuit: WitnessTester<TallyVotesCircuitInputs>;
 
-  let circuitNonQv: WitnessTester<TallyVotesCircuitInputs>;
-
   const userKeypair = new Keypair();
   const { privateKey, publicKey: pollPublicKey } = userKeypair;
 
   before(async () => {
-    circuit = await circomkitInstance.WitnessTester("VoteTally", {
-      file: "./coordinator/qv/VoteTally",
-      template: "VoteTallyQv",
-      params: [10, 1, 2],
-    });
-
-    circuitNonQv = await circomkitInstance.WitnessTester("VoteTallyNonQv", {
-      file: "./coordinator/non-qv/VoteTally",
-      template: "VoteTallyNonQv",
+    circuit = await circomkitInstance.WitnessTester("VoteTallyRanked", {
+      file: "./coordinator/ranked/VoteTally",
+      template: "VoteTallyRanked",
       params: [10, 1, 2],
     });
   });
@@ -69,7 +71,8 @@ describe("VoteTally circuit", function test() {
     let poll: Poll;
     let maciState: MaciState;
     const voteWeight = BigInt(9);
-    const voteOptionIndex = BigInt(0);
+    const rankedVotes = [3, 4, 5, 6, 7, 11, 10, 9, 8, 12, 2, 1];
+    const voteOptionIndex = packRankedVotesTo50Bits(rankedVotes);
 
     beforeEach(() => {
       maciState = new MaciState(STATE_TREE_DEPTH);
@@ -83,8 +86,8 @@ describe("VoteTally circuit", function test() {
         treeDepths,
         messageBatchSize,
         coordinatorKeypair,
-        maxVoteOptions,
-        EMode.QV,
+        MAX_RANKED_VOTE_OPTIONS,
+        EMode.RANKED,
       );
 
       poll = maciState.polls.get(pollId)!;
@@ -129,92 +132,14 @@ describe("VoteTally circuit", function test() {
       const generatedInputs = poll.tallyVotes() as unknown as IVoteTallyInputs;
 
       // Start the tally from non-zero value
-      let randIdx = generateRandomIndex(Object.keys(generatedInputs).length);
+      let randIdx = generateRandomIndex(Number(MAX_RANKED_VOTE_OPTIONS));
       while (randIdx === 0) {
-        randIdx = generateRandomIndex(Object.keys(generatedInputs).length);
+        randIdx = generateRandomIndex(Number(MAX_RANKED_VOTE_OPTIONS));
       }
 
       generatedInputs.currentResults[randIdx] = 1n;
       const witness = await circuit.calculateWitness(generatedInputs);
       await circuit.expectConstraintPass(witness);
-    });
-  });
-
-  describe("1 user, 2 messages (non quadratic-voting)", () => {
-    let stateIndex: bigint;
-    let pollId: bigint;
-    let poll: Poll;
-    let maciState: MaciState;
-    const voteWeight = BigInt(9);
-    const voteOptionIndex = BigInt(0);
-
-    beforeEach(() => {
-      maciState = new MaciState(STATE_TREE_DEPTH);
-      const messages: Message[] = [];
-      const commands: VoteCommand[] = [];
-      // Sign up and publish
-      maciState.signUp(userKeypair.publicKey);
-
-      pollId = maciState.deployPoll(
-        BigInt(Math.floor(Date.now() / 1000) + duration),
-        treeDepths,
-        messageBatchSize,
-        coordinatorKeypair,
-        maxVoteOptions,
-        EMode.NON_QV,
-      );
-
-      poll = maciState.polls.get(pollId)!;
-      poll.updatePoll(BigInt(maciState.publicKeys.length));
-
-      // Join the poll
-      const nullifier = poseidon([BigInt(privateKey.raw.toString()), pollId]);
-
-      stateIndex = BigInt(poll.joinPoll(nullifier, pollPublicKey, voiceCreditBalance));
-
-      // First command (valid)
-      const command = new VoteCommand(
-        stateIndex,
-        pollPublicKey,
-        voteOptionIndex, // voteOptionIndex,
-        voteWeight, // vote weight
-        BigInt(1), // nonce
-        BigInt(pollId),
-      );
-
-      const signature = command.sign(privateKey);
-
-      const ecdhKeypair = new Keypair();
-      const sharedKey = Keypair.generateEcdhSharedKey(ecdhKeypair.privateKey, coordinatorKeypair.publicKey);
-      const message = command.encrypt(signature, sharedKey);
-      messages.push(message);
-      commands.push(command);
-
-      poll.publishMessage(message, ecdhKeypair.publicKey);
-
-      // Process messages
-      poll.processMessages(pollId, false);
-    });
-
-    it("should produce the correct result commitments", async () => {
-      const generatedInputs = poll.tallyVotes() as unknown as IVoteTallyInputs;
-
-      const witness = await circuitNonQv.calculateWitness(generatedInputs);
-      await circuitNonQv.expectConstraintPass(witness);
-    });
-
-    it("should produce the correct result if the initial tally is not zero", async () => {
-      const generatedInputs = poll.tallyVotes() as unknown as IVoteTallyInputs;
-
-      // Start the tally from non-zero value
-      let randIdx = generateRandomIndex(Object.keys(generatedInputs).length);
-      while (randIdx === 0) {
-        randIdx = generateRandomIndex(Object.keys(generatedInputs).length);
-      }
-
-      generatedInputs.currentResults[randIdx] = 1n;
-      const witness = await circuitNonQv.calculateWitness(generatedInputs);
-      await circuitNonQv.expectConstraintPass(witness);
     });
   });
 
@@ -239,8 +164,8 @@ describe("VoteTally circuit", function test() {
         treeDepths,
         messageBatchSize,
         coordinatorKeypair,
-        maxVoteOptions,
-        EMode.QV,
+        MAX_RANKED_VOTE_OPTIONS,
+        EMode.RANKED,
       );
 
       const poll = maciState.polls.get(pollId)!;
@@ -258,10 +183,11 @@ describe("VoteTally circuit", function test() {
       // Commands
       const numMessages = messageBatchSize * NUM_BATCHES;
       for (let i = 0; i < numMessages; i += 1) {
+        const randomVoteOptions = generateRandomVoteArray();
         const command = new VoteCommand(
           BigInt(i + 1),
           userKeypairs[i].publicKey,
-          BigInt(i), // vote option index
+          packRankedVotesTo50Bits(randomVoteOptions), // vote option index
           BigInt(1), // vote weight
           BigInt(1), // nonce
           BigInt(pollId),
@@ -288,7 +214,6 @@ describe("VoteTally circuit", function test() {
         if (i === 0) {
           generatedInputs.currentResults[0] = 123n;
           generatedInputs.currentSpentVoiceCreditSubtotal = 456n;
-          generatedInputs.currentPerVoteOptionSpentVoiceCredits[0] = 789n;
         }
 
         // eslint-disable-next-line no-await-in-loop
