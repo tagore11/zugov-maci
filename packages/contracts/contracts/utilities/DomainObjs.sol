@@ -12,7 +12,8 @@ contract DomainObjs {
   enum Mode {
     QV,
     NON_QV,
-    FULL
+    FULL,
+    RANKED
   }
 
   /// @title Message

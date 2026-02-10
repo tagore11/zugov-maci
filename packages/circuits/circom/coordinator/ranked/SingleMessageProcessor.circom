@@ -88,7 +88,7 @@ template SingleMessageProcessorRanked(stateTreeDepth, voteOptionTreeDepth) {
     var computedNewStateLeafPublicKey[2], computedNewBallotNonce, computedIsValid, computedIsStateLeafIndexValid, rankedVotes[MAX_RANKED_VOTE_OPTIONS];
     (computedNewStateLeafPublicKey, computedNewBallotNonce, computedIsValid, computedIsStateLeafIndexValid, rankedVotes) = StateLeafAndBallotTransformerRanked()(
         totalSignups,
-        voteOptions,
+        MAX_RANKED_VOTE_OPTIONS,
         [stateLeaf[STATE_LEAF_PUBLIC_X_INDEX], stateLeaf[STATE_LEAF_PUBLIC_Y_INDEX]],
         stateLeaf[STATE_LEAF_VOICE_CREDIT_BALANCE_INDEX],
         ballot[BALLOT_NONCE_INDEX],

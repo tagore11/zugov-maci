@@ -1,3 +1,4 @@
+import { MAX_RANKED_VOTE_OPTIONS } from "@maci-protocol/core/build/ts/utils/constants";
 import { generateRandomSalt } from "@maci-protocol/crypto";
 import { Keypair } from "@maci-protocol/domainobjs";
 import {
@@ -66,6 +67,15 @@ import {
   testTallyVotesWitnessDatPath,
   testProcessMessagesWasmPath,
   testTallyVotesWasmPath,
+  testTallyVotesRankedZkeyPath,
+  testProcessMessageRankedZkeyPath,
+  testProcessMessagesRankedWasmPath,
+  testProcessMessagesRankedWitnessDatPath,
+  testProcessMessagesRankedWitnessPath,
+  testTallyVotesRankedWitnessPath,
+  testTallyVotesRankedWitnessDatPath,
+  testTallyVotesRankedWasmPath,
+  DEFAULT_VOTE_OPTIONS,
 } from "../../constants";
 import { clean } from "../../utils";
 
@@ -101,6 +111,17 @@ const filePerMode = {
     voteTallyWitnessDatFile: testTallyVotesWitnessDatPath,
     messageProcessorWasm: testProcessMessagesWasmPath,
     voteTallyWasm: testTallyVotesWasmPath,
+  },
+
+  [EMode.RANKED]: {
+    voteTallyZkey: testTallyVotesRankedZkeyPath,
+    messageProcessorZkey: testProcessMessageRankedZkeyPath,
+    messageProcessorWitnessGenerator: testProcessMessagesRankedWitnessPath,
+    messageProcessorWitnessDatFile: testProcessMessagesRankedWitnessDatPath,
+    voteTallyWitnessGenerator: testTallyVotesRankedWitnessPath,
+    voteTallyWitnessDatFile: testTallyVotesRankedWitnessDatPath,
+    messageProcessorWasm: testProcessMessagesRankedWasmPath,
+    voteTallyWasm: testTallyVotesRankedWasmPath,
   },
 };
 
@@ -180,6 +201,7 @@ Object.entries(filePerMode).forEach((data) => {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode,
+        voteOptions: mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : DEFAULT_VOTE_OPTIONS,
       });
 
       return maciContractsAddresses;

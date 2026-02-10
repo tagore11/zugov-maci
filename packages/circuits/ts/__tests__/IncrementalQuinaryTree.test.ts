@@ -457,7 +457,7 @@ describe("Incremental Quinary Tree (IQT)", function test() {
     });
   });
 
-  describe.only("QuinaryCheckRootRanked", () => {
+  describe("QuinaryCheckRootRanked", () => {
     it("should compute the correct merkle root: maxRankedVoteOptions", async () => {
       const leaves = Array<bigint>(Number(MAX_RANKED_VOTE_OPTIONS)).fill(5n);
       const voteWeight = 1n;

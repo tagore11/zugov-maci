@@ -31,8 +31,8 @@ template StateLeafAndBallotTransformerRanked() {
     // The following signals represents a ballot.
     // Nonce.
     signal input ballotNonce;
-    // Current number of votes for specific option. 
-    signal input ballotCurrentVotesForOption;
+    // Current weight for specific option. 
+    signal input ballotCurrentWeight;
 
     // The following signals represents a command.
     // State index of the user.
@@ -86,7 +86,7 @@ template StateLeafAndBallotTransformerRanked() {
         commandSignaturePoint,
         commandSignatureScalar,
         stateLeafVoiceCreditBalance,
-        ballotCurrentVotesForOption,
+        ballotCurrentWeight,
         commandNewVoteWeight
     );
 
@@ -96,21 +96,9 @@ template StateLeafAndBallotTransformerRanked() {
     // If the message is valid then we swap out the public key.
     // This means using a Mux1() for publicKey[0] and another one
     // for publicKey[1].
-    var computedNewstateLeafPublicKey0Mux = Mux1()(
-        [
-            stateLeafPublicKey[0],
-            commandPublicKey[0]
-        ],
-        computedIsValid
-    );
+    var computedNewstateLeafPublicKey0Mux = Mux1()([stateLeafPublicKey[0], commandPublicKey[0]], computedIsValid);
 
-    var computedNewstateLeafPublicKey1Mux = Mux1()(
-        [
-            stateLeafPublicKey[1],
-            commandPublicKey[1]
-        ],
-        computedIsValid
-    );
+    var computedNewstateLeafPublicKey1Mux = Mux1()([stateLeafPublicKey[1], commandPublicKey[1]], computedIsValid);
 
     newStateLeafPublicKey[0] <== computedNewstateLeafPublicKey0Mux;
     newStateLeafPublicKey[1] <== computedNewstateLeafPublicKey1Mux;

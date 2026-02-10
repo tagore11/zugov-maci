@@ -41,7 +41,7 @@ template MessageValidatorRanked() {
     // State leaf current voice credit balance.
     signal input currentVoiceCreditBalance;
     // Current number of votes for specific option. 
-    signal input currentVotesForOption;
+    signal input currentWeight;
     // Vote weight.
     signal input voteWeight;
 
@@ -69,10 +69,10 @@ template MessageValidatorRanked() {
     var computedIsSignatureValid = VerifySignature()(publicKey, signaturePoint, signatureScalar, command);
  
     // Check (5) - There must be sufficient voice credits.
-    // The check ensure that currentVoiceCreditBalance + (currentVotesForOption) >= (voteWeight).
+    // The check ensure that currentVoiceCreditBalance + (currentWeight) >= (voteWeight).
     var computedAreVoiceCreditsSufficient = SafeGreaterEqThan(252)(
         [
-            currentVotesForOption + currentVoiceCreditBalance,
+            currentWeight + currentVoiceCreditBalance,
             voteWeight
         ]
     );

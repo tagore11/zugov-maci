@@ -194,7 +194,8 @@ export class Poll implements IPoll {
     ).fill(0n) as bigint[];
 
     // we put a blank state leaf to prevent a DoS attack
-    this.emptyBallot = Ballot.generateBlank(this.maxVoteOptions, treeDepths.voteOptionTreeDepth);
+    const ballotVoteOptions = this.mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS + 1 : this.maxVoteOptions;
+    this.emptyBallot = Ballot.generateBlank(ballotVoteOptions, treeDepths.voteOptionTreeDepth);
     this.ballots.push(this.emptyBallot);
     this.emptyBallotHash = this.emptyBallot.hash();
 
@@ -416,7 +417,7 @@ export class Poll implements IPoll {
       }
       // calculate the path elements for the vote option tree given the original vote option tree (before any changes)
       const { pathElements: originalVoteWeightsPathElements } = voteTree.generateProof(
-        this.mode === EMode.RANKED ? Number(this.voteOptions) : voteOptionIndex,
+        this.mode === EMode.RANKED ? Number(MAX_RANKED_VOTE_OPTIONS) : voteOptionIndex,
       );
       // we return the data which is then to be used in the processMessage circuit
       // to generate a proof of processing
@@ -787,7 +788,27 @@ export class Poll implements IPoll {
               // this might be unnecessary but we do it to prevent a possible DoS attack
               // from voters who could potentially encrypt a message in such as way that
               // when decrypted it results in a valid state leaf index but an invalid vote option index
-              if (command.voteOptionIndex < this.voteOptions) {
+              if (this.mode === EMode.RANKED) {
+                currentVoteWeights.unshift(ballot.votes[MAX_RANKED_VOTE_OPTIONS]);
+
+                // create a new quinary tree and add all votes we have so far
+                const voteTree = new IncrementalQuinTree(
+                  this.treeDepths.voteOptionTreeDepth,
+                  0n,
+                  VOTE_OPTION_TREE_ARITY,
+                  hash5,
+                );
+
+                // fill the vote option tree with the votes we have so far
+                for (let j = 0; j < this.ballots[0].votes.length; j += 1) {
+                  voteTree.insert(ballot.votes[j]);
+                }
+
+                // get the path elements for the ranked vote weight (MAX_RANKED_VOTE_OPTIONS index)
+                currentVoteWeightsPathElements.unshift(
+                  voteTree.generateProof(Number(MAX_RANKED_VOTE_OPTIONS)).pathElements,
+                );
+              } else if (command.voteOptionIndex < this.voteOptions) {
                 currentVoteWeights.unshift(ballot.votes[Number(command.voteOptionIndex)]);
 
                 // create a new quinary tree and add all votes we have so far
@@ -1178,7 +1199,7 @@ export class Poll implements IPoll {
       }
     }
 
-    const emptyBallot = new Ballot(maxOptions, this.treeDepths.voteOptionTreeDepth);
+    const emptyBallot = new Ballot(maxOptions + 1, this.treeDepths.voteOptionTreeDepth);
     const emptyVoteCounts = new VoteCounts(maxOptions, this.treeDepths.voteOptionTreeDepth);
 
     // pad the ballots array

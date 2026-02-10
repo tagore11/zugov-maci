@@ -29,6 +29,8 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
 
   uint256 public immutable maxSignups;
 
+  uint8 internal constant MAX_RANKED_VOTE_OPTIONS = 12;
+
   uint8 internal constant STATE_TREE_ARITY = 2;
 
   /// @notice This is the poseidon hash of the pad key
@@ -110,6 +112,7 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
   error InvalidPublicKey();
   error PollDoesNotExist(uint256 pollId);
   error UserNotSignedUp();
+  error TooManyVoteOptions();
 
   /// @notice Create a new instance of the MACI contract.
   /// @param initParams The initialization parameters defined above
@@ -179,6 +182,12 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
       policy: IBasePolicy(args.policy),
       initialVoiceCreditProxy: IInitialVoiceCreditProxy(args.initialVoiceCreditProxy)
     });
+
+    if (args.mode == Mode.RANKED) {
+      if (args.voteOptions > MAX_RANKED_VOTE_OPTIONS) {
+        revert TooManyVoteOptions();
+      }
+    }
 
     IPollFactory.DeployPollArgs memory deployPollArgs = IPollFactory.DeployPollArgs({
       startDate: args.startDate,

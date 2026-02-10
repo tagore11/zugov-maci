@@ -1,5 +1,6 @@
 /* eslint-disable no-underscore-dangle */
 import { EMode, MaciState } from "@maci-protocol/core";
+import { MAX_RANKED_VOTE_OPTIONS } from "@maci-protocol/core/build/ts/utils/constants";
 import { NOTHING_UP_MY_SLEEVE } from "@maci-protocol/crypto";
 import { Keypair, PublicKey, Message } from "@maci-protocol/domainobjs";
 import { expect } from "chai";
@@ -290,6 +291,87 @@ describe("MACI", function test() {
 
     it("should throw when given an invalid poll id", async () => {
       await expect(maciContract.getPoll(5)).to.be.revertedWithCustomError(maciContract, "PollDoesNotExist").withArgs(5);
+    });
+  });
+
+  describe("Ranked Poll Vote Options Validation", () => {
+    it("should allow deploying a RANKED poll with voteOptions = MAX_RANKED_VOTE_OPTIONS", async () => {
+      const startTime = await getBlockTimestamp(signer);
+
+      const tx = await maciContract.deployPoll({
+        startDate: startTime,
+        endDate: startTime + duration,
+        treeDepths,
+        messageBatchSize,
+        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+        mode: EMode.RANKED,
+        policy: signuPolicyContract,
+        initialVoiceCreditProxy,
+        relayers: [ZeroAddress],
+        voteOptions: MAX_RANKED_VOTE_OPTIONS,
+      });
+
+      const receipt = await tx.wait();
+      expect(receipt?.status).to.eq(1);
+    });
+
+    it("should allow deploying a RANKED poll with voteOptions < MAX_RANKED_VOTE_OPTIONS", async () => {
+      const startTime = await getBlockTimestamp(signer);
+
+      const tx = await maciContract.deployPoll({
+        startDate: startTime,
+        endDate: startTime + duration,
+        treeDepths,
+        messageBatchSize,
+        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+        mode: EMode.RANKED,
+        policy: signuPolicyContract,
+        initialVoiceCreditProxy,
+        relayers: [ZeroAddress],
+        voteOptions: MAX_RANKED_VOTE_OPTIONS - 1,
+      });
+
+      const receipt = await tx.wait();
+      expect(receipt?.status).to.eq(1);
+    });
+
+    it("should fail when deploying a RANKED poll with voteOptions > MAX_RANKED_VOTE_OPTIONS", async () => {
+      const startTime = await getBlockTimestamp(signer);
+
+      await expect(
+        maciContract.deployPoll({
+          startDate: startTime,
+          endDate: startTime + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.RANKED,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
+        }),
+      ).to.be.revertedWithCustomError(maciContract, "TooManyVoteOptions");
+    });
+
+    it("should allow deploying a QV poll with any number of voteOptions", async () => {
+      const startTime = await getBlockTimestamp(signer);
+
+      const tx = await maciContract.deployPoll({
+        startDate: startTime,
+        endDate: startTime + duration,
+        treeDepths,
+        messageBatchSize,
+        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+        mode: EMode.QV,
+        policy: signuPolicyContract,
+        initialVoiceCreditProxy,
+        relayers: [ZeroAddress],
+        voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
+      });
+
+      const receipt = await tx.wait();
+      expect(receipt?.status).to.eq(1);
     });
   });
 });

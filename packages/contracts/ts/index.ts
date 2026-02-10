@@ -82,5 +82,6 @@ export type {
   TDeployedProxyFactories,
   AASigner,
   IDeployCloneArgs,
+  IDeployMaciArgs,
 } from "./types";
 export * from "../typechain-types";
