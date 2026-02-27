@@ -6,6 +6,7 @@ import { IBasePolicy } from "@excubiae/contracts/contracts/interfaces/IBasePolic
 import { IPollFactory } from "./interfaces/IPollFactory.sol";
 import { IMessageProcessorFactory } from "./interfaces/IMessageProcessorFactory.sol";
 import { ITallyFactory } from "./interfaces/ITallyFactory.sol";
+import { ITally } from "./interfaces/ITally.sol";
 import { IVerifier } from "./interfaces/IVerifier.sol";
 import { IVerifyingKeysRegistry } from "./interfaces/IVerifyingKeysRegistry.sol";
 import { IInitialVoiceCreditProxy } from "./interfaces/IInitialVoiceCreditProxy.sol";
@@ -43,7 +44,8 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
   uint256 public nextPollId;
 
   /// @notice A mapping of poll IDs to Poll contracts.
-  mapping(uint256 => PollContracts) public polls;
+  mapping(uint256 => PollContracts) public pollContracts;
+  mapping(uint256 => PollData) public pollDatas;
 
   /// @notice Factory contract that deploy a Poll contract
   IPollFactory public immutable pollFactory;
@@ -99,12 +101,7 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
     uint256 indexed _userPublicKeyX,
     uint256 indexed _userPublicKeyY
   );
-  event DeployPoll(
-    uint256 _pollId,
-    uint256 indexed _coordinatorPublicKeyX,
-    uint256 indexed _coordinatorPublicKeyY,
-    Mode _mode
-  );
+  event DeployPoll(PollData pollData, PollContracts pollContracts);
 
   /// @notice custom errors
   error PoseidonHashLibrariesNotLinked();
@@ -113,6 +110,9 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
   error PollDoesNotExist(uint256 pollId);
   error UserNotSignedUp();
   error TooManyVoteOptions();
+  error StartTimeMustBeInFuture();
+  error EndTimeMustBeAfterStartTime();
+  error PollNotTallied();
 
   /// @notice Create a new instance of the MACI contract.
   /// @param initParams The initialization parameters defined above
@@ -160,7 +160,17 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
   }
 
   /// @inheritdoc IMACI
-  function deployPoll(DeployPollArgs memory args) public virtual returns (PollContracts memory) {
+  function deployPoll(
+    DeployPollArgs memory args,
+    address deployer
+  ) public virtual returns (PollData memory, PollContracts memory) {
+    if (args.startDate < block.timestamp) {
+      revert StartTimeMustBeInFuture();
+    }
+    if (args.endDate <= args.startDate) {
+      revert EndTimeMustBeAfterStartTime();
+    }
+
     // cache the poll to a local variable so we can increment it
     uint256 pollId = nextPollId;
 
@@ -224,11 +234,28 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
       tally: tally
     });
 
-    polls[pollId] = pollAddresses;
+    pollContracts[pollId] = pollAddresses;
 
-    emit DeployPoll(pollId, args.coordinatorPublicKey.x, args.coordinatorPublicKey.y, args.mode);
+    PollData memory pollData = PollData({
+      id: pollId,
+      name: args.name,
+      metadata: args.metadata,
+      startTime: args.startDate,
+      endTime: args.endDate,
+      options: args.options,
+      optionInfo: args.optionInfo,
+      coordinatorPubKey: args.coordinatorPublicKey,
+      pollDeployer: deployer,
+      mode: args.mode,
+      policy: args.policy,
+      policyType: args.policyType
+    });
 
-    return pollAddresses;
+    pollDatas[pollId] = pollData;
+
+    emit DeployPoll(pollData, pollAddresses);
+
+    return (pollData, pollAddresses);
   }
 
   /// @inheritdoc IMACI
@@ -238,10 +265,11 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
 
   /// @notice Get the Poll details
   /// @param _pollId The identifier of the Poll to retrieve
-  /// @return pollContracts The Poll contract object
-  function getPoll(uint256 _pollId) public view returns (PollContracts memory pollContracts) {
+  /// @return pollData The Poll data object
+  function getPoll(uint256 _pollId) public view returns (PollData memory pollData, PollContracts memory contracts) {
     if (_pollId >= nextPollId) revert PollDoesNotExist(_pollId);
-    pollContracts = polls[_pollId];
+    contracts = pollContracts[_pollId];
+    pollData = pollDatas[_pollId];
   }
 
   /// @inheritdoc IMACI
@@ -262,5 +290,32 @@ contract MACI is IMACI, DomainObjs, Params, Hasher {
 
     // need to subtract 1 because the index is 1 indexed due to 0 index reserved for deleted leaves
     return index - 1;
+  }
+
+  // Possible gas optimizations
+  // Privote
+  function userTotalPolls(address user) public view returns (uint256) {
+    uint256 total = 0;
+    for (uint256 i = 0; i < nextPollId; i++) {
+      if (pollDatas[i].pollDeployer == user) {
+        total++;
+      }
+    }
+    return total;
+  }
+
+  // Returns the poll tally results for a given poll id.
+  // Privote
+  function getPollResult(uint256 _pollId) external view returns (uint256[] memory results) {
+    if (_pollId >= nextPollId) revert PollDoesNotExist(_pollId);
+    PollContracts memory pollContract = pollContracts[_pollId];
+    ITally tally = ITally(pollContract.tally);
+    if (!tally.isTallied()) revert PollNotTallied();
+    uint256 len = tally.totalTallyResults();
+    results = new uint256[](len);
+    for (uint256 i = 0; i < len; i++) {
+      ITally.TallyResult memory result = tally.getTallyResults(i);
+      results[i] = result.value;
+    }
   }
 }

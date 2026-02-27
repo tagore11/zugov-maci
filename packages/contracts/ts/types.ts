@@ -14,6 +14,7 @@ import type {
   VerifyingKeysRegistry,
   IBasePolicy,
   Verifier,
+  Policy,
 } from "../typechain-types";
 import type { TypedContractMethod } from "../typechain-types/common";
 import type { EMode, TCircuitInputs } from "@maci-protocol/core";
@@ -122,6 +123,7 @@ export interface Action {
     messageRoot: bigint;
     ipfsHash: string;
     pollMode: EMode;
+    policyType: Policy;
   }>;
   blockNumber: number;
   transactionIndex: number;

@@ -10,6 +10,7 @@ import {
   verify,
   setVerifyingKeys,
   EMode,
+  EPolicy,
   proveOnChain,
   publish,
   deployPoll,
@@ -136,6 +137,11 @@ describe("e2e tests with full credits voting", function test() {
       policyContractAddress: pollPolicyContractAddress,
       initialVoiceCreditProxyContractAddress,
       mode: EMode.FULL,
+      policy: EPolicy.FreeForAll,
+      name: "test",
+      metadata: "",
+      options: [],
+      optionInfo: [],
     });
 
     return maciContractsAddresses;

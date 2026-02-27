@@ -42,6 +42,12 @@ type Poll @entity(immutable: false) {
   createdAt: BigInt!
   updatedAt: BigInt!
   mode: BigInt! # uint8
+  policy: Bytes! # address
+  policyType: BigInt! # uint8
+  name: String! # string
+  metadata: String! # string
+  options: [String!]
+  optionInfo: [String!]
   "merge state after ended"
   stateRoot: BigInt # uint256
   totalSignups: BigInt! # uint256

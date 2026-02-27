@@ -9,6 +9,7 @@ import {
   verify,
   setVerifyingKeys,
   EMode,
+  EPolicy,
   proveOnChain,
   publish,
   deployPoll,
@@ -188,7 +189,7 @@ Object.entries(filePerMode).forEach((data) => {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = (await getBlockTimestamp(signer)) + 100;
 
       // deploy a poll contract
       await deployPoll({
@@ -202,6 +203,11 @@ Object.entries(filePerMode).forEach((data) => {
         initialVoiceCreditProxyContractAddress,
         mode,
         voteOptions: mode === EMode.RANKED ? MAX_RANKED_VOTE_OPTIONS : DEFAULT_VOTE_OPTIONS,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
 
       return maciContractsAddresses;

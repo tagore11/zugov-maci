@@ -52,9 +52,12 @@ describe("E2E hardhat tasks", function test() {
     const maciAddress = contractStorage.mustGetAddress(EContracts.MACI, hardhat.network.name);
     const maciContract = await deployment.getContract<MACI>({ name: EContracts.MACI, address: maciAddress });
     const nextPollId = await maciContract.nextPollId();
-    const pollAddresses = await maciContract.getPoll(nextPollId - 1n);
+    const poll = await maciContract.getPoll(nextPollId - 1n);
 
-    const pollContract = await deployment.getContract<Poll>({ name: EContracts.Poll, address: pollAddresses.poll });
+    const pollContract = await deployment.getContract<Poll>({
+      name: EContracts.Poll,
+      address: poll.contracts.poll,
+    });
     const pollId = nextPollId - 1n;
 
     return { pollContract, pollId };

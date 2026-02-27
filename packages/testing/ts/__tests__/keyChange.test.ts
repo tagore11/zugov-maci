@@ -23,6 +23,7 @@ import {
   deployFreeForAllSignUpPolicy,
   deployConstantInitialVoiceCreditProxy,
   deployConstantInitialVoiceCreditProxyFactory,
+  EPolicy,
 } from "@maci-protocol/sdk";
 import { expect } from "chai";
 
@@ -161,6 +162,11 @@ describe("keyChange tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
       stateIndex = BigInt(
         await signup({
@@ -329,6 +335,11 @@ describe("keyChange tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
       stateIndex = BigInt(
         await signup({
@@ -483,6 +494,11 @@ describe("keyChange tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
       stateIndex = BigInt(
         await signup({

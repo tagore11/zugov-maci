@@ -61,6 +61,10 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
       EContracts.VerifyingKeysRegistry,
       "zkeys.nonQv.messageProcessorZkey",
     );
+    const messageProcessorZkeyPathRanked = deployment.getDeployConfigField<string>(
+      EContracts.VerifyingKeysRegistry,
+      "zkeys.ranked.processMessagesZkey",
+    );
     const voteTallyZkeyPathQv = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
       "zkeys.qv.voteTallyZkey",
@@ -68,6 +72,10 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
     const voteTallyZkeyPathNonQv = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
       "zkeys.nonQv.voteTallyZkey",
+    );
+    const voteTallyZkeyPathRanked = deployment.getDeployConfigField<string>(
+      EContracts.VerifyingKeysRegistry,
+      "zkeys.ranked.tallyVotesZkey",
     );
     const tallyVotesZkeyPathFull = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
@@ -89,6 +97,10 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
 
     if (mode === EMode.FULL && (!tallyVotesZkeyPathFull || !messageProcessorZkeyPathFull)) {
       throw new Error("Full zkeys are not set");
+    }
+
+    if (mode === EMode.RANKED && (!voteTallyZkeyPathRanked || !messageProcessorZkeyPathRanked)) {
+      throw new Error("Ranked zkeys are not set");
     }
 
     if (!pollJoiningZkeyPath) {

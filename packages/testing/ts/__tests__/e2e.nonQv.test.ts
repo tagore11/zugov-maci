@@ -10,6 +10,7 @@ import {
   verify,
   setVerifyingKeys,
   EMode,
+  EPolicy,
   proveOnChain,
   publish,
   deployPoll,
@@ -155,6 +156,11 @@ describe("e2e tests with non quadratic voting", function test() {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode: EMode.NON_QV,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -272,6 +278,11 @@ describe("e2e tests with non quadratic voting", function test() {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode: EMode.NON_QV,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -402,6 +413,11 @@ describe("e2e tests with non quadratic voting", function test() {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode: EMode.NON_QV,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -532,6 +548,11 @@ describe("e2e tests with non quadratic voting", function test() {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode: EMode.NON_QV,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -688,6 +709,11 @@ describe("e2e tests with non quadratic voting", function test() {
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
         mode: EMode.NON_QV,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 

@@ -15,3 +15,17 @@ export enum EMode {
   FULL,
   RANKED,
 }
+
+export enum EPolicy {
+  ERC20,
+  FreeForAll,
+  MerkleProof,
+  ERC20Votes,
+  EAS,
+  GitcoinPassport,
+  Zupass,
+  Semaphore,
+  AnonAadhaar,
+  Token,
+  Hats,
+}

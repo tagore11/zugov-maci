@@ -87,10 +87,10 @@ task("prove", "Command to generate proofs")
       const maciContractAddress = storage.mustGetAddress(EContracts.MACI, network.name);
       const maciContract = await deployment.getContract<MACI>({ name: EContracts.MACI, address: maciContractAddress });
 
-      const pollContracts = await maciContract.polls(poll);
+      const { contracts } = await maciContract.getPoll(poll);
       const pollContract = await deployment.getContract<Poll>({
         name: EContracts.Poll,
-        address: pollContracts.poll,
+        address: contracts.poll,
       });
       const isStateAqMerged = await pollContract.stateMerged();
 
@@ -158,7 +158,7 @@ task("prove", "Command to generate proofs")
       const proofGenerator = new ProofGenerator({
         poll: foundPoll,
         maciContractAddress,
-        tallyContractAddress: pollContracts.tally,
+        tallyContractAddress: contracts.tally,
         rapidsnark,
         tally: {
           zkey: voteTallyZkey,

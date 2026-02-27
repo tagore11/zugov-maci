@@ -1199,7 +1199,10 @@ export class Poll implements IPoll {
       }
     }
 
-    const emptyBallot = new Ballot(maxOptions + 1, this.treeDepths.voteOptionTreeDepth);
+    const emptyBallot = new Ballot(
+      this.mode === EMode.RANKED ? maxOptions + 1 : maxOptions,
+      this.treeDepths.voteOptionTreeDepth,
+    );
     const emptyVoteCounts = new VoteCounts(maxOptions, this.treeDepths.voteOptionTreeDepth);
 
     // pad the ballots array

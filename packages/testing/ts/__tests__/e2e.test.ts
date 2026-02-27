@@ -25,6 +25,7 @@ import {
   deployFreeForAllSignUpPolicy,
   deployConstantInitialVoiceCreditProxy,
   deployConstantInitialVoiceCreditProxyFactory,
+  EPolicy,
 } from "@maci-protocol/sdk";
 import { expect } from "chai";
 
@@ -162,6 +163,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -276,6 +282,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -594,6 +605,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -733,6 +749,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -849,6 +870,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -1020,6 +1046,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
       // signup
       await signup({
@@ -1145,6 +1176,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 
@@ -1331,6 +1367,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
 
       // signup
@@ -1459,6 +1500,11 @@ describe("e2e tests", function test() {
           maciAddress: maciAddresses.maciContractAddress,
           policyContractAddress: pollPolicyContractAddress,
           initialVoiceCreditProxyContractAddress,
+          policy: EPolicy.FreeForAll,
+          name: "test",
+          metadata: "",
+          options: [],
+          optionInfo: [],
         });
       }
 
@@ -1476,6 +1522,11 @@ describe("e2e tests", function test() {
           maciAddress: maciAddresses.maciContractAddress,
           policyContractAddress: pollPolicyContractAddress,
           initialVoiceCreditProxyContractAddress,
+          policy: EPolicy.FreeForAll,
+          name: "test",
+          metadata: "",
+          options: [],
+          optionInfo: [],
         });
       }
     });
@@ -1763,6 +1814,11 @@ describe("e2e tests", function test() {
         maciAddress: maciAddresses.maciContractAddress,
         policyContractAddress: pollPolicyContractAddress,
         initialVoiceCreditProxyContractAddress,
+        policy: EPolicy.FreeForAll,
+        name: "test",
+        metadata: "",
+        options: [],
+        optionInfo: [],
       });
     });
 

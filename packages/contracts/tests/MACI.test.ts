@@ -1,5 +1,5 @@
 /* eslint-disable no-underscore-dangle */
-import { EMode, MaciState } from "@maci-protocol/core";
+import { EMode, MaciState, EPolicy } from "@maci-protocol/core";
 import { MAX_RANKED_VOTE_OPTIONS } from "@maci-protocol/core/build/ts/utils/constants";
 import { NOTHING_UP_MY_SLEEVE } from "@maci-protocol/crypto";
 import { Keypair, PublicKey, Message } from "@maci-protocol/domainobjs";
@@ -200,21 +200,29 @@ describe("MACI", function test() {
 
   describe("Deploy a Poll", () => {
     it("should deploy a poll", async () => {
-      const startTime = await getBlockTimestamp(signer);
+      const startTime = (await getBlockTimestamp(signer)) + 100;
 
       // Create the poll and get the poll ID from the tx event logs
-      const tx = await maciContract.deployPoll({
-        startDate: startTime,
-        endDate: startTime + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.QV,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: maxVoteOptions,
-      });
+      const tx = await maciContract.deployPoll(
+        {
+          startDate: startTime,
+          endDate: startTime + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.QV,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: maxVoteOptions,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await signer.getAddress(),
+      );
       const receipt = await tx.wait();
 
       expect(receipt?.status).to.eq(1);
@@ -244,18 +252,27 @@ describe("MACI", function test() {
     });
 
     it("should allow to deploy a new poll even before the first one is completed", async () => {
-      const tx = await maciContract.deployPoll({
-        startDate: Math.floor(Date.now() / 1000),
-        endDate: Math.floor(Date.now() / 1000) + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.QV,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: maxVoteOptions,
-      });
+      const currentTime1 = (await getBlockTimestamp(signer)) + 1;
+      const tx = await maciContract.deployPoll(
+        {
+          startDate: currentTime1,
+          endDate: currentTime1 + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.QV,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: maxVoteOptions,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await signer.getAddress(),
+      );
       const receipt = await tx.wait();
       expect(receipt?.status).to.eq(1);
       expect(await maciContract.nextPollId()).to.eq(2);
@@ -263,18 +280,27 @@ describe("MACI", function test() {
 
     it("should allow any user to deploy a poll", async () => {
       const [, user] = await getSigners();
-      const tx = await maciContract.connect(user).deployPoll({
-        startDate: Math.floor(Date.now() / 1000),
-        endDate: Math.floor(Date.now() / 1000) + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: users[0].publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.QV,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: maxVoteOptions,
-      });
+      const currentTime2 = (await getBlockTimestamp(signer)) + 1;
+      const tx = await maciContract.connect(user).deployPoll(
+        {
+          startDate: currentTime2,
+          endDate: currentTime2 + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: users[0].publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.QV,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: maxVoteOptions,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await user.getAddress(),
+      );
       const receipt = await tx.wait();
       expect(receipt?.status).to.eq(1);
       expect(await maciContract.nextPollId()).to.eq(3);
@@ -283,10 +309,10 @@ describe("MACI", function test() {
 
   describe("getPoll", () => {
     it("should return an object for a valid id", async () => {
-      const pollContracts = await maciContract.getPoll(pollId);
-      expect(pollContracts.poll).to.not.eq(ZeroAddress);
-      expect(pollContracts.messageProcessor).to.not.eq(ZeroAddress);
-      expect(pollContracts.tally).to.not.eq(ZeroAddress);
+      const { contracts } = await maciContract.getPoll(pollId);
+      expect(contracts.poll).to.not.eq(ZeroAddress);
+      expect(contracts.messageProcessor).to.not.eq(ZeroAddress);
+      expect(contracts.tally).to.not.eq(ZeroAddress);
     });
 
     it("should throw when given an invalid poll id", async () => {
@@ -296,50 +322,10 @@ describe("MACI", function test() {
 
   describe("Ranked Poll Vote Options Validation", () => {
     it("should allow deploying a RANKED poll with voteOptions = MAX_RANKED_VOTE_OPTIONS", async () => {
-      const startTime = await getBlockTimestamp(signer);
+      const startTime = (await getBlockTimestamp(signer)) + 100;
 
-      const tx = await maciContract.deployPoll({
-        startDate: startTime,
-        endDate: startTime + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.RANKED,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: MAX_RANKED_VOTE_OPTIONS,
-      });
-
-      const receipt = await tx.wait();
-      expect(receipt?.status).to.eq(1);
-    });
-
-    it("should allow deploying a RANKED poll with voteOptions < MAX_RANKED_VOTE_OPTIONS", async () => {
-      const startTime = await getBlockTimestamp(signer);
-
-      const tx = await maciContract.deployPoll({
-        startDate: startTime,
-        endDate: startTime + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.RANKED,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: MAX_RANKED_VOTE_OPTIONS - 1,
-      });
-
-      const receipt = await tx.wait();
-      expect(receipt?.status).to.eq(1);
-    });
-
-    it("should fail when deploying a RANKED poll with voteOptions > MAX_RANKED_VOTE_OPTIONS", async () => {
-      const startTime = await getBlockTimestamp(signer);
-
-      await expect(
-        maciContract.deployPoll({
+      const tx = await maciContract.deployPoll(
+        {
           startDate: startTime,
           endDate: startTime + duration,
           treeDepths,
@@ -349,26 +335,98 @@ describe("MACI", function test() {
           policy: signuPolicyContract,
           initialVoiceCreditProxy,
           relayers: [ZeroAddress],
-          voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
-        }),
+          voteOptions: MAX_RANKED_VOTE_OPTIONS,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await signer.getAddress(),
+      );
+
+      const receipt = await tx.wait();
+      expect(receipt?.status).to.eq(1);
+    });
+
+    it("should allow deploying a RANKED poll with voteOptions < MAX_RANKED_VOTE_OPTIONS", async () => {
+      const startTime = (await getBlockTimestamp(signer)) + 100;
+
+      const tx = await maciContract.deployPoll(
+        {
+          startDate: startTime,
+          endDate: startTime + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.RANKED,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: MAX_RANKED_VOTE_OPTIONS - 1,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await signer.getAddress(),
+      );
+
+      const receipt = await tx.wait();
+      expect(receipt?.status).to.eq(1);
+    });
+
+    it("should fail when deploying a RANKED poll with voteOptions > MAX_RANKED_VOTE_OPTIONS", async () => {
+      const startTime = (await getBlockTimestamp(signer)) + 100;
+
+      await expect(
+        maciContract.deployPoll(
+          {
+            startDate: startTime,
+            endDate: startTime + duration,
+            treeDepths,
+            messageBatchSize,
+            coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+            mode: EMode.RANKED,
+            policy: signuPolicyContract,
+            initialVoiceCreditProxy,
+            relayers: [ZeroAddress],
+            voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
+            name: "",
+            metadata: "",
+            options: [],
+            optionInfo: [],
+            policyType: EPolicy.FreeForAll,
+          },
+          await signer.getAddress(),
+        ),
       ).to.be.revertedWithCustomError(maciContract, "TooManyVoteOptions");
     });
 
     it("should allow deploying a QV poll with any number of voteOptions", async () => {
-      const startTime = await getBlockTimestamp(signer);
+      const startTime = (await getBlockTimestamp(signer)) + 100;
 
-      const tx = await maciContract.deployPoll({
-        startDate: startTime,
-        endDate: startTime + duration,
-        treeDepths,
-        messageBatchSize,
-        coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
-        mode: EMode.QV,
-        policy: signuPolicyContract,
-        initialVoiceCreditProxy,
-        relayers: [ZeroAddress],
-        voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
-      });
+      const tx = await maciContract.deployPoll(
+        {
+          startDate: startTime,
+          endDate: startTime + duration,
+          treeDepths,
+          messageBatchSize,
+          coordinatorPublicKey: coordinator.publicKey.asContractParam() as { x: BigNumberish; y: BigNumberish },
+          mode: EMode.QV,
+          policy: signuPolicyContract,
+          initialVoiceCreditProxy,
+          relayers: [ZeroAddress],
+          voteOptions: MAX_RANKED_VOTE_OPTIONS + 1,
+          name: "",
+          metadata: "",
+          options: [],
+          optionInfo: [],
+          policyType: 0,
+        },
+        await signer.getAddress(),
+      );
 
       const receipt = await tx.wait();
       expect(receipt?.status).to.eq(1);

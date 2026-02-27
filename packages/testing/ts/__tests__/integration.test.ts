@@ -16,6 +16,7 @@ import {
   getPollParams,
   setVerifyingKeys,
   EMode,
+  EPolicy,
   extractAllVerifyingKeys,
   proveOnChain,
   joinPoll,
@@ -165,6 +166,11 @@ describe("Integration tests", function test() {
       initialVoiceCredits: DEFAULT_INITIAL_VOICE_CREDITS,
       voteOptions: DEFAULT_VOTE_OPTIONS,
       relayers: [await signer.getAddress()],
+      policy: EPolicy.FreeForAll,
+      name: "test",
+      metadata: "",
+      options: [],
+      optionInfo: [],
     });
 
     const treeDepths: ITreeDepths = {

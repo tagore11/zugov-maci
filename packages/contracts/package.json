@@ -75,6 +75,7 @@
     "prove": "hardhat prove",
     "submitOnChain": "hardhat submitOnChain",
     "benchmark": "hardhat benchmark",
+    "generate-mnemonic": "ts-node generate-mnemonic.ts",
     "deploy:localhost": "pnpm run deploy",
     "deploy:mainnet": "pnpm run deploy --network mainnet",
     "deploy:sepolia": "pnpm run deploy --network sepolia",
@@ -222,6 +223,7 @@
     "benchmark:polygon-cardona-zkevm": "pnpm run benchmark --network polygon_cardona_zkevm"
   },
   "dependencies": {
+    "@ethereum-attestation-service/eas-contracts": "^1.8.0",
     "@excubiae/contracts": "^0.11.0",
     "@maci-protocol/core": "^3.0.0",
     "@maci-protocol/crypto": "^3.0.0",

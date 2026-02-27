@@ -11,6 +11,7 @@ import {
   verify,
   setVerifyingKeys,
   EMode,
+  EPolicy,
   proveOnChain,
   publish,
   deployPoll,
@@ -146,6 +147,11 @@ describe("e2e tests with ranked credits voting", function test() {
       initialVoiceCreditProxyContractAddress,
       mode: EMode.RANKED,
       voteOptions: MAX_RANKED_VOTE_OPTIONS,
+      policy: EPolicy.FreeForAll,
+      name: "test",
+      metadata: "",
+      options: [],
+      optionInfo: [],
     });
 
     return maciContractsAddresses;

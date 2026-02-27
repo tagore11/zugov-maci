@@ -1,6 +1,7 @@
 import { Keypair, type VerifyingKey } from "@maci-protocol/domainobjs";
 import {
   EMode,
+  EPolicy,
   extractAllVerifyingKeys,
   generateTallyCommitments,
   getPollParams,
@@ -414,6 +415,11 @@ export const deployPollArgs: Omit<
   initialVoiceCredits: DEFAULT_INITIAL_VOICE_CREDITS,
   mode: EMode.QV,
   voteOptions: DEFAULT_VOTE_OPTIONS,
+  policy: EPolicy.FreeForAll,
+  name: "test",
+  metadata: "",
+  options: [],
+  optionInfo: [],
 };
 
 export const invalidVote = {

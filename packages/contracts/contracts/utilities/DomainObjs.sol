@@ -16,6 +16,21 @@ contract DomainObjs {
     RANKED
   }
 
+  /// @notice sign-up policy types
+  enum Policy {
+    ERC20,
+    FreeForAll,
+    MerkleProof,
+    ERC20Votes,
+    EAS,
+    GitcoinPassport,
+    Zupass,
+    Semaphore,
+    AnonAadhaar,
+    Token,
+    Hats
+  }
+
   /// @title Message
   /// @notice this struct represents a MACI message
   /// @dev msgType: 1 for vote message
