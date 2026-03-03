@@ -1,0 +1,150 @@
+.tokenDetailsContainer {
+  margin-top: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: rgba(11, 12, 15, 0.3);
+  border: 1px solid #2a2d36;
+}
+
+.loadingContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.loadingContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.loadingPulse {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #535861;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+}
+
+.loadingText {
+  color: #b4b7bd;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.errorContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 6px;
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid rgba(255, 59, 48, 0.2);
+}
+
+.errorIcon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.errorText {
+  color: #ff3b30;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.successContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.successHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #2a2d36;
+}
+
+.successIcon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.successTitle {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tokenInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tokenRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.tokenLabel {
+  color: #b4b7bd;
+  font-size: 14px;
+  font-weight: 500;
+  min-width: 100px;
+}
+
+.tokenValue {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: right;
+  word-break: break-all;
+}
+
+.tokenType {
+  background: rgba(52, 199, 89, 0.2);
+  color: #34c759;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+@media (max-width: 480px) {
+  .tokenRow {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .tokenLabel {
+    min-width: unset;
+  }
+
+  .tokenValue {
+    text-align: left;
+  }
+}

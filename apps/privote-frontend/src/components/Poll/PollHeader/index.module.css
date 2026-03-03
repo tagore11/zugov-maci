@@ -1,0 +1,207 @@
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.headerContent {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.back {
+  display: flex;
+  padding: 3.455px;
+  align-items: center;
+  gap: 8.638px;
+  border-radius: 6.91px;
+  background: #141414;
+}
+
+.end {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.headerButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.shareButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.shareButton:hover,
+.instructionsButton:hover {
+  background: #252525;
+}
+
+.status {
+  display: flex;
+  padding: 8px 16px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 8px;
+  background: #141414;
+  color: #8c98a9;
+  width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.timeInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0px 6px 0px;
+  background: #141414;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #8c98a9;
+}
+
+.policyInfoContainer {
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+}
+
+@media screen and (max-width: 768px) {
+  .status {
+    padding: 6px 12px;
+  }
+}
+
+/* Policy Content styles */
+
+.policyInfo {
+  padding: 20px;
+  background-color: rgba(215, 232, 132, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(215, 232, 132, 0.3);
+  max-width: 450px;
+  margin-left: 20px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.policyInfo:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+}
+
+.policyHeader {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.policyIconWrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+}
+
+.policyIcon {
+  width: 28px;
+  height: 28px;
+}
+
+.policyTitle h4 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 4px 0;
+}
+
+.policySubtitle {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+.policyDetails {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.policyDetailRow {
+  display: flex;
+  margin-bottom: 8px;
+  font-size: 14px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+
+.detailLabel {
+  min-width: 100px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.detailValue {
+  flex: 1;
+}
+
+.highlight {
+  font-weight: 600;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.addressText {
+  font-family: monospace;
+  word-break: break-all;
+  opacity: 0.85;
+  font-size: 13px;
+}
+
+.policyInfoContainer {
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+}
+
+@media (max-width: 600px) {
+  .end {
+    gap: 12px;
+  }
+}
+
+@media (max-width: 520px) {
+  .status {
+    width: 225px;
+  }
+}

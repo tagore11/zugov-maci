@@ -1,0 +1,314 @@
+.poll-config-wrapper {
+  margin-block: 32px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.poll-config-wrapper > h1 {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 160%;
+}
+
+.poll-config {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.config-wrapper {
+  flex: 0 1 500px;
+}
+
+.config-option {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  padding: 24px;
+  align-items: flex-start;
+  gap: 20px;
+  border-radius: 8px;
+  border: 1px solid #535861;
+  max-width: 500px;
+  background: #0b0c0f;
+}
+
+.gen-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+.dot {
+  width: 20px !important;
+  min-width: 20px;
+  height: 20px;
+  border: 2px solid #535861;
+  border-radius: 60px;
+}
+
+.dot.first {
+  margin-top: 4px;
+}
+
+.dot.selected {
+  border-color: #c65ec6;
+  background-color: #c65ec6;
+  outline: 2px solid #000;
+  outline-offset: -4px;
+}
+.public-input-container > .pub-key-input {
+  border-radius: 8px;
+  background: #141414;
+  width: 100%;
+}
+
+.gen-btn {
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  padding: 8px 16px;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+  color: #000;
+}
+
+.priv-warning {
+  color: red;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #121417;
+}
+
+.key-details {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.key-container {
+  margin-top: 16px;
+  color: #535861;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #121417;
+}
+
+.key-container > p {
+  word-break: break-all;
+  padding-top: 16px;
+}
+
+.verification {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.verification > h1 {
+  color: #fff;
+  font-size: 24px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 160%;
+}
+
+.veri-row {
+  display: flex;
+  gap: 16px;
+}
+
+.veri-box {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #535861;
+  border-radius: 8px;
+  border: 1px solid #535861;
+  background: #0b0c0f;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 160%;
+  padding: 16px 24px;
+}
+
+.veri-box.selected {
+  border-color: #fff;
+  color: #fff;
+}
+
+.veri-box:nth-child(1) {
+  padding: 16px 48px;
+}
+
+.candidate-input {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.remove-candi {
+  cursor: pointer;
+}
+
+.key-gen {
+  margin-top: 8px;
+  color: #535861;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 160%;
+}
+
+.key-gen > a {
+  color: #c65ec6;
+  text-decoration: underline;
+}
+
+/* Key Option Selector Styles */
+.key-option-selector {
+  margin-bottom: 16px;
+}
+
+.option-group {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #535861;
+  background: #141414;
+  transition: all 0.2s ease;
+}
+
+.radio-option:hover {
+  border-color: #c65ec6;
+  background: #1a1a1a;
+}
+
+.radio-option input[type='radio'] {
+  margin: 0;
+  accent-color: #c65ec6;
+}
+
+.radio-label {
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  user-select: none;
+}
+
+/* Wallet Key Section Styles */
+.wallet-key-section {
+  margin-top: 16px;
+}
+
+.key-management {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.key-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid #535861;
+  background: #141414;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 140px;
+  justify-content: center;
+}
+
+.key-action-btn:hover {
+  background: #1a1a1a;
+  border-color: #c65ec6;
+}
+
+.delete-btn:hover {
+  background: #2d1b1b;
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+}
+
+.generate-btn:hover {
+  background: #1b2d1b;
+  border-color: #4caf50;
+  color: #4caf50;
+}
+
+.no-keypair {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  border: 1px solid #535861;
+}
+
+.no-keypair p {
+  margin: 0;
+  color: #ffffff;
+  font-size: 14px;
+}
+
+/* Manual Key Section Styles */
+.manual-key-section {
+  margin-top: 16px;
+}
+
+.manual-key-section > input {
+  width: 100%;
+}
+
+@media (max-width: 570px) {
+  .poll-config {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .config-wrapper {
+    flex: auto;
+  }
+
+  .option-group {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .radio-option {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .key-management {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .key-action-btn {
+    width: 100%;
+    min-width: unset;
+  }
+}

@@ -1,0 +1,95 @@
+.notificationContainer {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 24rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 0 10px var(--accent-color);
+  background-color: var(--base-200);
+  color: var(--accent-content);
+  padding: 1rem;
+  transform: translateZ(0);
+  position: relative;
+  transition: all 500ms ease-in-out;
+  gap: 0.5rem;
+}
+
+.topPosition {
+  top: 0;
+}
+
+.topPositionHidden {
+  top: -24rem;
+}
+
+.topPositionHover:hover {
+  transform: translateY(0.25rem);
+}
+
+.bottomPosition {
+  bottom: 0;
+}
+
+.bottomPositionHidden {
+  bottom: -24rem;
+}
+
+.bottomPositionHover:hover {
+  transform: translateY(-0.25rem);
+}
+
+.iconContainer {
+  line-height: 0;
+  align-self: center;
+}
+
+.contentContainer {
+  overflow-x: hidden;
+  word-break: break-words;
+  white-space: pre-line;
+}
+
+.contentWithIcon {
+  margin-top: 0.25rem;
+}
+
+.closeButton {
+  cursor: pointer;
+  display: flex;
+}
+
+/* .closeButtonWithIcon {
+  margin-top: 0.25rem;
+} */
+
+.closeIcon {
+  cursor: pointer;
+}
+
+/* Status-based icon styles */
+.successIcon {
+  width: 1.75rem;
+  color: var(--success-color);
+}
+
+.loadingIcon {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+.errorIcon {
+  width: 1.75rem;
+  color: var(--error-color);
+}
+
+.infoIcon {
+  width: 1.75rem;
+  color: var(--info-color);
+}
+
+.warningIcon {
+  width: 1.75rem;
+  color: var(--warning-color);
+}

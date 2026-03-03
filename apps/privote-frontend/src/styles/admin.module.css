@@ -1,0 +1,47 @@
+.wrapper {
+  background: #000;
+  min-height: 100vh;
+  min-height: 100lvh;
+}
+.admin-page {
+  background: #000;
+  max-width: 1155px;
+  padding-inline: 24px;
+  margin-inline: auto;
+  color: #fff;
+  padding-top: 100px;
+  padding-bottom: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.connect-button {
+  margin-top: 1.5rem;
+}
+
+.pagination-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+  padding-bottom: 2rem;
+}
+.header {
+  display: flex;
+  justify-content: flex-end;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+.btn {
+  display: flex;
+}
+
+@media (max-width: 1000px) {
+  .header {
+    margin-bottom: 0;
+    padding-inline: 0;
+  }
+  .admin-page {
+    padding-top: 80px;
+  }
+}

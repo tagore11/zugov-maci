@@ -1,0 +1,22 @@
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Root node -->
+  <circle cx="12" cy="6" r="2" stroke="white" stroke-width="2" fill="none"/>
+  
+  <!-- Level 2 nodes -->
+  <circle cx="8" cy="12" r="1.5" stroke="white" stroke-width="1.5" fill="none"/>
+  <circle cx="16" cy="12" r="1.5" stroke="white" stroke-width="1.5" fill="none"/>
+  
+  <!-- Leaf nodes -->
+  <circle cx="5" cy="18" r="1.2" stroke="white" stroke-width="1.2" fill="none"/>
+  <circle cx="11" cy="18" r="1.2" stroke="white" stroke-width="1.2" fill="none"/>
+  <circle cx="13" cy="18" r="1.2" stroke="white" stroke-width="1.2" fill="none"/>
+  <circle cx="19" cy="18" r="1.2" stroke="white" stroke-width="1.2" fill="none"/>
+  
+  <!-- Tree connections -->
+  <line x1="12" y1="8" x2="8" y2="10.5" stroke="white" stroke-width="1.5"/>
+  <line x1="12" y1="8" x2="16" y2="10.5" stroke="white" stroke-width="1.5"/>
+  <line x1="8" y1="13.5" x2="5" y2="16.8" stroke="white" stroke-width="1.2"/>
+  <line x1="8" y1="13.5" x2="11" y2="16.8" stroke="white" stroke-width="1.2"/>
+  <line x1="16" y1="13.5" x2="13" y2="16.8" stroke="white" stroke-width="1.2"/>
+  <line x1="16" y1="13.5" x2="19" y2="16.8" stroke="white" stroke-width="1.2"/>
+</svg>

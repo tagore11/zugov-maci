@@ -1,0 +1,75 @@
+.candidate-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.candidate-input {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.candidate-header {
+  display: flex;
+  justify-content: space-between;
+}
+
+.candidates-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.candidate-header > h1 {
+  color: #fff;
+  font-size: 24px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 160%;
+}
+
+.candidate-add {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.add-candidate-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--grd, linear-gradient(328deg, #c65ec6 11.74%, #7f58b7 87.19%));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: 500;
+  line-height: 160%; /* 25.6px */
+}
+
+.actions {
+  padding-top: 16px;
+  display: flex;
+  gap: 16px;
+}
+
+.actions > button {
+  border-radius: 8px;
+  border: 1px dashed #c65ec6;
+  padding: 12px;
+  flex: 0 1 400px;
+
+  background: var(--grd, linear-gradient(328deg, #c65ec6 11.74%, #7f58b7 87.19%));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (max-width: 570px) {
+  .candidate-header > h1 {
+    font-size: 20px;
+    line-height: 160%;
+  }
+}

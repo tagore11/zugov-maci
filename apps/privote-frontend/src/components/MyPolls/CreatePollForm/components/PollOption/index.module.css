@@ -1,0 +1,62 @@
+.candidate-input {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+}
+.candidate-input:first-child {
+  padding-right: 44px;
+}
+.option-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.option-fields input,
+.option-fields select,
+.option-fields textarea {
+  background: #0b0c0f;
+  padding: 11px 12px;
+  color: #fff;
+  border-radius: 8px;
+  outline: 1px solid #535861;
+}
+
+.option-fields input:focus,
+.option-fields select:focus,
+.option-fields textarea:focus {
+  outline-color: #c65ec6;
+  box-shadow: 0 0 0 2px rgba(198, 94, 198, 0.1);
+}
+
+.image-option {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.text-fields {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.remove-option-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  padding: 4px;
+  padding-top: 8px;
+  cursor: pointer;
+  color: #8c98a9;
+  transition: color 0.2s ease;
+}
+
+.remove-option-btn:hover {
+  color: #fff;
+}

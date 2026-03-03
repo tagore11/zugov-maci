@@ -1,0 +1,36 @@
+.button {
+  display: flex;
+  color: white;
+  padding: 12px 32px;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  border: none;
+  background: linear-gradient(90deg, #7f58b7 0.17%, #c65ec6 99.46%);
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.button {
+  font-size: 16px;
+}
+
+.button:hover {
+  background: #f6e6f6;
+  color: #c65ec6;
+}
+
+.button:hover > p {
+  background: var(--grd, linear-gradient(328deg, #c65ec6 11.74%, #7f58b7 87.19%));
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (max-width: 768px) {
+  .button {
+    font-size: 14px;
+    padding: 8px 16px;
+  }
+}

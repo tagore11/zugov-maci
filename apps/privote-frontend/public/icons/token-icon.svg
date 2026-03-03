@@ -1,0 +1,14 @@
+
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Token/coin circle -->
+  <circle cx="12" cy="12" r="10" stroke="white" stroke-width="2" fill="none"/>
+  <!-- Inner hexagon representing Ethereum -->
+  <path d="M12 4 L16 8 L16 16 L12 20 L8 16 L8 8 Z" stroke="white" stroke-width="1.5" fill="none"/>
+  <!-- Token symbol in center -->
+  <circle cx="12" cy="12" r="3" fill="white"/>
+  <!-- ERC20 indicator lines -->
+  <path d="M4 12 L8 12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M16 12 L20 12" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 4 L12 8" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 16 L12 20" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</svg>
