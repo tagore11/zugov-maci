@@ -1,2 +1,0 @@
-patchedDependencies:
-  '@anon-aadhaar/core@2.4.3': patches/@anon-aadhaar__core@2.4.3.patch

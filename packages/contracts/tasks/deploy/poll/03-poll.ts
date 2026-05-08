@@ -1,7 +1,7 @@
 /* eslint-disable no-console */
 import { EMode } from "@maci-protocol/core";
 import { type IVerifyingKeyObjectParams, PublicKey, VerifyingKey } from "@maci-protocol/domainobjs";
-import { ZeroAddress } from "ethers";
+import { ZeroAddress, toUtf8Bytes } from "ethers";
 
 import type { IVerifyingKeyStruct } from "../../../ts/types";
 import type { MACI, Poll, IBasePolicy, PollFactory, VerifyingKeysRegistry } from "../../../typechain-types";
@@ -142,6 +142,10 @@ deployment.deployTask(EDeploySteps.Poll, "Deploy poll").then((task) =>
 
     const pollName = deployment.getDeployConfigField<string | null>(EContracts.Poll, "name") ?? "";
     const pollMetadata = deployment.getDeployConfigField<string | null>(EContracts.Poll, "metadata") ?? "";
+    const pollOptionInfo = (deployment.getDeployConfigField<string[] | null>(EContracts.Poll, "optionInfo") ?? []).map(
+      (s) => toUtf8Bytes(s),
+    );
+
     const pollPolicyType = contractToPolicy(
       deployment.getDeployConfigField<EContracts | null>(EContracts.Poll, "policy") ?? EContracts.FreeForAllPolicy,
     );
@@ -169,7 +173,7 @@ deployment.deployTask(EDeploySteps.Poll, "Deploy poll").then((task) =>
           name: pollName,
           metadata: pollMetadata,
           options: pollOptions,
-          optionInfo: [],
+          optionInfo: pollOptionInfo,
           policyType: pollPolicyType,
         },
         deployerAddress,

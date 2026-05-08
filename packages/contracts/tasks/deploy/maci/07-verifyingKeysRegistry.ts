@@ -63,7 +63,7 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
     );
     const messageProcessorZkeyPathRanked = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
-      "zkeys.ranked.processMessagesZkey",
+      "zkeys.ranked.messageProcessorZkey",
     );
     const voteTallyZkeyPathQv = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
@@ -75,7 +75,7 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
     );
     const voteTallyZkeyPathRanked = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
-      "zkeys.ranked.tallyVotesZkey",
+      "zkeys.ranked.voteTallyZkey",
     );
     const tallyVotesZkeyPathFull = deployment.getDeployConfigField<string>(
       EContracts.VerifyingKeysRegistry,
@@ -113,6 +113,8 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
       nonQvProcessVerifyingKey,
       nonQvTallyQv,
       fullProcessVerifyingKey,
+      rankedProcessVerifyingKey,
+      rankedTallyVerifyingKey,
       pollJoiningVerifyingKey,
       pollJoinedVerifyingKey,
     ] = await Promise.all([
@@ -121,6 +123,8 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
       messageProcessorZkeyPathNonQv && extractVerifyingKey(messageProcessorZkeyPathNonQv),
       voteTallyZkeyPathNonQv && extractVerifyingKey(voteTallyZkeyPathNonQv),
       messageProcessorZkeyPathFull && extractVerifyingKey(messageProcessorZkeyPathFull),
+      messageProcessorZkeyPathRanked && extractVerifyingKey(messageProcessorZkeyPathRanked),
+      voteTallyZkeyPathRanked && extractVerifyingKey(voteTallyZkeyPathRanked),
       pollJoiningZkeyPath && extractVerifyingKey(pollJoiningZkeyPath),
       pollJoinedZkeyPath && extractVerifyingKey(pollJoinedZkeyPath),
     ]).then((verifyingKeys) =>
@@ -140,10 +144,15 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
       initialOwner,
     );
 
-    const processZkeys = [qvProcessVerifyingKey, nonQvProcessVerifyingKey, fullProcessVerifyingKey].filter(
+    const processZkeys = [
+      qvProcessVerifyingKey,
+      nonQvProcessVerifyingKey,
+      fullProcessVerifyingKey,
+      rankedProcessVerifyingKey,
+    ].filter(Boolean) as IVerifyingKeyStruct[];
+    const tallyZkeys = [qvTallyVerifyingKey, nonQvTallyQv, nonQvTallyQv, rankedTallyVerifyingKey].filter(
       Boolean,
     ) as IVerifyingKeyStruct[];
-    const tallyZkeys = [qvTallyVerifyingKey, nonQvTallyQv, nonQvTallyQv].filter(Boolean) as IVerifyingKeyStruct[];
     const modes: EMode[] = [];
 
     if (qvProcessVerifyingKey && qvTallyVerifyingKey) {
@@ -156,6 +165,10 @@ deployment.deployTask(EDeploySteps.VerifyingKeysRegistry, "Deploy verifying key 
 
     if (fullProcessVerifyingKey && nonQvTallyQv) {
       modes.push(EMode.FULL);
+    }
+
+    if (rankedProcessVerifyingKey && rankedTallyVerifyingKey) {
+      modes.push(EMode.RANKED);
     }
 
     await verifyingKeysRegistryContract
