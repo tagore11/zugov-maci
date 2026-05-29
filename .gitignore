@@ -158,3 +158,8 @@ packages/circuits/circom/test
 proofs
 
 inputs.json 
+
+.vercel
+.env*.local
+
+apps/zugov-frontend/dist/*

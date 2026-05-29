@@ -38,11 +38,14 @@ const QUERIES = {
         id
         pollId
         name
+        metadata
         startDate
         endDate
         voteOptions
         options
         mode
+        policyType
+        policy
       }
     }
   `,
@@ -62,11 +65,14 @@ export interface SubgraphPoll {
   id: string;
   pollId: string;
   name: string;
+  metadata: string;
   startDate: string;
   endDate: string;
   voteOptions: string;
   options: string[] | null;
   mode: PollMode;
+  policyType: string;
+  policy: string;
 }
 
 async function querySubgraph<T>(url: string, query: string, variables?: Record<string, unknown>): Promise<T> {
@@ -80,7 +86,9 @@ async function querySubgraph<T>(url: string, query: string, variables?: Record<s
     throw new Error(`Subgraph request failed: ${response.status} ${response.statusText}`);
   }
 
-  const { data, errors } = (await response.json()) as { data: T; errors?: { message: string }[] };
+  const json = await response.json();
+  console.log("[querySubgraph] raw response:", JSON.stringify(json));
+  const { data, errors } = json as { data: T; errors?: { message: string }[] };
 
   if (errors?.length) {
     throw new Error(`Subgraph errors: ${errors.map((e) => e.message).join(", ")}`);
@@ -91,10 +99,12 @@ async function querySubgraph<T>(url: string, query: string, variables?: Record<s
 
 export async function fetchIsRegistered(url: string, governanceType: GovernanceType, userId: string): Promise<boolean> {
   if (governanceType === GovernanceTypes.MACI) {
+    console.log("[fetchIsRegistered] subgraphUrl:", url, "userId:", userId);
     const data = await querySubgraph<{ user: { accounts: { id: string }[] } | null }>(url, QUERIES.GET_IS_REGISTERED, {
       userId,
     });
-    return (data.user?.accounts.length ?? 0) > 0;
+    console.log("[fetchIsRegistered] result:", JSON.stringify(data));
+    return (data?.user?.accounts.length ?? 0) > 0;
   }
 
   throw new Error(`fetchIsRegistered: unsupported governance type "${governanceType}"`);

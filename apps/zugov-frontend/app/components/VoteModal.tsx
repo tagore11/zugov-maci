@@ -8,13 +8,14 @@ import type { SubgraphPoll } from "@/src/services/subgraph";
 
 interface VoteModalProps {
   poll: SubgraphPoll;
-  pollStateIndex: string;
+  maciAddress: string;
+  rpcUrl: string;
   governanceType: GovernanceType;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function VoteModal({ poll, pollStateIndex, governanceType, onClose, onSuccess }: VoteModalProps) {
+export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, onSuccess }: VoteModalProps) {
   const { address } = useAccount();
   const { isVoting, voteError, castVote } = useVote(governanceType);
 
@@ -75,7 +76,8 @@ export function VoteModal({ poll, pollStateIndex, governanceType, onClose, onSuc
       await castVote({
         pollAddress: poll.id,
         pollId: BigInt(poll.pollId),
-        pollStateIndex,
+        maciAddress,
+        rpcUrl,
         voteOptionIndex: packRankedOptions(rankedOptions),
         voteWeight: 1n,
         maxVoteOption: BigInt(poll.voteOptions),
@@ -87,7 +89,8 @@ export function VoteModal({ poll, pollStateIndex, governanceType, onClose, onSuc
       await castVote({
         pollAddress: poll.id,
         pollId: BigInt(poll.pollId),
-        pollStateIndex,
+        maciAddress,
+        rpcUrl,
         voteOptionIndex: BigInt(selectedOption),
         voteWeight: 1n,
         maxVoteOption: BigInt(poll.voteOptions),

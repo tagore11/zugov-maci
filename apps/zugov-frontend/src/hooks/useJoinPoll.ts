@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useAccount, useWalletClient } from "wagmi";
 import { BrowserProvider, JsonRpcSigner, type Eip1193Provider } from "ethers";
 import { joinPoll } from "@maci-protocol/sdk/browser";
-import { Poll__factory } from "@maci-protocol/contracts/typechain-types";
+import { Poll__factory } from "../poll-factory-shim";
 import { useMaci } from "../context/MaciContext";
 import { GovernanceTypes, type GovernanceType } from "../config";
 import { fetchStartBlock } from "../services/subgraph";
@@ -34,9 +34,11 @@ async function getPollJoinedDataFromReceipt(
   );
   const event = events[0];
   if (!event) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const args = (event as any).args;
   return {
-    pollStateIndex: event.args._pollStateIndex.toString(),
-    voiceCredits: event.args._voiceCreditBalance.toString(),
+    pollStateIndex: args._pollStateIndex.toString(),
+    voiceCredits: args._voiceCreditBalance.toString(),
   };
 }
 
@@ -53,7 +55,7 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
   const { data: walletClient } = useWalletClient();
   const { maciKeypair } = useMaci();
   console.log("useJoinPoll", isConnected, address, maciKeypair);
-  const [isJoiningPoll, setIsJoiningPoll] = useState(false);
+  const [joiningPollId, setJoiningPollId] = useState<string | null>(null);
   const [joinPollError, setJoinPollError] = useState<string | null>(null);
 
   const joinThePoll = useCallback(
@@ -80,7 +82,7 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
         throw new Error(`Join poll not supported for governance type "${governanceType}"`);
       }
 
-      setIsJoiningPoll(true);
+      setJoiningPollId(pollAddress);
       setJoinPollError(null);
 
       if (!walletClient) throw new Error("Wallet client not available");
@@ -134,7 +136,7 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
         setJoinPollError(message);
         throw err;
       } finally {
-        setIsJoiningPoll(false);
+        setJoiningPollId(null);
       }
     },
     [isConnected, maciKeypair, address, governanceType, walletClient],
@@ -147,6 +149,8 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
     },
     [address],
   );
+
+  const isJoiningPoll = (pollAddress: string) => joiningPollId === pollAddress;
 
   return { isJoiningPoll, joinPollError, joinThePoll, getPollStateIndex };
 }

@@ -1,6 +1,6 @@
 import { JsonRpcProvider } from "ethers";
-import { Poll__factory } from "@maci-protocol/contracts/typechain-types";
-import { GovernanceTypes, type GovernanceType } from "../config";
+import { Poll__factory, BasePolicy__factory, BaseChecker__factory } from "../poll-factory-shim";
+import { GovernanceTypes, PolicyType, type GovernanceType } from "../config";
 
 const SCROLL_SEPOLIA_RPC = "https://sepolia-rpc.scroll.io";
 
@@ -18,4 +18,37 @@ export async function fetchNumMessages(governanceType: GovernanceType, pollAddre
   const poll = Poll__factory.connect(pollAddress, provider);
   const count = await poll.numMessages();
   return Number(count);
+}
+
+/**
+ * Checks whether a wallet address satisfies a poll's signup policy.
+ * Resolves the checker via BasePolicy.BASE_CHECKER() then calls check(subject, "0x").
+ * ZK-proof-based policies (Zupass, Semaphore, MerkleProof, AnonAadhaar) cannot be
+ * verified client-side without a proof, so they fall back to true (let the user try).
+ */
+export async function fetchIsEligible(
+  governanceType: GovernanceType,
+  policyAddress: string,
+  policyType: string,
+  userAddress: string,
+): Promise<boolean> {
+  if (governanceType !== GovernanceTypes.MACI) {
+    throw new Error(`fetchIsEligible: unsupported governance type "${governanceType}"`);
+  }
+
+  const proofRequiredPolicies = [
+    PolicyType.MerkleProof,
+    PolicyType.Zupass,
+    PolicyType.Semaphore,
+    PolicyType.AnonAadhaar,
+  ];
+  if (proofRequiredPolicies.includes(policyType as (typeof proofRequiredPolicies)[number])) {
+    return false;
+  }
+
+  const provider = new JsonRpcProvider(SCROLL_SEPOLIA_RPC);
+  const policy = BasePolicy__factory.connect(policyAddress, provider);
+  const checkerAddress = await policy.BASE_CHECKER();
+  const checker = BaseChecker__factory.connect(checkerAddress, provider);
+  return checker.check(userAddress, "0x");
 }

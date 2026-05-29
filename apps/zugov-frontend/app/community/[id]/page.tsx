@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAccount } from "wagmi";
+import { useAccount, useChainId } from "wagmi";
 import type { Keypair } from "@maci-protocol/domainobjs";
 import { Header } from "../../components/Header";
 import {
@@ -14,12 +14,13 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  ArrowLeft,
 } from "lucide-react";
 import { getStoredVote } from "@/src/lib/voteStorage";
 import { CreateProposalModal } from "../../components/CreateProposalModal";
 import { VoteModal } from "../../components/VoteModal";
 import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/placeholder-data";
-import { appConstants, maciArtifacts, type GovernanceType } from "@/src/config";
+import { appConstants, maciArtifacts, type GovernanceType, type PollDeployConfig } from "@/src/config";
 import {
   fetchIsRegistered,
   fetchMembers,
@@ -28,7 +29,7 @@ import {
   formatMaciUserId,
   type SubgraphPoll,
 } from "@/src/services/subgraph";
-import { fetchNumMessages } from "@/src/services/readContract";
+import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
 import { useMaci } from "@/src/context/MaciContext";
 import { useSignup } from "@/src/hooks/useSignup";
 import { useJoinPoll } from "@/src/hooks/useJoinPoll";
@@ -39,6 +40,7 @@ const DAO_CONFIG_LOOKUP: Record<
     subgraphUrl: string;
     governanceType: GovernanceType;
     governanceContract: string;
+    pollDeployConfig?: PollDeployConfig;
   }
 > = Object.fromEntries(
   Object.values(appConstants).flatMap(({ daos }) =>
@@ -50,6 +52,7 @@ const DAO_CONFIG_LOOKUP: Record<
           subgraphUrl: dao.subgraphUrl,
           governanceType: dao.governanceType,
           governanceContract: dao.governanceContract,
+          pollDeployConfig: dao.pollDeployConfig,
         },
       ]),
   ),
@@ -63,11 +66,11 @@ const realCommunityEntries = Object.values(appConstants).flatMap(({ daos }) =>
         {
           name: dao.displayName ?? dao.id ?? "",
           description: dao.description ?? "",
-          summary: dao.description ?? "",
+          summary: dao.summary ?? "",
           logo: dao.logo ?? dao.logoUrl ?? "",
           members: dao.members ?? 0,
-          category: dao.category ?? "",
-          affiliatedCommunities: [],
+          category: dao.category ?? "", //TODO
+          affiliatedCommunities: [], //TODO
         },
       ] as const,
   ),
@@ -104,7 +107,7 @@ function PollActionButton({
   poll: SubgraphPoll | null;
   daoConfig: { governanceContract: string };
   maciKeypair: Keypair | null;
-  isJoiningPoll: boolean;
+  isJoiningPoll: (pollAddress: string) => boolean;
   getPollStateIndex: (pollAddress: string) => string | null;
   joinThePoll: (args: {
     maciAddress: string;
@@ -133,28 +136,32 @@ function PollActionButton({
 
   const isJoined = isJoinedOnChain || getPollStateIndex(poll.id) !== null;
   const hasVoted = !!address && !!getStoredVote(poll.id, address);
+  const joining = isJoiningPoll(poll.id);
 
   if (!isJoined) {
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          joinThePoll({
-            maciAddress: daoConfig.governanceContract,
-            pollId: BigInt(poll.pollId),
-            pollAddress: poll.id,
-            pollJoiningZkeyUrl: maciArtifacts.pollJoiningZkeyUrl,
-            pollJoiningWasmUrl: maciArtifacts.pollJoiningWasmUrl,
-            subgraphUrl,
-          })
-            .then(onJoined)
-            .catch(() => {});
-        }}
-        disabled={isJoiningPoll}
-        className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-      >
-        {isJoiningPoll ? "Joining..." : "Join Poll"}
-      </button>
+      <div className="flex flex-col items-end gap-1">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            joinThePoll({
+              maciAddress: daoConfig.governanceContract,
+              pollId: BigInt(poll.pollId),
+              pollAddress: poll.id,
+              pollJoiningZkeyUrl: maciArtifacts.pollJoiningZkeyUrl,
+              pollJoiningWasmUrl: maciArtifacts.pollJoiningWasmUrl,
+              subgraphUrl,
+            })
+              .then(onJoined)
+              .catch(() => {});
+          }}
+          disabled={joining}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        >
+          {joining ? "Generating proof..." : "Join Poll"}
+        </button>
+        {joining && <p className="text-xs text-gray-500">This may take 1–3 minutes. Please keep this tab open.</p>}
+      </div>
     );
   }
 
@@ -181,8 +188,10 @@ export default function CommunityPage() {
 
   const { maciKeypair } = useMaci();
   const { address } = useAccount();
+  const chainId = useChainId();
   const community = COMMUNITY_LOOKUP[params.id ?? ""];
   const daoConfig = DAO_CONFIG_LOOKUP[params.id ?? ""];
+  const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
 
   const queryClient = useQueryClient();
   const { isSigningUp, signupToMaci } = useSignup(daoConfig?.governanceType);
@@ -234,6 +243,19 @@ export default function CommunityPage() {
     enabled: !!pollsData?.length && !!daoConfig,
   });
 
+  const { data: eligibilityMap = {} } = useQuery({
+    queryKey: ["pollEligibility", pollsData?.map((p) => p.id), address],
+    queryFn: () =>
+      Promise.all(
+        pollsData!.map((p) =>
+          fetchIsEligible(daoConfig.governanceType, p.policy, p.policyType, address!).then(
+            (eligible) => [p.id, eligible] as const,
+          ),
+        ),
+      ).then(Object.fromEntries<boolean>),
+    enabled: !!pollsData?.length && !!daoConfig && !!address,
+  });
+
   const maciUserId = maciKeypair ? formatMaciUserId(maciKeypair) : null;
 
   const { data: isRegistered = false } = useQuery({
@@ -249,10 +271,11 @@ export default function CommunityPage() {
     ? pollsData.map((poll) => ({
         id: poll.id,
         title: poll.name,
+        description: poll.metadata,
         status: Number(poll.endDate) > now ? "active" : "closed",
         type: "onchain",
         privacy: "public",
-        eligible: true,
+        eligible: eligibilityMap[poll.id] ?? false,
         votes: messageCounts[poll.id] ?? 0,
         startDate: new Date(Number(poll.startDate) * 1000).toISOString(),
         endDate: new Date(Number(poll.endDate) * 1000).toISOString().slice(0, 10),
@@ -284,6 +307,14 @@ export default function CommunityPage() {
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span className="text-sm font-medium">Back to Communities</span>
+        </Link>
+
         {/* Community Header */}
         <div className="bg-white rounded-xl border border-gray-200 p-8 mb-6">
           <div className="flex items-start justify-between mb-6">
@@ -608,13 +639,19 @@ export default function CommunityPage() {
       <CreateProposalModal
         isOpen={showCreateProposal}
         onClose={() => setShowCreateProposal(false)}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["polls", params.id] })}
         communityId={params.id as string}
+        governanceType={daoConfig?.governanceType}
+        maciAddress={daoConfig?.governanceContract}
+        pollDeployConfig={daoConfig?.pollDeployConfig}
+        existingPollAddress={pollsData?.[0]?.id ?? null}
       />
 
       {voteModalPoll && (
         <VoteModal
           poll={voteModalPoll}
-          pollStateIndex={getPollStateIndex(voteModalPoll.id) ?? "0"}
+          maciAddress={daoConfig!.governanceContract}
+          rpcUrl={rpcUrl}
           governanceType={daoConfig!.governanceType}
           onClose={() => setVoteModalPoll(null)}
           onSuccess={() => setVoteModalPoll(null)}

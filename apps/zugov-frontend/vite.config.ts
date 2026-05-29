@@ -4,8 +4,6 @@ import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import { resolve } from "path";
 
-const CONTRACTS_BUILD = resolve(__dirname, "node_modules/@maci-protocol/contracts/build");
-
 export default defineConfig({
   plugins: [react(), tailwindcss(), nodePolyfills()],
   resolve: {
@@ -17,9 +15,11 @@ export default defineConfig({
         __dirname,
         "node_modules/vite-plugin-node-polyfills/shims/buffer",
       ),
+      // @maci-protocol/contracts/typechain-types is used by the SDK browser bundle.
+      // Redirect to a local shim that provides the factories actually used at runtime.
+      "@maci-protocol/contracts/typechain-types": resolve(__dirname, "src/poll-factory-shim.ts"),
       // @maci-protocol/contracts pulls in hardhat + native .node binaries.
       // Redirect to a browser-safe shim that only exports ABI factories + enums.
-      "@maci-protocol/contracts/typechain-types": `${CONTRACTS_BUILD}/typechain-types/index.js`,
       "@maci-protocol/contracts": resolve(__dirname, "src/maci-contracts-browser-shim.js"),
       // Dynamic require("hardhat") inside @maci-protocol/contracts/ts/utils.js
       // would crash the browser. Redirect to an empty stub.
@@ -32,7 +32,8 @@ export default defineConfig({
   },
   build: {
     commonjsOptions: {
-      include: [/node_modules/, /packages\/domainobjs/, /packages\/sdk/, /packages\/contracts/],
+      transformMixedEsModules: true,
+      include: [/node_modules/, /packages\/.+\/build\//],
     },
     rollupOptions: {
       external: ["hardhat", "@nomicfoundation/solidity-analyzer"],

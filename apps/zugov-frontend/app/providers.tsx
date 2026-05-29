@@ -7,10 +7,12 @@ import { useState, type ReactNode } from "react";
 
 const config = getDefaultConfig({
   appName: "ZuGov",
-  projectId: "YOUR_PROJECT_ID",
+  projectId: "YOUR_PROJECT_ID", //TODO:
   chains: [mainnet, polygon, optimism, arbitrum, scroll, scrollSepolia],
   transports: {
-    [mainnet.id]: http(),
+    // ENS resolution happens on mainnet — use retryCount:0 so a slow public RPC
+    // fails fast instead of retrying 3× and crashing React reconciliation.
+    [mainnet.id]: http(undefined, { retryCount: 0, timeout: 5_000 }),
     [polygon.id]: http(),
     [optimism.id]: http(),
     [arbitrum.id]: http(),

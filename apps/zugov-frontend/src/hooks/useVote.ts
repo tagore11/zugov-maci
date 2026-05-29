@@ -1,9 +1,10 @@
 import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
-import { BrowserProvider } from "ethers";
+import { BrowserProvider, JsonRpcProvider } from "ethers";
 import { generateVote, submitVote, getCoordinatorPublicKey } from "@maci-protocol/sdk/browser";
 import { useMaci } from "../context/MaciContext";
 import { GovernanceTypes, type GovernanceType } from "../config";
+import { MACI__factory } from "../poll-factory-shim";
 
 export function useVote(governanceType: GovernanceType | undefined) {
   const { isConnected, address } = useAccount();
@@ -15,7 +16,8 @@ export function useVote(governanceType: GovernanceType | undefined) {
     async ({
       pollAddress,
       pollId,
-      pollStateIndex,
+      maciAddress,
+      rpcUrl,
       voteOptionIndex,
       voteWeight,
       maxVoteOption,
@@ -24,7 +26,8 @@ export function useVote(governanceType: GovernanceType | undefined) {
     }: {
       pollAddress: string;
       pollId: bigint;
-      pollStateIndex: string;
+      maciAddress: string;
+      rpcUrl: string;
       voteOptionIndex: bigint;
       voteWeight: bigint;
       maxVoteOption: bigint;
@@ -45,6 +48,15 @@ export function useVote(governanceType: GovernanceType | undefined) {
         const provider = new BrowserProvider(window.ethereum!);
         const signer = await provider.getSigner();
 
+        // Fetch the MACI state index (1-based) for this user's public key
+        const readProvider = new JsonRpcProvider(rpcUrl);
+        const maciContract = MACI__factory.connect(maciAddress, readProvider);
+        const stateIndex = await maciContract.getStateIndex(maciKeypair.publicKey.hash());
+
+        if (stateIndex < 1n) {
+          throw new Error("You are not registered in MACI. Please register before voting.");
+        }
+
         const coordinatorPublicKey = await getCoordinatorPublicKey(pollAddress, signer);
 
         const vote = generateVote({
@@ -53,7 +65,7 @@ export function useVote(governanceType: GovernanceType | undefined) {
           nonce,
           isRanked,
           privateKey: maciKeypair.privateKey,
-          stateIndex: BigInt(pollStateIndex),
+          stateIndex,
           voteWeight,
           coordinatorPublicKey,
           maxVoteOption,
