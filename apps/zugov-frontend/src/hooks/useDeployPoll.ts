@@ -39,7 +39,7 @@ export interface UseDeployPollResult {
     pollDeployConfig: PollDeployConfig;
     existingPollAddress: string | null;
     formData: DeployPollFormData;
-  }) => Promise<void>;
+  }) => Promise<{ pollAddress: string; pollId: string; txHash: string }>;
 }
 
 async function getEthersSigner() {
@@ -176,6 +176,8 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
         const policy = FreeForAllPolicy__factory.connect(policyAddress, signer);
         const setTargetTx = await policy.setTarget(contracts.poll);
         await setTargetTx.wait();
+
+        return { pollAddress: contracts.poll, pollId: pollId.toString(), txHash: deployPollTx.hash };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setDeployError(message);

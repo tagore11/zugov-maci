@@ -21,6 +21,10 @@ import { CreateProposalModal } from "../../components/CreateProposalModal";
 import { VoteModal } from "../../components/VoteModal";
 import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/placeholder-data";
 import { appConstants, maciArtifacts, type GovernanceType, type PollDeployConfig } from "@/src/config";
+import * as communityApi from "@/src/services/communityApi";
+import { JoinSection } from "./JoinSection";
+import { GovernanceActionsList } from "../../components/GovernanceActionsList";
+import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import {
   fetchIsRegistered,
   fetchMembers,
@@ -178,6 +182,23 @@ function PollActionButton({
   );
 }
 
+function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex justify-between gap-4 px-4 py-2.5">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className={`text-white text-right ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+function formatRelativeTime(unixSec: number): string {
+  const diff = Date.now() / 1000 - unixSec;
+  if (diff < 60) return "just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
+  return new Date(unixSec * 1000).toLocaleDateString();
+}
+
 export default function CommunityPage() {
   const params = useParams();
   const [showCreateProposal, setShowCreateProposal] = useState(false);
@@ -189,7 +210,15 @@ export default function CommunityPage() {
   const { maciKeypair } = useMaci();
   const { address } = useAccount();
   const chainId = useChainId();
-  const community = COMMUNITY_LOOKUP[params.id ?? ""];
+
+  // Try static lookup first, then backend for backend-registered communities
+  const staticCommunity = COMMUNITY_LOOKUP[params.id ?? ""];
+  const { data: backendCommunity, isLoading: isCommunityLoading } = useQuery({
+    queryKey: ["community", params.id],
+    queryFn: () => communityApi.get(params.id!),
+    enabled: !staticCommunity && !!params.id,
+  });
+  const community = staticCommunity;
   const daoConfig = DAO_CONFIG_LOOKUP[params.id ?? ""];
   const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
 
@@ -291,13 +320,90 @@ export default function CommunityPage() {
     }
   }, [params.id, pollsData]);
 
-  if (!community) {
+  // Loading state while fetching from backend
+  if (!community && isCommunityLoading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-950 text-white">
         <Header />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <p className="text-center text-gray-600">Community not found</p>
-        </div>
+        <main className="max-w-4xl mx-auto px-4 py-8">
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 animate-pulse">
+            <div className="h-8 bg-gray-700 rounded w-1/3 mb-4" />
+            <div className="h-4 bg-gray-700 rounded w-2/3" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  // Render backend-fetched community page
+  if (!community && backendCommunity) {
+    const dc = backendCommunity;
+    const policyNames = dc.allowedPolicies
+      .map((id) => ALLOWED_POLICIES.find((p) => p.id === String(id))?.name ?? id)
+      .join(", ");
+    const modeNames = dc.supportedModes
+      .map((id) => VOTING_MODES.find((m) => m.id === String(id))?.name ?? id)
+      .join(", ");
+
+    return (
+      <div className="min-h-screen bg-gray-950 text-white">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Communities
+          </Link>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-4xl">{dc.logo || "🏛️"}</span>
+              <div>
+                <h1 className="text-2xl font-bold">{dc.displayName}</h1>
+                <p className="text-xs text-gray-500 font-mono mt-0.5">{dc.id}</p>
+              </div>
+            </div>
+
+            {dc.description && <p className="text-gray-400 text-sm">{dc.description}</p>}
+
+            <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
+              <InfoRow label="Voting mechanism" value="MACI" />
+              <InfoRow label="Sign-up policy" value={dc.signUpPolicyType} />
+              <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
+              <InfoRow label="Voting modes" value={modeNames || "—"} />
+              <InfoRow label="Created" value={formatRelativeTime(dc.createdAt)} />
+              <InfoRow label="Creator" value={`${dc.creatorAddress.slice(0, 6)}…${dc.creatorAddress.slice(-4)}`} mono />
+            </div>
+
+            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+              Subgraph data not available for this community yet. Member count and poll history will appear once the
+              subgraph is indexed.
+            </div>
+
+            <JoinSection communityId={dc.id} connected={!!address} />
+          </div>
+
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+            <GovernanceActionsList communityId={dc.id} connected={!!address} />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!community && !backendCommunity) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-white">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 py-8 space-y-4">
+          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Communities
+          </Link>
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-8 text-center">
+            <p className="text-xl font-semibold text-white mb-2">Community not found</p>
+            <p className="text-gray-400 text-sm">No community is registered at this address.</p>
+          </div>
+        </main>
       </div>
     );
   }

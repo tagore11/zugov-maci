@@ -684,6 +684,7 @@ export enum EContracts {
   Poll = "Poll",
   Tally = "Tally",
   MessageProcessor = "MessageProcessor",
+  ZuGovRegistry = "ZuGovRegistry",
 }
 
 const CONTRACT_TO_EPOLICIES: Partial<Record<EContracts, EPolicies>> = {

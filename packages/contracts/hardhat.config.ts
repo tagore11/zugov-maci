@@ -72,7 +72,7 @@ const config: HardhatUserConfig = {
       },
     ],
   },
-  defaultNetwork: "localhost",
+  defaultNetwork: "hardhat",
   networks: {
     mainnet: getCommonNetworkConfig(ESupportedChains.Mainnet, EChainId.Mainnet),
     sepolia: getCommonNetworkConfig(ESupportedChains.Sepolia, EChainId.Sepolia),

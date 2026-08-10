@@ -1,20 +1,58 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useAccount } from "wagmi";
 import { Header } from "../components/Header";
 import { Plus, Edit, Users, FileText } from "lucide-react";
 import { CreateCommunityModal } from "../components/CreateCommunityModal";
 import { Link } from "react-router-dom";
+import * as communityApi from "@/src/services/communityApi";
+
+type UserCommunityItem = {
+  id: string;
+  name: string;
+  description: string;
+  logo: string;
+  members: number;
+  proposals: number;
+};
+
+function apiToItem(c: communityApi.Community): UserCommunityItem {
+  return {
+    id: c.id,
+    name: c.displayName,
+    description: c.description ?? "",
+    logo: c.logo ?? "🏛️",
+    members: 0,
+    proposals: 0,
+  };
+}
 
 export default function ManageCommunitiesPage() {
+  const { address } = useAccount();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [userCommunities, setUserCommunities] = useState<any[]>([]);
+  const [userCommunities, setUserCommunities] = useState<UserCommunityItem[]>([]);
+
+  const fetchUserCommunities = useCallback(async () => {
+    if (!address) {
+      setUserCommunities([]);
+      return;
+    }
+    try {
+      const { communities: items } = await communityApi.list(1, undefined, address);
+      setUserCommunities(items.map(apiToItem));
+    } catch {
+      // keep previous list on error
+    }
+  }, [address]);
 
   useEffect(() => {
-    // Load user communities from localStorage
-    const storedCommunities = localStorage.getItem("userCommunities");
-    if (storedCommunities) {
-      setUserCommunities(JSON.parse(storedCommunities));
-    }
-  }, []);
+    void fetchUserCommunities();
+  }, [fetchUserCommunities]);
+
+  // Refresh immediately after a new community is created (see app/page.tsx for the same pattern).
+  useEffect(() => {
+    window.addEventListener("zugov:community-created", fetchUserCommunities);
+    return () => window.removeEventListener("zugov:community-created", fetchUserCommunities);
+  }, [fetchUserCommunities]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -26,7 +64,7 @@ export default function ManageCommunitiesPage() {
           <p className="text-gray-600">Create and manage your communities</p>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 flex gap-3 flex-wrap">
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
@@ -34,6 +72,12 @@ export default function ManageCommunitiesPage() {
             <Plus className="w-5 h-5" />
             Create New Community
           </button>
+          <Link
+            to="/manage-communities/register"
+            className="flex items-center gap-2 px-6 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg font-semibold hover:bg-indigo-50 transition-colors"
+          >
+            Register Existing Community
+          </Link>
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">

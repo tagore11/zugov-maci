@@ -13,6 +13,7 @@ describe("Hasher", () => {
   before(async () => {
     const { PoseidonT3Contract, PoseidonT4Contract, PoseidonT5Contract, PoseidonT6Contract } =
       await deployPoseidonContracts(await getDefaultSigner(), {}, true);
+
     const [poseidonT3ContractAddress, poseidonT4ContractAddress, poseidonT5ContractAddress, poseidonT6ContractAddress] =
       await Promise.all([
         PoseidonT3Contract.getAddress(),
@@ -20,6 +21,7 @@ describe("Hasher", () => {
         PoseidonT5Contract.getAddress(),
         PoseidonT6Contract.getAddress(),
       ]);
+
     // Link Poseidon contracts
     const hasherContractFactory = await createContractFactory(
       HasherFactory.abi,

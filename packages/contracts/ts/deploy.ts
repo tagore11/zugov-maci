@@ -1,3 +1,4 @@
+import { EMode, EPolicy } from "@maci-protocol/core";
 import { type ContractFactory, type Signer, type BaseContract, type BigNumberish } from "ethers";
 import { type HardhatRuntimeEnvironment } from "hardhat/types";
 
@@ -896,6 +897,9 @@ export const deployPollFactory = async (
  * @dev used in packages/contract tests (there is another deploy maci in tasks/runner and another in packages/sdk)
  * @returns {IDeployedMaci} the deployed MACI contract
  */
+const ALL_MODES = Object.values(EMode).filter((v): v is EMode => typeof v === "number");
+const ALL_POLICIES = Object.values(EPolicy).filter((v): v is EPolicy => typeof v === "number");
+
 export const deployMaci = async ({
   policyContractAddress,
   signer,
@@ -904,6 +908,8 @@ export const deployMaci = async ({
   factories,
   quiet = true,
   verifier,
+  initialSupportedModes = ALL_MODES,
+  initialAllowedPolicies = ALL_POLICIES,
 }: IDeployMaciArgs): Promise<IDeployedMaci> => {
   const emptyBallotRoots = generateEmptyBallotRoots(stateTreeDepth);
 
@@ -935,8 +941,11 @@ export const deployMaci = async ({
           let targetNetwork = networkName;
 
           if ((networkName === "hardhat" || networkName === "localhost") && forkUrl) {
-            // Extract network name from fork URL
-            if (forkUrl.includes("arb-mainnet") || forkUrl.includes("arbitrum")) {
+            // Extract network name from fork URL — check testnets before mainnets to avoid false matches
+            // (e.g. "scroll-sepolia" contains "scroll", "optimism-sepolia" contains "optimism")
+            if (forkUrl.includes("sepolia") || forkUrl.includes("goerli") || forkUrl.includes("testnet")) {
+              targetNetwork = "unknown";
+            } else if (forkUrl.includes("arb-mainnet") || forkUrl.includes("arbitrum")) {
               targetNetwork = "arbitrum";
             } else if (forkUrl.includes("optimism")) {
               targetNetwork = "optimism";
@@ -1086,6 +1095,8 @@ export const deployMaci = async ({
 
   const verifyingKeysRegistryContract = await deployVerifyingKeysRegistry(signer, quiet);
 
+  const owner = await signer!.getAddress();
+
   const maciContract = await deployContractWithLinkedLibraries<MACI>(maciContractFactory, signer, {
     pollFactory: pollAddress,
     messageProcessorFactory: messageProcessorAddress,
@@ -1095,6 +1106,9 @@ export const deployMaci = async ({
     verifyingKeysRegistry: verifyingKeysRegistryContract,
     stateTreeDepth,
     emptyBallotRoots,
+    owner,
+    initialSupportedModes,
+    initialAllowedPolicies,
   });
 
   return {

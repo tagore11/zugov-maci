@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "./components/Header";
 import { Search, TrendingUp, Users, FileText } from "lucide-react";
@@ -7,29 +7,45 @@ import { AuthModal } from "./components/AuthModal";
 import { EXAMPLE_COMMUNITIES } from "@/app/lib/placeholder-data";
 import { appConstants } from "@/src/config";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
+import * as communityApi from "@/src/services/communityApi";
 
-const realCommunities = Object.values(appConstants).flatMap(({ daos }) =>
-  Object.values(daos).map((dao) => ({
-    id: dao.id ?? "",
-    name: dao.displayName ?? dao.id ?? "",
-    description: dao.description ?? "",
-    logo: dao.logo ?? dao.logoUrl ?? "",
-    members: dao.members ?? 0,
-    proposals: dao.proposals ?? 0,
-    category: dao.category ?? "",
-  })),
-);
+type CommunityItem = {
+  id: string;
+  name: string;
+  description: string;
+  logo: string;
+  members: number;
+  proposals: number;
+  category: string;
+  createdAt?: number;
+};
 
-const BASE_COMMUNITIES = [...realCommunities, ...EXAMPLE_COMMUNITIES];
+const ONE_HOUR_SEC = 3600;
 
 const REAL_DAOS = Object.values(appConstants).flatMap(({ daos }) => Object.values(daos).filter((dao) => dao.id));
+
+function apiToItem(c: communityApi.Community): CommunityItem {
+  return {
+    id: c.id,
+    name: c.displayName,
+    description: c.description ?? "",
+    logo: c.logo ?? "🏛️",
+    members: 0,
+    proposals: 0,
+    category: "MACI",
+    createdAt: c.createdAt,
+  };
+}
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [communities, setCommunities] = useState(BASE_COMMUNITIES);
-  const [filteredCommunities, setFilteredCommunities] = useState(BASE_COMMUNITIES);
+  const [communities, setCommunities] = useState<CommunityItem[]>([...EXAMPLE_COMMUNITIES]);
+  const [filteredCommunities, setFilteredCommunities] = useState<CommunityItem[]>(communities);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingCommunities, setIsLoadingCommunities] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const { data: communityStats = {} } = useQuery({
     queryKey: ["communityStats"],
@@ -46,25 +62,46 @@ export default function Home() {
 
   const categories = ["All", "Residency", "Regional", "Network State", "Social"];
 
-  // Load communities from localStorage on mount
-  useEffect(() => {
-    const storedCommunities = localStorage.getItem("userCommunities");
-    if (storedCommunities) {
-      const userCommunities = JSON.parse(storedCommunities);
-      setCommunities([...BASE_COMMUNITIES, ...userCommunities]);
+  const fetchCommunities = useCallback(async (page: number, reset: boolean) => {
+    setIsLoadingCommunities(true);
+    try {
+      const { communities: items, hasMore: more } = await communityApi.list(page);
+      const converted = items.map(apiToItem);
+      if (reset) {
+        setCommunities([...EXAMPLE_COMMUNITIES, ...converted]);
+      } else {
+        setCommunities((prev) => [...prev, ...converted]);
+      }
+      setHasMore(more);
+    } catch {
+      // keep existing items on error
+    } finally {
+      setIsLoadingCommunities(false);
     }
   }, []);
+
+  useEffect(() => {
+    void fetchCommunities(1, true);
+  }, [fetchCommunities]);
+
+  // Subscribe to community-created event for real-time updates
+  useEffect(() => {
+    const handleCreated = () => {
+      setCurrentPage(1);
+      void fetchCommunities(1, true);
+    };
+    window.addEventListener("zugov:community-created", handleCreated);
+    return () => window.removeEventListener("zugov:community-created", handleCreated);
+  }, [fetchCommunities]);
 
   // Filter communities whenever search or category changes
   useEffect(() => {
     let filtered = communities;
 
-    // Filter by category
     if (selectedCategory !== "All") {
       filtered = filtered.filter((c) => c.category === selectedCategory);
     }
 
-    // Filter by search query
     if (searchQuery.trim()) {
       filtered = filtered.filter(
         (c) =>
@@ -75,6 +112,8 @@ export default function Home() {
 
     setFilteredCommunities(filtered);
   }, [searchQuery, selectedCategory, communities]);
+
+  const nowSec = Date.now() / 1000;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -99,6 +138,12 @@ export default function Home() {
               className="px-6 py-3 bg-indigo-500 text-white rounded-lg font-semibold hover:bg-indigo-400 transition-colors"
             >
               Manage Profile
+            </Link>
+            <Link
+              to="/manage-communities"
+              className="px-6 py-3 bg-white/20 text-white border border-white/40 rounded-lg font-semibold hover:bg-white/30 transition-colors"
+            >
+              + Create Community
             </Link>
           </div>
         </div>
@@ -175,42 +220,74 @@ export default function Home() {
           <h2 className="text-xl font-semibold text-gray-900">Showing {filteredCommunities.length} Communities</h2>
         </div>
 
-        {filteredCommunities.length === 0 ? (
+        {isLoadingCommunities && communities.length === 0 ? (
+          <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
+            <p className="text-gray-500">Loading communities...</p>
+          </div>
+        ) : filteredCommunities.length === 0 ? (
           <div className="text-center py-12 bg-white rounded-xl border border-gray-200">
             <p className="text-gray-500">No communities found matching your criteria</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {filteredCommunities.map((community) => (
-              <Link
-                key={community.id}
-                to={`/community/${community.id}`}
-                className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-              >
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="text-4xl">{community.logo}</div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-lg text-gray-900 mb-1">{community.name}</h3>
-                    <span className="inline-block px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
-                      {community.category}
-                    </span>
+            {filteredCommunities.map((community) => {
+              const isNew = community.createdAt !== undefined && nowSec - community.createdAt < ONE_HOUR_SEC;
+              return (
+                <Link
+                  key={community.id}
+                  to={`/community/${community.id}`}
+                  className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
+                >
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="text-4xl">{community.logo}</div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-semibold text-lg text-gray-900">{community.name}</h3>
+                        {isNew && (
+                          <span className="inline-block px-1.5 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded">
+                            just now
+                          </span>
+                        )}
+                      </div>
+                      <span className="inline-block px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                        {community.category}
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <p className="text-sm text-gray-600 mb-4">{community.description}</p>
+                  <p className="text-sm text-gray-600 mb-4">{community.description}</p>
 
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    <span>{(communityStats[community.id]?.members ?? community.members).toLocaleString()} members</span>
+                  <div className="flex items-center justify-between text-sm text-gray-500">
+                    <div className="flex items-center gap-1">
+                      <Users className="w-4 h-4" />
+                      <span>
+                        {(communityStats[community.id]?.members ?? community.members).toLocaleString()} members
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <FileText className="w-4 h-4" />
+                      <span>{communityStats[community.id]?.proposals ?? community.proposals} proposals</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <FileText className="w-4 h-4" />
-                    <span>{communityStats[community.id]?.proposals ?? community.proposals} proposals</span>
-                  </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        {hasMore && !searchQuery && selectedCategory === "All" && (
+          <div className="flex justify-center mt-6">
+            <button
+              onClick={() => {
+                const nextPage = currentPage + 1;
+                setCurrentPage(nextPage);
+                void fetchCommunities(nextPage, false);
+              }}
+              disabled={isLoadingCommunities}
+              className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60"
+            >
+              {isLoadingCommunities ? "Loading..." : "Load more"}
+            </button>
           </div>
         )}
       </main>

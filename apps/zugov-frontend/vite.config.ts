@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
@@ -27,7 +27,11 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["@maci-protocol/domainobjs", "@maci-protocol/sdk/browser"],
+    // @maci-protocol/sdk's bare entry point (e.g. generateEmptyBallotRoots, used by
+    // useCreateCommunity.ts) is CJS and wasn't being pre-bundled — only the /browser subpath
+    // was, so the browser received the raw CommonJS file directly and failed to parse it as
+    // ESM ("does not provide an export named ..."), crashing every page that imports it.
+    include: ["@maci-protocol/domainobjs", "@maci-protocol/crypto", "@maci-protocol/sdk", "@maci-protocol/sdk/browser"],
     exclude: ["hardhat", "@nomicfoundation/solidity-analyzer"],
   },
   build: {
@@ -38,5 +42,10 @@ export default defineConfig({
     rollupOptions: {
       external: ["hardhat", "@nomicfoundation/solidity-analyzer"],
     },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./src/test-setup.ts"],
   },
 });

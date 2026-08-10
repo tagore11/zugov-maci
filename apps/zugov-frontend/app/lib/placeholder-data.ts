@@ -1,45 +1,42 @@
 import { BookOpen, FileText, Video, FileCode } from "lucide-react";
+import type { TierDraft } from "@/src/services/checkpointStore";
 
-export const IDENTITY_PROVIDERS = [
-  "Zupass",
-  "Ethereum Attestation Service",
-  "Gitcoin Passport",
-  "Token & NFT Gating",
-  "MetaMask",
-  "WalletConnect",
-  "Coinbase Wallet",
-  "Safe",
-  "World ID",
+// Default membership tier set (userJourneys.md Section 1) — the starting point a community
+// admin customizes from; also used as the fixed default for the "register existing community"
+// manual path, which doesn't build its own tier editor.
+export const DEFAULT_MEMBERSHIP_TIERS: TierDraft[] = [
+  { label: "Guest", canCreateGovernanceActions: false, canVote: false, canManageMembership: false },
+  { label: "Visitor", canCreateGovernanceActions: false, canVote: false, canManageMembership: false },
+  { label: "Regular", canCreateGovernanceActions: false, canVote: true, canManageMembership: false },
+  { label: "OG", canCreateGovernanceActions: true, canVote: true, canManageMembership: false },
+  { label: "Manager", canCreateGovernanceActions: true, canVote: true, canManageMembership: true },
+  { label: "Admin", canCreateGovernanceActions: true, canVote: true, canManageMembership: true },
 ];
 
-export const VOTING_MECHANISMS = [
-  { id: "simple", name: "Simple Majority" },
-  { id: "quadratic", name: "Quadratic Voting" },
-  { id: "ranked", name: "Ranked Choice" },
+// Maps to EPolicy enum in @maci-protocol/core
+export const ALLOWED_POLICIES = [
+  { id: "1", name: "Free For All" },
+  { id: "4", name: "Ethereum Attestation Service (EAS)" },
+  { id: "5", name: "Gitcoin Passport" },
+  { id: "6", name: "Zupass" },
+  { id: "7", name: "Semaphore" },
+  { id: "8", name: "Anon Aadhaar" },
+  { id: "0", name: "ERC20 Token" },
+  { id: "3", name: "ERC20 Votes Token" },
+  { id: "9", name: "Token (NFT)" },
+  { id: "2", name: "Merkle Proof" },
+  { id: "10", name: "Hats Protocol" },
+];
+
+// Maps to EMode enum in @maci-protocol/core
+export const VOTING_MODES = [
+  { id: "0", name: "Quadratic Voting (QV)" },
+  { id: "1", name: "Non-Quadratic Voting (NON_QV)" },
+  { id: "2", name: "Full Voice Credits (FULL)" },
+  { id: "3", name: "Ranked Choice (RANKED)" },
 ];
 
 export const EXISTING_COMMUNITIES = ["ZuKas Residency", "ZuAfrique", "Zuitzerland", "EDGE City"];
-
-export const AUTH_METHODS = [
-  { id: "zupass", name: "Zupass", icon: "🎫" },
-  { id: "eas", name: "Ethereum Attestation Service", icon: "✓" },
-  { id: "gitcoin", name: "Gitcoin Passport", icon: "🌱" },
-  { id: "token", name: "Token & NFT Gating", icon: "🎨" },
-  { id: "metamask", name: "MetaMask", icon: "🦊" },
-  { id: "walletconnect", name: "WalletConnect", icon: "🔗" },
-  { id: "coinbase", name: "Coinbase Wallet", icon: "💠" },
-  { id: "safe", name: "Safe", icon: "🔐" },
-  { id: "worldid", name: "World ID", icon: "🌍" },
-];
-
-export const IDENTITY_BADGES = [
-  { id: "zupass", name: "Zupass", icon: "🎫", verified: true },
-  { id: "eas", name: "EAS", icon: "✓", verified: true },
-  { id: "gitcoin", name: "Gitcoin Passport", icon: "🌱", verified: false },
-  { id: "token", name: "Token Holder", icon: "🎨", verified: true },
-  { id: "metamask", name: "MetaMask", icon: "🦊", verified: true },
-  { id: "worldid", name: "World ID", icon: "🌍", verified: false },
-];
 
 export const USER_COMMUNITIES = [
   {

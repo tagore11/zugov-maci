@@ -53,4 +53,11 @@ contract DomainObjs {
     PublicKey publicKey;
     uint256 voiceCreditBalance;
   }
+
+  /// @title GovernanceConfig
+  /// @notice Governance-level constraints for poll deployment
+  struct GovernanceConfig {
+    Mode[] supportedModes;
+    Policy[] allowedPolicies;
+  }
 }

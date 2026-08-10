@@ -8,7 +8,9 @@ import CommunityPage from "../app/community/[id]/page";
 import DelegatesPage from "../app/delegates/page";
 import KnowledgeBasePage from "../app/knowledge-base/page";
 import ManageCommunitiesPage from "../app/manage-communities/page";
+import RegisterCommunityPage from "../app/manage-communities/register/page";
 import EditCommunityPage from "../app/manage-communities/[id]/edit/page";
+import CommunityMembersPage from "../app/manage-communities/[id]/members/page";
 import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
 
@@ -25,7 +27,9 @@ export default function App() {
             <Route path="/delegates" element={<DelegatesPage />} />
             <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
             <Route path="/manage-communities" element={<ManageCommunitiesPage />} />
+            <Route path="/manage-communities/register" element={<RegisterCommunityPage />} />
             <Route path="/manage-communities/:id/edit" element={<EditCommunityPage />} />
+            <Route path="/manage-communities/:id/members" element={<CommunityMembersPage />} />
             <Route path="/manage-profile" element={<ManageProfilePage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
           </Routes>
