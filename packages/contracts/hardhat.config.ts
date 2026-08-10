@@ -18,6 +18,7 @@ import "./tasks/runner/deployPoll";
 import "./tasks/runner/encodeErrors";
 import "./tasks/runner/merge";
 import "./tasks/runner/prove";
+import "./tasks/runner/setRankedVerifyingKeys";
 import "./tasks/runner/submitOnChain";
 import "./tasks/runner/verifyFull";
 
@@ -71,7 +72,7 @@ const config: HardhatUserConfig = {
       },
     ],
   },
-  defaultNetwork: "localhost",
+  defaultNetwork: "hardhat",
   networks: {
     mainnet: getCommonNetworkConfig(ESupportedChains.Mainnet, EChainId.Mainnet),
     sepolia: getCommonNetworkConfig(ESupportedChains.Sepolia, EChainId.Sepolia),

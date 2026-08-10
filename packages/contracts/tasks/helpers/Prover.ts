@@ -100,6 +100,14 @@ export class Prover {
     const totalMessageBatches = batchHashes.length;
     let numberBatchesProcessed = totalBatchesProcessed;
 
+    // eslint-disable-next-line no-console
+    console.log("[debug] getProcessVerifyingKey args:", {
+      stateTreeDepth,
+      voteOptionTreeDepth: treeDepths.voteOptionTreeDepth.toString(),
+      messageBatchSize,
+      mode: mode.toString(),
+    });
+
     const onChainProcessVerifyingKey = await this.verifyingKeysRegistryContract.getProcessVerifyingKey(
       stateTreeDepth,
       treeDepths.voteOptionTreeDepth,

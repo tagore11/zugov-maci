@@ -38,6 +38,18 @@ import {
 const deployment = Deployment.getInstance();
 const storage = ContractStorage.getInstance();
 
+const parseZupassSigner = (signer: string): bigint => {
+  const normalizedSigner = signer.trim();
+
+  try {
+    return normalizedSigner.startsWith("0x") ? hexToBigInt(normalizedSigner) : BigInt(normalizedSigner);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    throw new Error(`Invalid Zupass signer "${signer}". Use a decimal string or a 0x-prefixed hex value. ${message}`);
+  }
+};
+
 /**
  * Deploy step registration and task itself
  */
@@ -352,9 +364,9 @@ deployment.deployTask(EDeploySteps.PollPolicy, "Deploy Poll policies").then((tas
       const eventId = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "eventId", true);
       const validEventId = uuidToBigInt(eventId);
       const signer1 = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "signer1", true);
-      const validSigner1 = hexToBigInt(signer1);
+      const validSigner1 = parseZupassSigner(signer1);
       const signer2 = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "signer2", true);
-      const validSigner2 = hexToBigInt(signer2);
+      const validSigner2 = parseZupassSigner(signer2);
       let verifier = deployment.getDeployConfigField<string | undefined>(EContracts.ZupassPolicy, "zupassVerifier");
 
       if (!verifier) {

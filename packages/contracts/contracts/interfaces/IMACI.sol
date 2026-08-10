@@ -104,4 +104,16 @@ interface IMACI {
   /// @notice Get the next poll ID
   /// @return The next poll ID
   function nextPollId() external view returns (uint256);
+
+  /// @notice Get the governance configuration for this MACI instance
+  /// @return The governance config (supported modes, max vote options, allowed policies)
+  function getGovernanceConfig() external view returns (DomainObjs.GovernanceConfig memory);
+
+  /// @notice Replace the set of supported voting modes
+  /// @param modes The new list of allowed modes (must be non-empty)
+  function setSupportedModes(DomainObjs.Mode[] calldata modes) external;
+
+  /// @notice Replace the set of allowed poll-level sign-up policies
+  /// @param policies The new list of allowed policy types (must be non-empty)
+  function setAllowedPolicies(DomainObjs.Policy[] calldata policies) external;
 }

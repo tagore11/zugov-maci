@@ -120,6 +120,9 @@ typings/
 .env
 .env.test
 
+# generated secrets (coordinator keypairs, etc.) — never commit
+*.secret.json
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 
@@ -158,3 +161,25 @@ packages/circuits/circom/test
 proofs
 
 inputs.json 
+
+.vercel
+.env*.local
+
+apps/zugov-frontend/dist/*
+apps/zugov-backend/dist/
+
+.claude
+specs
+.specify
+
+# Playwright MCP tool artifacts (console logs, screenshots)
+.playwright-mcp/
+
+# Generated coverage reports
+packages/contracts/coverage.json
+
+# Cloned rapidsnark prover build (external tool, not project source)
+packages/circuits/rapidsnark/
+
+# Coordinator secret key material — never commit
+KEYS.md

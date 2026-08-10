@@ -17,7 +17,7 @@ import type {
   Policy,
 } from "../typechain-types";
 import type { TypedContractMethod } from "../typechain-types/common";
-import type { EMode, TCircuitInputs } from "@maci-protocol/core";
+import type { EMode, EPolicy, TCircuitInputs } from "@maci-protocol/core";
 import type { Keypair, Message, PublicKey } from "@maci-protocol/domainobjs";
 import type { BigNumberish, Signer, ContractFactory, Provider, BaseContract } from "ethers";
 import type { PublicSignals } from "snarkjs";
@@ -87,6 +87,8 @@ export interface IDeployedTestContractsArgs {
   quiet?: boolean;
   policy?: IBasePolicy;
   factories?: [ContractFactory, ContractFactory, ContractFactory, ContractFactory];
+  initialSupportedModes?: EMode[];
+  initialAllowedPolicies?: EPolicy[];
 }
 
 /**
@@ -182,6 +184,18 @@ export interface IDeployMaciArgs {
    * Verifier address if is already deployed
    */
   verifier?: Verifier;
+
+  /**
+   * Voting modes permitted for poll deployment.
+   * Defaults to all modes when omitted.
+   */
+  initialSupportedModes?: EMode[];
+
+  /**
+   * Poll-level sign-up policy types permitted for poll deployment.
+   * Defaults to all policies when omitted.
+   */
+  initialAllowedPolicies?: EPolicy[];
 }
 
 /**

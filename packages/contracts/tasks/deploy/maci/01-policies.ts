@@ -17,6 +17,8 @@ import type {
   MerkleProofPolicyFactory,
   SemaphoreCheckerFactory,
   SemaphorePolicyFactory,
+  TokenCheckerFactory,
+  TokenPolicyFactory,
   ZupassCheckerFactory,
   ZupassPolicyFactory,
 } from "../../../typechain-types";
@@ -37,6 +39,18 @@ import {
 const deployment = Deployment.getInstance();
 const storage = ContractStorage.getInstance();
 
+const parseZupassSigner = (signer: string): bigint => {
+  const normalizedSigner = signer.trim();
+
+  try {
+    return normalizedSigner.startsWith("0x") ? hexToBigInt(normalizedSigner) : BigInt(normalizedSigner);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+
+    throw new Error(`Invalid Zupass signer "${signer}". Use a decimal string or a 0x-prefixed hex value. ${message}`);
+  }
+};
+
 /**
  * Deploy step registration and task itself
  */
@@ -56,6 +70,7 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
       getDeployedPolicyProxyFactories,
       deployERC20VotesPolicy,
       deployERC20Policy,
+      deploySignupTokenPolicy,
     } = await import("../../../ts/deploy");
 
     const freeForAllPolicyContractAddress = storage.getAddress(EPolicies.FreeForAll, hre.network.name);
@@ -67,6 +82,7 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
     const merkleProofPolicyContractAddress = storage.getAddress(EPolicies.MerkleProof, hre.network.name);
     const erc20VotesPolicyContractAddress = storage.getAddress(EPolicies.ERC20Votes, hre.network.name);
     const erc20PolicyContractAddress = storage.getAddress(EPolicies.ERC20, hre.network.name);
+    const tokenPolicyContractAddress = storage.getAddress(EPolicies.Token, hre.network.name);
 
     const deployFreeForAllPolicy = deployment.getDeployConfigField(EContracts.FreeForAllPolicy, "deploy");
     const deployEASPolicy = deployment.getDeployConfigField(EContracts.EASPolicy, "deploy");
@@ -77,6 +93,7 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
     const deployMerkleGateekeper = deployment.getDeployConfigField(EContracts.MerkleProofPolicy, "deploy");
     const deployERC20VotesExcubiaePolicy = deployment.getDeployConfigField(EContracts.ERC20VotesPolicy, "deploy");
     const deployERC20ExcubiaePolicy = deployment.getDeployConfigField(EContracts.ERC20Policy, "deploy");
+    const deployTokenExcubiaePolicy = deployment.getDeployConfigField(EContracts.TokenPolicy, "deploy");
 
     const skipDeployFreeForAllPolicy = deployFreeForAllPolicy !== true;
     const skipDeployEASPolicy = deployEASPolicy !== true;
@@ -87,6 +104,7 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
     const skipDeployMerkleProofPolicy = deployMerkleGateekeper !== true;
     const skipDeployERC20VotesPolicy = deployERC20VotesExcubiaePolicy !== true;
     const skipDeployERC20Policy = deployERC20ExcubiaePolicy !== true;
+    const skipDeployTokenPolicy = deployTokenExcubiaePolicy !== true;
     const canSkipDeploy =
       incremental &&
       (freeForAllPolicyContractAddress || skipDeployFreeForAllPolicy) &&
@@ -98,6 +116,7 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
       (merkleProofPolicyContractAddress || skipDeployMerkleProofPolicy) &&
       (erc20VotesPolicyContractAddress || skipDeployERC20VotesPolicy) &&
       (erc20PolicyContractAddress || skipDeployERC20Policy) &&
+      (tokenPolicyContractAddress || skipDeployTokenPolicy) &&
       (!skipDeployFreeForAllPolicy ||
         !skipDeployEASPolicy ||
         !skipDeployGitcoinPolicy ||
@@ -106,7 +125,8 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
         !skipDeployHatsPolicy ||
         !skipDeployMerkleProofPolicy ||
         !skipDeployERC20VotesPolicy ||
-        !skipDeployERC20Policy);
+        !skipDeployERC20Policy ||
+        !skipDeployTokenPolicy);
 
     if (canSkipDeploy) {
       // eslint-disable-next-line no-console
@@ -322,9 +342,9 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
       const eventId = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "eventId", true);
       const validEventId = uuidToBigInt(eventId);
       const signer1 = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "signer1", true);
-      const validSigner1 = hexToBigInt(signer1);
+      const validSigner1 = parseZupassSigner(signer1);
       const signer2 = deployment.getDeployConfigField<string>(EContracts.ZupassPolicy, "signer2", true);
-      const validSigner2 = hexToBigInt(signer2);
+      const validSigner2 = parseZupassSigner(signer2);
       let verifier = deployment.getDeployConfigField<string | undefined>(EContracts.ZupassPolicy, "zupassVerifier");
 
       if (!verifier) {
@@ -640,8 +660,8 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
       const threshold = deployment.getDeployConfigField<number>(EContracts.ERC20Policy, "threshold", true);
 
       const factories = await getDeployedPolicyProxyFactories<ERC20CheckerFactory, ERC20PolicyFactory>({
-        policy: EPolicyFactories.ERC20Votes,
-        checker: ECheckerFactories.ERC20Votes,
+        policy: EPolicyFactories.ERC20,
+        checker: ECheckerFactories.ERC20,
         network: hre.network.name,
         signer: deployer,
       });
@@ -690,6 +710,65 @@ deployment.deployTask(EDeploySteps.Policies, "Deploy policies").then((task) =>
           id: ECheckerFactories.ERC20,
           contract: erc20CheckerFactoryContract,
           name: ECheckerFactories.ERC20,
+          args: [],
+          network: hre.network.name,
+        }),
+      ]);
+    }
+
+    if (!skipDeployTokenPolicy) {
+      const token = deployment.getDeployConfigField<string>(EContracts.TokenPolicy, "token", true);
+
+      const factories = await getDeployedPolicyProxyFactories<TokenCheckerFactory, TokenPolicyFactory>({
+        policy: EPolicyFactories.Token,
+        checker: ECheckerFactories.Token,
+        network: hre.network.name,
+        signer: deployer,
+      });
+
+      const [tokenPolicyContract, tokenCheckerContract, tokenPolicyFactoryContract, tokenCheckerFactoryContract] =
+        await deploySignupTokenPolicy(
+          {
+            token,
+          },
+          factories,
+          deployer,
+          true,
+        );
+
+      const [policyContractImplementation, checkerContractImplementation] = await Promise.all([
+        tokenPolicyFactoryContract.IMPLEMENTATION(),
+        tokenCheckerFactoryContract.IMPLEMENTATION(),
+      ]);
+
+      await Promise.all([
+        storage.register({
+          id: EPolicies.Token,
+          contract: tokenPolicyContract,
+          name: EPolicies.Token,
+          implementation: policyContractImplementation,
+          args: [],
+          network: hre.network.name,
+        }),
+        storage.register({
+          id: ECheckers.Token,
+          contract: tokenCheckerContract,
+          name: ECheckers.Token,
+          implementation: checkerContractImplementation,
+          args: [],
+          network: hre.network.name,
+        }),
+        storage.register({
+          id: EPolicyFactories.Token,
+          contract: tokenPolicyFactoryContract,
+          name: EPolicyFactories.Token,
+          args: [],
+          network: hre.network.name,
+        }),
+        storage.register({
+          id: ECheckerFactories.Token,
+          contract: tokenCheckerFactoryContract,
+          name: ECheckerFactories.Token,
           args: [],
           network: hre.network.name,
         }),

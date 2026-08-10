@@ -136,7 +136,6 @@ export const generateMaciStateFromContract = async ({
       pollContract.messageBatchSize(),
     ],
   );
-
   assert(coordinatorPublicKeyOnChain[0].toString() === coordinatorKeypair.publicKey.raw[0].toString());
   assert(coordinatorPublicKeyOnChain[1].toString() === coordinatorKeypair.publicKey.raw[1].toString());
 
