@@ -184,36 +184,27 @@ export function StepMaciConfig({
 
       {/* MACI sign-up policy */}
       <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
+        <label className="block text-sm font-medium text-gray-300 mb-1">
           Community sign-up policy <span className="text-red-400">*</span>
         </label>
         <p className="text-xs text-gray-500 mb-2">
           Controls who can register in your community&apos;s MACI state tree.
         </p>
-        <div className="space-y-1.5">
-          {SIGN_UP_POLICY_TYPES.map(({ type, label, description }) => (
-            <label
-              key={type}
-              className="flex items-start gap-2.5 cursor-pointer group rounded-lg p-2 hover:bg-gray-800/50"
-            >
-              <input
-                type="radio"
-                name="signUpPolicy"
-                checked={policyType === type}
-                onChange={() => setPolicyType(type)}
-                className="mt-0.5 border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
-              />
-              <span className="flex-1">
-                <span
-                  className={`text-sm font-medium ${policyType === type ? "text-white" : "text-gray-300"} group-hover:text-white`}
-                >
-                  {label}
-                </span>
-                <span className="block text-xs text-gray-500">{description}</span>
-              </span>
-            </label>
+        <select
+          value={policyType}
+          onChange={(e) => setPolicyType(e.target.value as SignUpPolicyType)}
+          className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm
+            focus:outline-none focus:ring-2 focus:ring-purple-500"
+        >
+          {SIGN_UP_POLICY_TYPES.map(({ type, label }) => (
+            <option key={type} value={type}>
+              {label}
+            </option>
           ))}
-        </div>
+        </select>
+        <p className="text-xs text-gray-500 mt-1.5">
+          {SIGN_UP_POLICY_TYPES.find(({ type }) => type === policyType)?.description}
+        </p>
 
         {/* Inline policy-specific inputs */}
         {policyType !== "FreeForAll" && (
@@ -361,7 +352,7 @@ export function StepMaciConfig({
           Allowed voter eligibility methods for polls <span className="text-red-400">*</span>
         </label>
         <p className="text-xs text-gray-500 mb-2">Which eligibility methods can be used when creating polls.</p>
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5">
           {ALLOWED_POLICIES.map((policy) => {
             const id = parseInt(policy.id, 10);
             const checked = policies.includes(id);
@@ -390,7 +381,7 @@ export function StepMaciConfig({
         <label className="block text-sm font-medium text-gray-300 mb-2">
           Supported voting styles <span className="text-red-400">*</span>
         </label>
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
           {VOTING_MODES.map((mode) => {
             const id = parseInt(mode.id, 10);
             const checked = modes.includes(id);
@@ -420,28 +411,23 @@ export function StepMaciConfig({
           Voter capacity <span className="text-red-400">*</span>
         </label>
         <p className="text-xs text-gray-500 mb-2">Sizes the MACI state tree for your expected voter count.</p>
-        <div className="space-y-1.5">
+        <div className="grid grid-cols-3 gap-2">
           {VOTER_CAPACITY_PRESETS.map(({ value, label, description }) => (
-            <label
+            <button
               key={value}
-              className="flex items-start gap-2.5 cursor-pointer group rounded-lg p-2 hover:bg-gray-800/50"
+              type="button"
+              onClick={() => setVoterCapacityPreset(value)}
+              className={`rounded-lg border p-2.5 text-left transition-colors ${
+                voterCapacityPreset === value
+                  ? "border-purple-500 bg-purple-900/20"
+                  : "border-gray-700 bg-gray-800/40 hover:border-gray-600"
+              }`}
             >
-              <input
-                type="radio"
-                name="voterCapacityPreset"
-                checked={voterCapacityPreset === value}
-                onChange={() => setVoterCapacityPreset(value)}
-                className="mt-0.5 border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
-              />
-              <span className="flex-1">
-                <span
-                  className={`text-sm font-medium ${voterCapacityPreset === value ? "text-white" : "text-gray-300"} group-hover:text-white`}
-                >
-                  {label}
-                </span>
-                <span className="block text-xs text-gray-500">{description}</span>
-              </span>
-            </label>
+              <div className={`text-sm font-medium ${voterCapacityPreset === value ? "text-white" : "text-gray-300"}`}>
+                {label}
+              </div>
+              <div className="text-[11px] text-gray-500 mt-0.5">{description}</div>
+            </button>
           ))}
         </div>
       </div>

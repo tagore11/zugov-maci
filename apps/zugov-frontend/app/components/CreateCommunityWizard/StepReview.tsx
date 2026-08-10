@@ -52,10 +52,6 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
         <Row label="Allowed poll policies" value={policyNames || "–"} />
         <Row label="Voting modes" value={modeNames || "–"} />
         <Row label="Voter capacity" value={config.voterCapacityPreset ?? "–"} />
-        <Row label="Membership tiers" value={(config.tiers ?? []).map((t) => t.label).join(", ") || "–"} />
-        <Row label="Default tier" value={config.defaultTierLabel ?? "–"} />
-        <Row label="Membership policy" value={config.membershipPolicy ?? "–"} />
-        <Row label="Tier changes require vote" value={config.tierChangesRequireVote ? "Yes" : "No"} />
         <Row label="Community admin" value={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "–"} mono />
         <Row label="Transactions required" value="3 (deploy policy, deploy MACI, set target)" />
       </div>

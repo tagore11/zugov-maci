@@ -3,7 +3,6 @@ import { useCreateCommunity } from "@/src/hooks/useCreateCommunity";
 import type { WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepMechanism } from "./StepMechanism";
 import { StepCommunityInfo } from "./StepCommunityInfo";
-import { StepMembershipTiers } from "./StepMembershipTiers";
 import { StepMaciConfig } from "./StepMaciConfig";
 import { StepReview } from "./StepReview";
 import { StepNetworkCheck } from "./StepNetworkCheck";
@@ -16,7 +15,6 @@ import type { Hex } from "viem";
 const STEP_LABELS: Record<WizardStep, string> = {
   mechanism: "Mechanism",
   community_info: "Community Info",
-  membership_tiers: "Membership Tiers",
   maci_config: "MACI Config",
   network_check: "Network Check",
   review: "Review",
@@ -28,7 +26,6 @@ const STEP_LABELS: Record<WizardStep, string> = {
 const VISIBLE_STEPS: WizardStep[] = [
   "mechanism",
   "community_info",
-  "membership_tiers",
   "maci_config",
   "network_check",
   "review",
@@ -44,7 +41,6 @@ export function CreateCommunityWizard() {
     goBack,
     setMechanism,
     setCommunityInfo,
-    setMembershipTiers,
     setMaciConfig,
     startNetworkCheck,
     startDeployment,
@@ -121,17 +117,6 @@ export function CreateCommunityWizard() {
             initialName={state.config.displayName}
             initialDescription={state.config.description}
             setCommunityInfo={setCommunityInfo}
-            goBack={goBack}
-          />
-        )}
-
-        {state.step === "membership_tiers" && (
-          <StepMembershipTiers
-            initialTiers={state.config.tiers}
-            initialMembershipPolicy={state.config.membershipPolicy}
-            initialTierChangesRequireVote={state.config.tierChangesRequireVote}
-            initialDefaultTierLabel={state.config.defaultTierLabel}
-            setMembershipTiers={setMembershipTiers}
             goBack={goBack}
           />
         )}

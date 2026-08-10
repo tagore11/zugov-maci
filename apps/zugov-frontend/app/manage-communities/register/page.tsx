@@ -91,6 +91,7 @@ export default function RegisterCommunityPage() {
         supportedModes: contractConfig.supportedModes,
         signUpPolicyType: contractConfig.signUpPolicyType,
         signUpPolicyAddress: contractConfig.signUpPolicyAddress,
+        maciDeploymentBlock: contractConfig.deploymentBlock,
         voterCapacityPreset: contractConfig.voterCapacityPreset,
         stateTreeDepth: contractConfig.stateTreeDepth,
         source: "manual",
@@ -287,10 +288,6 @@ export default function RegisterCommunityPage() {
                     rows={3}
                     className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
                   />
-                </div>
-
-                <div className="rounded-lg bg-gray-800/60 border border-gray-700 p-3 text-sm text-gray-400">
-                  Membership tiers: default set (editable later from the community's edit page).
                 </div>
 
                 {error && (

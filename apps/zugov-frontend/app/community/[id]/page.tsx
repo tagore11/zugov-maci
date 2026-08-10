@@ -367,7 +367,7 @@ export default function CommunityPage() {
 
             <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
               <InfoRow label="Voting mechanism" value="MACI" />
-              <InfoRow label="Sign-up policy" value={dc.signUpPolicyType} />
+              <InfoRow label="Sign-up policy" value={dc.signUpPolicyType ?? "—"} />
               <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
               <InfoRow label="Voting modes" value={modeNames || "—"} />
               <InfoRow label="Created" value={formatRelativeTime(dc.createdAt)} />

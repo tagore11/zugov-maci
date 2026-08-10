@@ -12,6 +12,7 @@ import {
   OwnershipMismatchError,
   RpcUnavailableError,
 } from "../services/contractOwnership.js";
+import { deployCommunitySubgraph, subgraphQueryUrlFor } from "../services/subgraphDeployService.js";
 
 const communityUpdateSchema = z.object({
   displayName: z.string().min(1).max(80).optional(),
@@ -113,4 +114,46 @@ communitiesRouter.patch("/:id", requireAuth, async (c) => {
     }
     throw err;
   }
+});
+
+// Transparent proxy in front of the community's isolated subgraph deployment — the frontend
+// never needs to know graph-node's internal address or the per-community subgraph name.
+communitiesRouter.post("/:id/subgraph/query", async (c) => {
+  const id = c.req.param("id");
+  const community = await communityService.get(id);
+  if (!community) return c.json({ error: "Community not found" }, 404);
+  if (community.subgraphStatus !== "ready" || !community.subgraphName) {
+    return c.json({ error: "Subgraph not ready for this community" }, 503);
+  }
+
+  const body = await c.req.text();
+  const response = await fetch(subgraphQueryUrlFor(community.subgraphName), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body,
+  });
+  return new Response(await response.text(), {
+    status: response.status,
+    headers: { "Content-Type": "application/json" },
+  });
+});
+
+communitiesRouter.post("/:id/subgraph/retry", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const session = await getSession(c);
+  if (!(await isAuthorized(id, session.address!))) {
+    return c.json({ error: "Not authorized to manage this community" }, 403);
+  }
+
+  const community = await communityService.get(id);
+  if (!community) return c.json({ error: "Community not found" }, 404);
+  if (community.maciDeploymentBlock === null) {
+    return c.json({ error: "No recorded MACI deployment block for this community" }, 422);
+  }
+
+  void deployCommunitySubgraph(community.id, community.chainId, community.maciDeploymentBlock).catch((err: unknown) => {
+    console.error(`[communities route] Unexpected error retrying subgraph deploy for ${id}:`, err);
+  });
+
+  return c.json({ status: "retrying" }, 202);
 });

@@ -21,16 +21,83 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      graph-node:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/zugov
       CORS_ORIGIN: ${CORS_ORIGIN}
       SCROLL_SEPOLIA_RPC_URL: ${SCROLL_SEPOLIA_RPC_URL}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL}
       PORT: 3001
+      # apps/subgraph is bundled into this image at /app/subgraph (see Dockerfile);
+      # graph-node/ipfs are reached by compose service name, not the host-bound ports.
+      SUBGRAPH_DIR: /app/subgraph
+      GRAPH_NODE_ADMIN_URL: http://graph-node:8020
+      GRAPH_NODE_IPFS_URL: http://ipfs:5001
+      GRAPH_NODE_QUERY_URL: http://graph-node:8000
     # Bound to localhost only — the host's nginx (already handling TLS/other
     # sites on this box) reverse-proxies to this port. See deploy/nginx-api.conf.
     ports:
       - "127.0.0.1:3002:3001"
 
+  graph-postgres:
+    image: postgres:14-alpine
+    restart: unless-stopped
+    command: ["postgres", "-cshared_preload_libraries=pg_stat_statements"]
+    environment:
+      POSTGRES_USER: graph-node
+      POSTGRES_PASSWORD: ${GRAPH_POSTGRES_PASSWORD}
+      POSTGRES_DB: graph-node
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    volumes:
+      - graph-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph-node"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ipfs:
+    image: ipfs/kubo:v0.14.0
+    restart: unless-stopped
+    volumes:
+      - ipfs-data:/data/ipfs
+    # Internal only — reached over the compose network by graph-node/backend, never exposed to the host.
+
+  graph-node:
+    image: graphprotocol/graph-node
+    restart: unless-stopped
+    depends_on:
+      graph-postgres:
+        condition: service_healthy
+      ipfs:
+        condition: service_started
+    environment:
+      postgres_host: graph-postgres
+      postgres_user: graph-node
+      postgres_pass: ${GRAPH_POSTGRES_PASSWORD}
+      postgres_db: graph-node
+      ipfs: "ipfs:5001"
+      # Network names here must exactly match the `network:` field the deploy
+      # script writes into each community's subgraph.yaml (see
+      # apps/subgraph/scripts/deploy-community.mjs) — "scroll-sepolia"/"sepolia",
+      # not underscored variants. A chain added to apps/zugov-frontend/src/config.ts's
+      # supportedChains needs an entry added here too (and in
+      # apps/zugov-backend/src/services/chainRpc.ts's NETWORK_NAMES/RPC_URLS), or
+      # that chain's communities fail subgraph deployment.
+      ethereum: "scroll-sepolia:${SCROLL_SEPOLIA_RPC_URL},sepolia:${SEPOLIA_RPC_URL}"
+      GRAPH_LOG: info
+    # Bound to localhost only — the backend container reaches it via the
+    # compose network (http://graph-node:8000 query, :8020 admin), and it's
+    # never exposed publicly. Ports are still published to 127.0.0.1 (rather
+    # than left compose-network-only) so `deploy-community.mjs` can also be
+    # run manually from the host for debugging.
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8020:8020"
+      - "127.0.0.1:8030:8030"
+
 volumes:
   postgres-data:
+  graph-postgres-data:
+  ipfs-data:

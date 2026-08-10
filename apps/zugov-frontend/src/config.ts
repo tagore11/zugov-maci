@@ -57,6 +57,11 @@ export const maciArtifacts = {
 
 export type GovernanceType = (typeof GovernanceTypes)[keyof typeof GovernanceTypes];
 
+// Adding a chain here also requires updating two backend-side places that key off chainId, or
+// that chain's communities will silently fail subgraph deployment (subgraphStatus stays
+// "failed", nothing surfaced in the UI): apps/zugov-backend/src/services/chainRpc.ts's
+// NETWORK_NAMES/RPC_URLS maps, and graph-node's `ethereum:` network list in
+// deploy/docker-compose.yml.
 export const supportedChains = [scrollSepolia, sepolia] as const;
 
 /**

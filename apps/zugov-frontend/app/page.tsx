@@ -18,6 +18,7 @@ type CommunityItem = {
   proposals: number;
   category: string;
   createdAt?: number;
+  signUpPolicyType?: string | null;
 };
 
 const ONE_HOUR_SEC = 3600;
@@ -34,6 +35,7 @@ function apiToItem(c: communityApi.Community): CommunityItem {
     proposals: 0,
     category: "MACI",
     createdAt: c.createdAt,
+    signUpPolicyType: c.signUpPolicyType,
   };
 }
 
@@ -249,9 +251,14 @@ export default function Home() {
                           </span>
                         )}
                       </div>
-                      <span className="inline-block px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
-                        {community.category}
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="inline-block px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                          {community.category}
+                        </span>
+                        <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">
+                          {community.signUpPolicyType ?? "Unknown sign-up policy"}
+                        </span>
+                      </div>
                     </div>
                   </div>
 

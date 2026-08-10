@@ -178,6 +178,34 @@ export async function deleteTier(communityId: string, tierId: string): Promise<v
     .where(and(eq(membershipTiers.id, tierId), eq(membershipTiers.communityId, communityId)));
 }
 
+export async function getMembershipStatus(
+  communityId: string,
+  walletAddress: string,
+): Promise<{ status: "member" | "pending" | "none"; tierLabel?: string }> {
+  const [membership] = await db
+    .select({ label: membershipTiers.label })
+    .from(memberships)
+    .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+    .where(and(eq(memberships.walletAddress, walletAddress), eq(memberships.communityId, communityId)))
+    .limit(1);
+  if (membership) return { status: "member", tierLabel: membership.label };
+
+  const [pendingRequest] = await db
+    .select({ id: joinRequests.id })
+    .from(joinRequests)
+    .where(
+      and(
+        eq(joinRequests.walletAddress, walletAddress),
+        eq(joinRequests.communityId, communityId),
+        eq(joinRequests.status, "pending"),
+      ),
+    )
+    .limit(1);
+  if (pendingRequest) return { status: "pending" };
+
+  return { status: "none" };
+}
+
 export async function submitJoinRequest(
   communityId: string,
   walletAddress: string,

@@ -8,6 +8,8 @@
     "schemas",
     "config",
     "templates",
+    "scripts",
+    "src",
     "README.md"
   ],
   "publishConfig": {
@@ -25,6 +27,7 @@
     "remove-local": "graph remove --node http://localhost:8020/ maci-subgraph",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 maci-subgraph --network localhost",
     "deploy:mainnet": "graph deploy --node https://api.studio.thegraph.com/deploy/ maci-subgraph --network mainnet",
+    "deploy:community": "node scripts/deploy-community.mjs",
     "test": "graph test -v 0.6.0",
     "test:coverage": "graph test && graph test -c"
   },

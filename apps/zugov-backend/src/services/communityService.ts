@@ -1,8 +1,9 @@
-import { eq, and, count, sql } from "drizzle-orm";
+import { eq, and, count } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { communities, memberships, type Community } from "../db/schema.js";
 import type { CommunityBody, PollDeployConfigBody } from "../validators/communitySchema.js";
 import { createTiersForCommunity, listTiers } from "./membershipService.js";
+import { deployCommunitySubgraph } from "./subgraphDeployService.js";
 
 const POLL_DEPLOY_CONFIG_COLUMNS = [
   "coordinatorPublicKey",
@@ -108,6 +109,9 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
     governanceType: "maci",
     allowedPolicies: JSON.stringify(data.allowedPolicies),
     supportedModes: JSON.stringify(data.supportedModes),
+    signUpPolicyType: data.signUpPolicyType,
+    signUpPolicyAddress: data.signUpPolicyAddress,
+    maciDeploymentBlock: data.maciDeploymentBlock,
     voterCapacityPreset: data.voterCapacityPreset,
     stateTreeDepth: data.stateTreeDepth,
     membershipPolicy: data.membershipPolicy,
@@ -150,6 +154,13 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
       communityId: community.id,
       tierId: creatorTierId,
       joinedAt: now,
+    });
+
+    // Fire-and-forget: deploying the community's subgraph shouldn't block or fail
+    // registration. deployCommunitySubgraph never throws — failures land in
+    // subgraphStatus for the retry route — but .catch is kept as a defensive backstop.
+    void deployCommunitySubgraph(community.id, data.chainId, data.maciDeploymentBlock).catch((err: unknown) => {
+      console.error(`[communityService] Unexpected error deploying subgraph for ${community.id}:`, err);
     });
 
     return { community: parseRecord(withDefaultTier!), created: true };

@@ -48,6 +48,13 @@ export async function deleteTier(communityId: string, tierId: string): Promise<v
   await parseErrorOr<{ ok: true }>(res, `Failed to delete tier: ${res.status}`);
 }
 
+export type MembershipStatus = { status: "member" | "pending" | "none"; tierLabel?: string };
+
+export async function getMembershipStatus(communityId: string): Promise<MembershipStatus> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/membership`, { credentials: "include" });
+  return parseErrorOr<MembershipStatus>(res, `Failed to fetch membership status: ${res.status}`);
+}
+
 export class DuplicateJoinError extends Error {}
 
 export async function join(communityId: string): Promise<{ status: "approved" | "pending"; tierLabel?: string }> {
