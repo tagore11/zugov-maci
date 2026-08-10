@@ -3,6 +3,8 @@ ba = "ba"
 groth = "groth"
 Allo = "Allo"
 Buidl = "Buidl"
+# Mermaid diagram node IDs in diagrams.md (VoteStrat, ExecStrat), not the English word "start".
+Strat = "Strat"
 
 [files]
 extend-exclude = ["/**/CHANGELOG.md", "/**/*.svg", "/**/*.excalidraw"]
