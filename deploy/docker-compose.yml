@@ -22,7 +22,7 @@ services:
       postgres:
         condition: service_healthy
       graph-node:
-        condition: service_started
+        condition: service_healthy
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/zugov
       CORS_ORIGIN: ${CORS_ORIGIN}
@@ -87,6 +87,18 @@ services:
       # that chain's communities fail subgraph deployment.
       ethereum: "scroll-sepolia:${SCROLL_SEPOLIA_RPC_URL},sepolia:${SEPOLIA_RPC_URL}"
       GRAPH_LOG: info
+    # graph-node takes 30-60s+ to become ready after starting (connecting to
+    # Postgres, running migrations) before the admin RPC port opens — without
+    # this, `backend`'s `depends_on: condition: service_started` only waits for
+    # the container to start, not for graph-node to actually be able to accept
+    # subgraph deploys, so a community created right after a fresh deploy would
+    # fail exactly like `service_started` alone would let happen.
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8020"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
     # Bound to localhost only — the backend container reaches it via the
     # compose network (http://graph-node:8000 query, :8020 admin), and it's
     # never exposed publicly. Ports are still published to 127.0.0.1 (rather
