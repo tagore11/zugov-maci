@@ -19,6 +19,10 @@ module.exports = {
   },
   rules: {
     "@typescript-eslint/consistent-type-imports": "off",
+    // src/*.ts mappings compile to AssemblyScript (wasm/assemblyscript in subgraph.yaml), a strict
+    // TypeScript subset that doesn't support object destructuring assignment — the inherited
+    // prefer-destructuring rule's autofix silently produces code that fails to compile there.
+    "prefer-destructuring": "off",
     "@typescript-eslint/no-shadow": [
       "error",
       {

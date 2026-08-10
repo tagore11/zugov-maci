@@ -17,6 +17,7 @@ export interface MaciContractConfig {
   // may be a genuinely external contract with no relationship to this platform's registry, so
   // this is best-effort, not required for the rest of the config to load successfully.
   pollDeployConfig: PollDeployConfig | undefined;
+  deploymentBlock: number;
 }
 
 // Every BasePolicy contract implements trait() (see IPolicy.sol) returning a fixed string
@@ -45,6 +46,30 @@ const DEPTH_TO_PRESET: Partial<Record<number, VoterCapacityPreset>> = {
 };
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+/** Binary-searches for the block a contract's code first appears at, so the subgraph can index
+ * from that community's actual history instead of missing everything before registration. */
+async function findDeploymentBlock(client: ReturnType<typeof createPublicClient>, address: Hex): Promise<number> {
+  try {
+    const latest = await client.getBlockNumber();
+    let low = 0n;
+    let high = latest;
+    while (low < high) {
+      const mid = (low + high) / 2n;
+      const code = await client.getCode({ address, blockNumber: mid });
+      if (code && code !== "0x") {
+        high = mid;
+      } else {
+        low = mid + 1n;
+      }
+    }
+    return Number(low);
+  } catch {
+    // Non-archive RPC nodes may not serve eth_getCode at arbitrary historical blocks — fall back
+    // to indexing from genesis rather than risk silently missing this contract's earlier history.
+    return 0;
+  }
+}
 
 export interface UseMaciContractConfigResult {
   isLoading: boolean;
@@ -132,6 +157,7 @@ export function useMaciContractConfig(): UseMaciContractConfigResult {
         }
 
         const pollDeployConfig = await tryBuildPollDeployConfig(client, chainConstants);
+        const deploymentBlock = await findDeploymentBlock(client, maciAddress);
 
         const config: MaciContractConfig = {
           signUpPolicyAddress,
@@ -141,6 +167,7 @@ export function useMaciContractConfig(): UseMaciContractConfigResult {
           stateTreeDepth: stateTreeDepth as 6 | 10 | 14,
           voterCapacityPreset,
           pollDeployConfig,
+          deploymentBlock,
         };
         setData(config);
         return config;

@@ -44,6 +44,9 @@ export const communities = pgTable("communities", {
   governanceType: text("governance_type").notNull().default("maci"),
   allowedPolicies: text("allowed_policies").notNull(),
   supportedModes: text("supported_modes").notNull(),
+  // Nullable: communities registered before this column existed have no recorded value.
+  signUpPolicyType: text("sign_up_policy_type"),
+  signUpPolicyAddress: text("sign_up_policy_address"),
   voterCapacityPreset: text("voter_capacity_preset").notNull(),
   stateTreeDepth: integer("state_tree_depth").notNull(),
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
@@ -58,6 +61,11 @@ export const communities = pgTable("communities", {
   freeForAllChecker: text("free_for_all_checker"),
   constantVoiceCreditProxyFactory: text("constant_voice_credit_proxy_factory"),
   initialVoiceCreditAmount: integer("initial_voice_credit_amount"),
+  // Block the MACI contract was deployed at — the subgraph's indexing start block.
+  // Nullable: communities registered before this column existed have no recorded value.
+  maciDeploymentBlock: integer("maci_deployment_block"),
+  subgraphName: text("subgraph_name"),
+  subgraphStatus: text("subgraph_status").$type<"pending" | "ready" | "failed">().notNull().default("pending"),
   createdAt: integer("created_at").notNull(),
   registeredAt: integer("registered_at").notNull(),
 });

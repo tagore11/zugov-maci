@@ -18,8 +18,8 @@ export function handleDeployPoll(event: DeployPollEvent): void {
   const voteOptions = pollContract.voteOptions();
   const treeDepths = pollContract.treeDepths();
 
-  const { startTime } = event.params.pollData;
-  const { endTime } = event.params.pollData;
+  const startTime = event.params.pollData.startTime;
+  const endTime = event.params.pollData.endTime;
 
   poll.pollId = event.params.pollData.id;
   poll.messageProcessor = event.params.pollContracts.messageProcessor;

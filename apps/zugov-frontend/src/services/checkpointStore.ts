@@ -32,6 +32,7 @@ export interface PendingDeploymentCheckpoint {
   lastPhase: DeployPhase;
   deployedSignUpPolicyAddress?: Hex;
   deployedMaciAddress?: Hex;
+  deployedMaciBlockNumber?: number;
   chainId: number;
   startedAt: number;
 }

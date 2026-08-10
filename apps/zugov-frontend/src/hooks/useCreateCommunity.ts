@@ -12,6 +12,7 @@ import {
   type SignUpPolicyArgs,
   type PollDeployConfig,
 } from "@/src/config";
+import { DEFAULT_MEMBERSHIP_TIERS } from "@/app/lib/placeholder-data";
 import {
   savePendingCheckpoint,
   getPendingCheckpoint,
@@ -29,7 +30,6 @@ import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZ
 export type WizardStep =
   | "mechanism"
   | "community_info"
-  | "membership_tiers"
   | "maci_config"
   | "network_check"
   | "review"
@@ -67,12 +67,6 @@ export interface UseCreateCommunityResult {
   goBack: () => void;
   setMechanism: (mechanism: "maci") => void;
   setCommunityInfo: (name: string, description: string) => void;
-  setMembershipTiers: (
-    tiers: MACIDeploymentConfig["tiers"],
-    membershipPolicy: MACIDeploymentConfig["membershipPolicy"],
-    tierChangesRequireVote: boolean,
-    defaultTierLabel: string,
-  ) => void;
   setMaciConfig: (
     config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes" | "voterCapacityPreset">,
   ) => void;
@@ -108,7 +102,6 @@ const CHECKER_DEPLOY_ABI: Record<string, string[]> = {
 const STEP_ORDER: WizardStep[] = [
   "mechanism",
   "community_info",
-  "membership_tiers",
   "maci_config",
   "network_check",
   "review",
@@ -366,26 +359,18 @@ export function useCreateCommunity(): UseCreateCommunityResult {
   const setCommunityInfo = useCallback((displayName: string, description: string) => {
     setState((prev) => ({
       ...prev,
-      config: { ...prev.config, displayName, description },
-      step: "membership_tiers",
+      config: {
+        ...prev.config,
+        displayName,
+        description,
+        membershipPolicy: "open",
+        tierChangesRequireVote: false,
+        tiers: DEFAULT_MEMBERSHIP_TIERS,
+        defaultTierLabel: "Regular",
+      },
+      step: "maci_config",
     }));
   }, []);
-
-  const setMembershipTiers = useCallback(
-    (
-      tiers: MACIDeploymentConfig["tiers"],
-      membershipPolicy: MACIDeploymentConfig["membershipPolicy"],
-      tierChangesRequireVote: boolean,
-      defaultTierLabel: string,
-    ) => {
-      setState((prev) => ({
-        ...prev,
-        config: { ...prev.config, tiers, membershipPolicy, tierChangesRequireVote, defaultTierLabel },
-        step: "maci_config",
-      }));
-    },
-    [],
-  );
 
   const setMaciConfig = useCallback(
     (
@@ -438,6 +423,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
         const signer = await getEthersSigner();
         let signUpPolicyAddress: Hex | undefined = checkpoint.deployedSignUpPolicyAddress;
         let maciAddress: Hex | undefined = checkpoint.deployedMaciAddress;
+        let maciBlockNumber: number | undefined = checkpoint.deployedMaciBlockNumber;
 
         // Phase 1: Deploy sign-up policy
         if (!fromPhase || fromPhase === "deploy_sign_up_policy") {
@@ -479,18 +465,22 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           const maciReceipt = (await maciContract.deploymentTransaction()?.wait()) as {
             status: number;
             hash: string;
+            blockNumber: number;
           } | null;
           if (!maciReceipt || maciReceipt.status !== 1) throw new Error("MACI deployment failed");
 
           maciAddress = (await maciContract.getAddress()) as Hex;
+          maciBlockNumber = maciReceipt.blockNumber;
           setState((prev) => ({ ...prev, currentTxHash: maciReceipt.hash as Hex }));
           checkpoint.deployedMaciAddress = maciAddress;
+          checkpoint.deployedMaciBlockNumber = maciBlockNumber;
           checkpoint.lastPhase = "deploy_maci";
           savePendingCheckpoint(address as Hex, checkpoint);
           addCompleted(setState, "deploy_maci");
         }
 
         if (!maciAddress) throw new Error("MACI address missing");
+        if (maciBlockNumber === undefined) throw new Error("MACI deployment block missing");
 
         // Phase 3: Set target (authorize MACI on the sign-up policy)
         if (
@@ -528,6 +518,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           supportedModes: config.supportedModes,
           signUpPolicyType: config.signUpPolicy.type,
           signUpPolicyAddress: signUpPolicyAddress,
+          maciDeploymentBlock: maciBlockNumber,
           voterCapacityPreset: config.voterCapacityPreset,
           stateTreeDepth: STATE_TREE_DEPTH,
           source: "wizard",
@@ -616,7 +607,6 @@ export function useCreateCommunity(): UseCreateCommunityResult {
     goBack,
     setMechanism,
     setCommunityInfo,
-    setMembershipTiers,
     setMaciConfig,
     startNetworkCheck,
     startDeployment,

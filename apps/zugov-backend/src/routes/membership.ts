@@ -90,6 +90,13 @@ membershipRouter.delete("/:id/tiers/:tierId", requireAuth, async (c) => {
   }
 });
 
+membershipRouter.get("/:id/membership", async (c) => {
+  const session = await getSession(c);
+  if (!session.address) return c.json({ status: "none" });
+  const result = await membershipService.getMembershipStatus(c.req.param("id"), session.address);
+  return c.json(result);
+});
+
 membershipRouter.post("/:id/join", requireAuth, async (c) => {
   const session = await getSession(c);
   try {

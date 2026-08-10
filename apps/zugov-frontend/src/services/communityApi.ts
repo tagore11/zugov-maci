@@ -13,8 +13,9 @@ export type Community = {
   governanceType: string;
   allowedPolicies: number[];
   supportedModes: number[];
-  signUpPolicyType: SignUpPolicyType;
-  signUpPolicyAddress: string;
+  // Null for communities registered before this field was tracked.
+  signUpPolicyType: SignUpPolicyType | null;
+  signUpPolicyAddress: string | null;
   voterCapacityPreset: VoterCapacityPreset;
   stateTreeDepth: 6 | 10 | 14;
   membershipPolicy: MembershipPolicy;
@@ -40,6 +41,7 @@ export type RegistrationPayload = {
   supportedModes: number[];
   signUpPolicyType: SignUpPolicyType;
   signUpPolicyAddress: string;
+  maciDeploymentBlock: number;
   voterCapacityPreset: VoterCapacityPreset;
   stateTreeDepth: 6 | 10 | 14;
   description?: string;

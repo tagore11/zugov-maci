@@ -5,9 +5,20 @@ import { MemoryRouter } from "react-router-dom";
 import { JoinSection } from "./JoinSection";
 
 const joinMock = vi.fn();
+const getMembershipStatusMock = vi.fn();
 vi.mock("@/src/services/membershipApi", () => ({
   join: (...args: unknown[]) => joinMock(...args),
+  getMembershipStatus: (...args: unknown[]) => getMembershipStatusMock(...args),
   DuplicateJoinError: class DuplicateJoinError extends Error {},
+}));
+
+const signupToMaciMock = vi.fn();
+vi.mock("@/src/hooks/useSignup", () => ({
+  useSignup: () => ({
+    isSigningUp: false,
+    signupError: null,
+    signupToMaci: (...args: unknown[]) => signupToMaciMock(...args),
+  }),
 }));
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -21,6 +32,9 @@ function renderWithProviders(ui: React.ReactElement) {
 
 beforeEach(() => {
   joinMock.mockReset();
+  signupToMaciMock.mockReset();
+  getMembershipStatusMock.mockReset();
+  getMembershipStatusMock.mockResolvedValue({ status: "none" });
 });
 
 describe("JoinSection", () => {
@@ -34,21 +48,35 @@ describe("JoinSection", () => {
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
 
-  it("shows the approved result after a successful join", async () => {
+  it("signs up on-chain and records backend membership after a successful join", async () => {
+    signupToMaciMock.mockResolvedValue(undefined);
     joinMock.mockResolvedValue({ status: "approved", tierLabel: "Regular" });
     renderWithProviders(<JoinSection communityId="0xabc" connected={true} />);
 
     fireEvent.click(screen.getByText("Join"));
 
-    await waitFor(() => expect(screen.getByText(/Regular/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
+    expect(signupToMaciMock).toHaveBeenCalledWith("0xabc");
+    expect(joinMock).toHaveBeenCalledWith("0xabc");
   });
 
-  it("shows an error message when the join request fails", async () => {
-    joinMock.mockRejectedValue(new Error("Already a member"));
+  it("still succeeds if the backend join fails after a successful on-chain signup", async () => {
+    signupToMaciMock.mockResolvedValue(undefined);
+    joinMock.mockRejectedValue(new Error("Already a member or already have a pending request for this community"));
     renderWithProviders(<JoinSection communityId="0xabc" connected={true} />);
 
     fireEvent.click(screen.getByText("Join"));
 
-    await waitFor(() => expect(screen.getByText("Already a member")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
+  });
+
+  it("shows an error message when the on-chain signup fails", async () => {
+    signupToMaciMock.mockRejectedValue(new Error("Wallet not connected"));
+    renderWithProviders(<JoinSection communityId="0xabc" connected={true} />);
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() => expect(screen.getByText("Wallet not connected")).toBeInTheDocument());
+    expect(joinMock).not.toHaveBeenCalled();
   });
 });
