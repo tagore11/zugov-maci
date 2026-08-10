@@ -98,7 +98,7 @@ describe("ZuGovRegistry", () => {
       const infra = await reg2.getInfrastructure();
       expect(infra.pollFactory).to.eq(ADDR1);
       expect(infra.poseidonT3).to.eq(ADDR6);
-      expect(infra.signUpPolicy).to.eq(ADDRA);
+      expect(infra.signUpPolicy).to.eq(ethers.getAddress(ADDRA));
       expect(infra.coordinatorPubKeyX).to.eq(12345n);
     });
   });
