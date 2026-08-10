@@ -1,12 +1,13 @@
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
 import { sql } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
 import * as schema from "../../src/db/schema.js";
 
 function getTestDb() {
   const url = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL;
   if (!url) throw new Error("TEST_DATABASE_URL or DATABASE_URL must be set for tests");
-  const client = neon(url);
+  const client = postgres(url);
   return drizzle(client, { schema });
 }
 

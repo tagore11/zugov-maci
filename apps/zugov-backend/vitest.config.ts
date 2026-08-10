@@ -5,7 +5,6 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     globals: true,
-    setupFiles: ["./tests/setup-neon-local.ts"],
     // All test files share one real Postgres DB with no per-file schema isolation; each file's
     // own beforeEach/afterAll clears shared tables, so files must not race each other.
     fileParallelism: false,

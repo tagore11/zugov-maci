@@ -1,12 +1,16 @@
-// Named-export import fails under Node's ESM loader: @pcd/zuauth resolves to its CJS build here,
-// and Node's static cjs-module-lexer detection doesn't pick up its named exports, so only the
-// wrapped `default` (the real module.exports object) is available. Same interop class as the
-// blakejs issue documented in specs/003's research.md.
-import zuauthPkg from "@pcd/zuauth";
+import { createRequire } from "node:module";
+
 import type { ZuAuthArgs } from "@pcd/zuauth";
 import type { IdentityProvider } from "./IdentityProvider.js";
 
-const { authenticate, ETHBERLIN04 } = zuauthPkg;
+// @pcd/zuauth's ESM build has an extensionless relative import ("./configs/0xPARC_Summer")
+// that Node's strict ESM resolver rejects at runtime. `import ... from "@pcd/zuauth"` in an
+// ESM module resolves via the package's "import" condition straight into that broken build —
+// under a lenient bundler (tsx/vite) it's masked, but plain `node` (the real prod entrypoint)
+// throws ERR_MODULE_NOT_FOUND. Forcing a real CJS require() routes through the "require"
+// condition instead, which points at a working CJS build with no such issue.
+const require = createRequire(import.meta.url);
+const { authenticate, ETHBERLIN04 } = require("@pcd/zuauth") as typeof import("@pcd/zuauth");
 
 /**
  * Placeholder ticket pipeline config — one of @pcd/zuauth's bundled sample events.

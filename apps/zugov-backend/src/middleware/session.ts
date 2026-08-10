@@ -15,10 +15,16 @@ export interface SessionData {
 const COOKIE_NAME = "zugov_session";
 const SESSION_TTL_SECONDS = 86400;
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// The frontend (Vercel) and backend (self-hosted) are on different sites in production, so the
+// cookie must be SameSite=None (which browsers only allow alongside Secure) to be sent on
+// cross-site requests at all. In dev both run on localhost — same-site — where Strict is safe
+// and doesn't require HTTPS.
 const COOKIE_OPTS = {
   httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "Strict" as const,
+  secure: isProduction,
+  sameSite: (isProduction ? "None" : "Strict") as "None" | "Strict",
   maxAge: SESSION_TTL_SECONDS,
   path: "/",
 };
