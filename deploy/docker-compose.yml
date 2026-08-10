@@ -27,25 +27,10 @@ services:
       SCROLL_SEPOLIA_RPC_URL: ${SCROLL_SEPOLIA_RPC_URL}
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL}
       PORT: 3001
-    expose:
-      - "3001"
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
+    # Bound to localhost only — the host's nginx (already handling TLS/other
+    # sites on this box) reverse-proxies to this port. See deploy/nginx-api.conf.
     ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      DOMAIN: ${DOMAIN}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy-data:/data
-      - caddy-config:/config
-    depends_on:
-      - backend
+      - "127.0.0.1:3002:3001"
 
 volumes:
   postgres-data:
-  caddy-data:
-  caddy-config:
