@@ -393,7 +393,9 @@ export class Poll implements IPoll {
         newBallot.votes[voteOptionIndex] = command.newVoteWeight;
       }
       if (this.mode === EMode.FULL) {
-        newBallot.votes = newBallot.votes.map((votes, index) => (voteOptionIndex === index ? votes : 0n));
+        newBallot.votes = newBallot.votes.map((_votes, index) =>
+          voteOptionIndex === index ? command.newVoteWeight : 0n,
+        );
       }
       if (this.mode === EMode.RANKED) {
         const votes = unpackVoteOptions(command.voteOptionIndex, Number(this.voteOptions));

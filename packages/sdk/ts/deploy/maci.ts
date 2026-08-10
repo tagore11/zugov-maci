@@ -7,12 +7,17 @@ import {
   MessageProcessorFactory__factory as MessageProcessorFactoryFactory,
   IBasePolicy__factory as SignUpPolicyFactory,
   deployVerifier,
+  EMode,
+  EPolicy,
 } from "@maci-protocol/contracts";
 
 import type { IDeployMaciArgs, IMaciContracts } from "./types";
 
 import { deployFactoryWithLinkedLibraries } from "./utils";
 import { deployVerifyingKeysRegistryContract } from "./verifyingKeysRegistry";
+
+const ALL_MODES = Object.values(EMode).filter((value): value is EMode => typeof value === "number");
+const ALL_POLICIES = Object.values(EPolicy).filter((value): value is EPolicy => typeof value === "number");
 
 /**
  * Deploy the MACI contracts
@@ -28,7 +33,11 @@ export const deployMaci = async ({
   signer,
   poseidonAddresses,
   verifier,
+  owner,
+  initialSupportedModes = ALL_MODES,
+  initialAllowedPolicies = ALL_POLICIES,
 }: IDeployMaciArgs): Promise<IMaciContracts> => {
+  const maciOwner = owner ?? (await signer.getAddress());
   const emptyBallotRoots = generateEmptyBallotRoots(stateTreeDepth);
 
   const { PoseidonT3Contract, PoseidonT4Contract, PoseidonT5Contract, PoseidonT6Contract } =
@@ -106,6 +115,9 @@ export const deployMaci = async ({
         verifyingKeysRegistry: verifyingKeysRegistryContractAddress,
         stateTreeDepth,
         emptyBallotRoots,
+        owner: maciOwner,
+        initialSupportedModes,
+        initialAllowedPolicies,
       },
     ],
   });

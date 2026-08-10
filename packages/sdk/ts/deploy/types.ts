@@ -207,6 +207,21 @@ export interface IDeployMaciArgs {
    * Verifier address if is already deployed
    */
   verifier?: Verifier;
+
+  /**
+   * Owner of the deployed MACI instance (defaults to the signer's own address)
+   */
+  owner?: string;
+
+  /**
+   * Voting modes the deployed MACI instance accepts (defaults to all modes)
+   */
+  initialSupportedModes?: EMode[];
+
+  /**
+   * Sign-up/registration policies the deployed MACI instance accepts (defaults to all policies)
+   */
+  initialAllowedPolicies?: EPolicy[];
 }
 
 /**

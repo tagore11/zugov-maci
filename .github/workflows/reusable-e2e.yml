@@ -102,6 +102,15 @@ jobs:
       - name: Run hardhat fork
         run: |
           cp ./deploy-config-example.json ./deploy-config.json
+          # deploy-config-example.json's hardhat.Poll dates are consumed as absolute
+          # unix timestamps (tasks/deploy/poll/03-poll.ts), not offsets, so a static
+          # committed value inevitably goes stale — compute them fresh each run instead.
+          START=$(($(date +%s) + 300))
+          END=$((START + 600))
+          jq --argjson start "$START" --argjson end "$END" \
+            '.hardhat.Poll.pollStartDate = $start | .hardhat.Poll.pollEndDate = $end' \
+            ./deploy-config.json > ./deploy-config.json.tmp
+          mv ./deploy-config.json.tmp ./deploy-config.json
           pnpm run hardhat &
           sleep 5
         working-directory: packages/contracts
