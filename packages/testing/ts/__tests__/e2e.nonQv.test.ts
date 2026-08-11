@@ -3,7 +3,6 @@ import { generateRandomSalt } from "@maci-protocol/crypto";
 import { Keypair } from "@maci-protocol/domainobjs";
 import {
   generateVote,
-  getBlockTimestamp,
   getDefaultSigner,
   signup,
   mergeSignups,
@@ -57,7 +56,7 @@ import {
   testPollJoiningWitnessPath,
   DEFAULT_IVCP_DATA,
 } from "../constants";
-import { clean, getBackupFilenames, relayTestMessages } from "../utils";
+import { clean, getBackupFilenames, getPollStartTimestamp, relayTestMessages } from "../utils";
 
 /**
  Test scenarios:
@@ -143,7 +142,7 @@ describe("e2e tests with non quadratic voting", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -265,7 +264,7 @@ describe("e2e tests with non quadratic voting", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -400,7 +399,7 @@ describe("e2e tests with non quadratic voting", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -535,7 +534,7 @@ describe("e2e tests with non quadratic voting", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -696,7 +695,7 @@ describe("e2e tests with non quadratic voting", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({

@@ -1,8 +1,9 @@
-import { BigInt as GraphBN, ethereum } from "@graphprotocol/graph-ts";
+import { Address, BigInt as GraphBN, ethereum } from "@graphprotocol/graph-ts";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { newMockEvent } from "matchstick-as";
 
 import { SignUp, DeployPoll } from "../../generated/MACI/MACI";
+import { DEFAULT_POLL_ADDRESS, DEFAULT_MESSAGE_PROCESSOR_ADDRESS, DEFAULT_TALLY_ADDRESS } from "../common";
 
 export function createSignUpEvent(
   stateIndex: GraphBN,
@@ -24,6 +25,9 @@ export function createSignUpEvent(
   return event;
 }
 
+// pollData/pollContracts tuple field order must match generated/MACI/MACI.ts's
+// DeployPollPollDataStruct/DeployPollPollContractsStruct exactly (graph-ts tuples are
+// positional, not keyed by name).
 export function createDeployPollEvent(
   pollId: GraphBN,
   coordinatorPublicKeyX: GraphBN,
@@ -32,14 +36,34 @@ export function createDeployPollEvent(
 ): DeployPoll {
   const event = changetype<DeployPoll>(newMockEvent());
 
-  event.parameters.push(new ethereum.EventParam("_pollId", ethereum.Value.fromUnsignedBigInt(pollId)));
-  event.parameters.push(
-    new ethereum.EventParam("_coordinatorPublicKeyX", ethereum.Value.fromUnsignedBigInt(coordinatorPublicKeyX)),
-  );
-  event.parameters.push(
-    new ethereum.EventParam("_coordinatorPublicKeyY", ethereum.Value.fromUnsignedBigInt(coordinatorPublicKeyY)),
-  );
-  event.parameters.push(new ethereum.EventParam("mode", ethereum.Value.fromUnsignedBigInt(mode)));
+  const coordinatorPubKey = changetype<ethereum.Tuple>([
+    ethereum.Value.fromUnsignedBigInt(coordinatorPublicKeyX),
+    ethereum.Value.fromUnsignedBigInt(coordinatorPublicKeyY),
+  ]);
+
+  const pollData = changetype<ethereum.Tuple>([
+    ethereum.Value.fromUnsignedBigInt(pollId), // id
+    ethereum.Value.fromString("Test Poll"), // name
+    ethereum.Value.fromString(""), // metadata
+    ethereum.Value.fromUnsignedBigInt(GraphBN.fromI32(30)), // startTime
+    ethereum.Value.fromUnsignedBigInt(GraphBN.fromI32(40)), // endTime
+    ethereum.Value.fromStringArray([]), // options
+    ethereum.Value.fromBytesArray([]), // optionInfo
+    ethereum.Value.fromTuple(coordinatorPubKey), // coordinatorPubKey
+    ethereum.Value.fromAddress(Address.zero()), // pollDeployer
+    ethereum.Value.fromI32(mode.toI32()), // mode
+    ethereum.Value.fromAddress(Address.zero()), // policy
+    ethereum.Value.fromI32(0), // policyType
+  ]);
+
+  const pollContracts = changetype<ethereum.Tuple>([
+    ethereum.Value.fromAddress(DEFAULT_POLL_ADDRESS),
+    ethereum.Value.fromAddress(DEFAULT_MESSAGE_PROCESSOR_ADDRESS),
+    ethereum.Value.fromAddress(DEFAULT_TALLY_ADDRESS),
+  ]);
+
+  event.parameters.push(new ethereum.EventParam("pollData", ethereum.Value.fromTuple(pollData)));
+  event.parameters.push(new ethereum.EventParam("pollContracts", ethereum.Value.fromTuple(pollContracts)));
 
   return event;
 }

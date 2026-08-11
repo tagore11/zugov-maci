@@ -21,7 +21,7 @@ import { PublicKeyValidator } from "./validation.js";
 /**
  * Max messages per batch
  */
-export const MAX_MESSAGES = Number(process.env.MAX_MESSAGES);
+export const MAX_MESSAGES = Number(process.env.MAX_MESSAGES) || 20;
 
 /**
  * Data transfer object for user message

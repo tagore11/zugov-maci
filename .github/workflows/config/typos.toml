@@ -3,6 +3,23 @@ ba = "ba"
 groth = "groth"
 Allo = "Allo"
 Buidl = "Buidl"
+# Mermaid diagram node IDs in diagrams.md (VoteStrat, ExecStrat), not the English word "start".
+Strat = "Strat"
+# MACI.sol's `pollDatas` mapping name (packages/contracts/contracts/MACI.sol) — a deployed
+# contract's field name, not a typo of "Data".
+Datas = "Datas"
+# packages/cli/ts/index.ts's `-pn, --poll-name` CLI flag alias.
+pn = "pn"
+# drizzle-kit's auto-generated migration tag `0004_good_clea` (apps/zugov-backend/drizzle) —
+# not something to rename after the fact without breaking migration history.
+clea = "clea"
 
 [files]
-extend-exclude = ["/**/CHANGELOG.md", "/**/*.svg", "/**/*.excalidraw"]
+extend-exclude = [
+  "/**/CHANGELOG.md",
+  "/**/*.svg",
+  "/**/*.excalidraw",
+  # Vendored ABI JSON (apps/subgraph/abis/) embeds compiled bytecode as hex strings, which
+  # coincidentally match English word fragments at random — not meaningful to spell-check.
+  "apps/subgraph/abis/*.json",
+]

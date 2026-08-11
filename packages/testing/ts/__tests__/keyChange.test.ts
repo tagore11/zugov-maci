@@ -3,7 +3,6 @@ import { generateRandomSalt } from "@maci-protocol/crypto";
 import { Keypair } from "@maci-protocol/domainobjs";
 import {
   generateVote,
-  getBlockTimestamp,
   getDefaultSigner,
   signup,
   mergeSignups,
@@ -60,7 +59,7 @@ import {
   coordinatorKeypair,
   verifyingKeysArgs,
 } from "../constants";
-import { clean, getBackupFilenames, relayTestMessages } from "../utils";
+import { clean, getBackupFilenames, getPollStartTimestamp, relayTestMessages } from "../utils";
 
 describe("keyChange tests", function test() {
   const useWasm = isArm();
@@ -150,7 +149,7 @@ describe("keyChange tests", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -323,7 +322,7 @@ describe("keyChange tests", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({
@@ -482,7 +481,7 @@ describe("keyChange tests", function test() {
         verifyingKeysRegistryAddress: verifyingKeysRegistryContractAddress,
       });
 
-      const startDate = await getBlockTimestamp(signer);
+      const startDate = await getPollStartTimestamp(signer);
 
       // deploy a poll contract
       await deployPoll({

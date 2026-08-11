@@ -10,7 +10,7 @@ on:
       - "packages/core/**"
       - "packages/contracts/**"
       - "packages/sdk/**"
-      - "scripts/vercel-build.sh"
+      - "scripts/build-frontend.sh"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/deploy-frontend.yml"
@@ -45,7 +45,7 @@ jobs:
       - name: Build
         env:
           VITE_API_URL: https://api.zugov.xyz
-        run: sh scripts/vercel-build.sh
+        run: sh scripts/build-frontend.sh
 
       - name: Deploy to server
         env:
