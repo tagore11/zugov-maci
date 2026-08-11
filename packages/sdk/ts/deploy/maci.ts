@@ -16,9 +16,6 @@ import type { IDeployMaciArgs, IMaciContracts } from "./types";
 import { deployFactoryWithLinkedLibraries } from "./utils";
 import { deployVerifyingKeysRegistryContract } from "./verifyingKeysRegistry";
 
-const ALL_MODES = Object.values(EMode).filter((value): value is EMode => typeof value === "number");
-const ALL_POLICIES = Object.values(EPolicy).filter((value): value is EPolicy => typeof value === "number");
-
 /**
  * Deploy the MACI contracts
  * @param args - The arguments for the MACI contracts deployment
@@ -34,8 +31,13 @@ export const deployMaci = async ({
   poseidonAddresses,
   verifier,
   owner,
-  initialSupportedModes = ALL_MODES,
-  initialAllowedPolicies = ALL_POLICIES,
+  // Computed as default-parameter expressions (evaluated when deployMaci is actually called),
+  // not module-level constants — some bundlers (e.g. Vite, via a circular import between
+  // @maci-protocol/contracts and this package) evaluate this module before EMode/EPolicy are
+  // defined, and Object.values(undefined) at module load time crashes the whole bundle even for
+  // callers that never invoke deployMaci at all.
+  initialSupportedModes = Object.values(EMode).filter((value): value is EMode => typeof value === "number"),
+  initialAllowedPolicies = Object.values(EPolicy).filter((value): value is EPolicy => typeof value === "number"),
 }: IDeployMaciArgs): Promise<IMaciContracts> => {
   const maciOwner = owner ?? (await signer.getAddress());
   const emptyBallotRoots = generateEmptyBallotRoots(stateTreeDepth);
