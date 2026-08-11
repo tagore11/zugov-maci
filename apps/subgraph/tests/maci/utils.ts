@@ -2,7 +2,7 @@ import { Address, BigInt as GraphBN, ethereum } from "@graphprotocol/graph-ts";
 // eslint-disable-next-line import/no-extraneous-dependencies
 import { newMockEvent } from "matchstick-as";
 
-import { SignUp, DeployPoll } from "../../generated/MACI/MACI";
+import { SignUp, DeployPoll, OwnershipTransferred } from "../../generated/MACI/MACI";
 import { DEFAULT_POLL_ADDRESS, DEFAULT_MESSAGE_PROCESSOR_ADDRESS, DEFAULT_TALLY_ADDRESS } from "../common";
 
 export function createSignUpEvent(
@@ -64,6 +64,15 @@ export function createDeployPollEvent(
 
   event.parameters.push(new ethereum.EventParam("pollData", ethereum.Value.fromTuple(pollData)));
   event.parameters.push(new ethereum.EventParam("pollContracts", ethereum.Value.fromTuple(pollContracts)));
+
+  return event;
+}
+
+export function createOwnershipTransferredEvent(previousOwner: Address, newOwner: Address): OwnershipTransferred {
+  const event = changetype<OwnershipTransferred>(newMockEvent());
+
+  event.parameters.push(new ethereum.EventParam("previousOwner", ethereum.Value.fromAddress(previousOwner)));
+  event.parameters.push(new ethereum.EventParam("newOwner", ethereum.Value.fromAddress(newOwner)));
 
   return event;
 }

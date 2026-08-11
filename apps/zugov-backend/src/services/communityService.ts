@@ -1,9 +1,36 @@
 import { eq, and, count } from "drizzle-orm";
+import { createPublicClient, getAddress, http, type Address } from "viem";
 import { db } from "../db/client.js";
 import { communities, memberships, type Community } from "../db/schema.js";
 import type { CommunityBody, PollDeployConfigBody } from "../validators/communitySchema.js";
+import { getRpcUrl } from "./chainRpc.js";
 import { createTiersForCommunity, listTiers } from "./membershipService.js";
-import { deployCommunitySubgraph } from "./subgraphDeployService.js";
+import { deployCommunitySubgraph, subgraphQueryUrlFor } from "./subgraphDeployService.js";
+
+const SIGN_UP_POLICY_ABI = [
+  { type: "function", name: "signUpPolicy", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+] as const;
+
+const TRAIT_ABI = [
+  { type: "function", name: "trait", stateMutability: "pure", inputs: [], outputs: [{ type: "string" }] },
+] as const;
+
+// Every BasePolicy contract implements trait() (see IPolicy.sol) returning a fixed string
+// identifying its implementation. Mirrors apps/zugov-frontend/src/hooks/useMaciContractConfig.ts's
+// TRAIT_TO_POLICY_TYPE, which does this same on-chain read in the browser during registration.
+const TRAIT_TO_SIGN_UP_POLICY_TYPE: Record<string, string> = {
+  FreeForAll: "FreeForAll",
+  Zupass: "Zupass",
+  EAS: "EAS",
+  GitcoinPassport: "GitcoinPassport",
+  Semaphore: "Semaphore",
+  AnonAadhaar: "AnonAadhaar",
+  ERC20: "ERC20Token",
+  ERC20Votes: "ERC20Votes",
+  Token: "Token",
+  MerkleProof: "MerkleProof",
+  Hats: "HatsProtocol",
+};
 
 const POLL_DEPLOY_CONFIG_COLUMNS = [
   "coordinatorPublicKey",
@@ -95,6 +122,85 @@ export async function list(
 export async function get(id: string): Promise<CommunityRecord | null> {
   const rows = await db.select().from(communities).where(eq(communities.id, id)).limit(1);
   return rows[0] ? parseRecord(rows[0]) : null;
+}
+
+/**
+ * Brings `creatorAddress` back in sync with the contract's on-chain owner() after a
+ * transferOwnership() call, which the community's subgraph picks up via its
+ * OwnershipTransferred handler but which this app is never otherwise told about (no
+ * webhook from graph-node — see subgraphQueryUrlFor). Called lazily when a community is
+ * fetched, mirroring the on-page-load on-chain reads used elsewhere in this app rather
+ * than adding new polling infrastructure.
+ */
+export async function reconcileCreatorAddress(community: CommunityRecord): Promise<CommunityRecord> {
+  if (community.subgraphStatus !== "ready" || !community.subgraphName) return community;
+
+  let owner: string | undefined;
+  try {
+    const res = await fetch(subgraphQueryUrlFor(community.subgraphName), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `{ maci(id: "${community.id.toLowerCase()}") { owner } }` }),
+    });
+    if (!res.ok) return community;
+    const body = (await res.json()) as { data?: { maci?: { owner: string } | null } };
+    owner = body.data?.maci?.owner;
+  } catch {
+    return community;
+  }
+
+  // "0x" is the subgraph's Bytes.empty() default before any OwnershipTransferred event is indexed.
+  if (!owner || owner === "0x") return community;
+
+  const checksummedOwner = getAddress(owner);
+  if (checksummedOwner === getAddress(community.creatorAddress)) return community;
+
+  await db.update(communities).set({ creatorAddress: checksummedOwner }).where(eq(communities.id, community.id));
+  return { ...community, creatorAddress: checksummedOwner };
+}
+
+/**
+ * Backfills signUpPolicyType/signUpPolicyAddress for communities registered before those columns
+ * existed (see schema.ts's comment on signUpPolicyType) by reading MACI's immutable
+ * signUpPolicy() getter and the resulting policy contract's trait() directly from chain. Unlike
+ * reconcileCreatorAddress above, this value can't change after MACI's constructor runs, so it
+ * only needs to be read once — no subgraph dependency, and nothing to do once it's set.
+ */
+export async function reconcileSignUpPolicy(community: CommunityRecord): Promise<CommunityRecord> {
+  if (community.signUpPolicyType !== null) return community;
+
+  const rpcUrl = getRpcUrl(community.chainId);
+  if (!rpcUrl) return community;
+
+  const client = createPublicClient({ transport: http(rpcUrl) });
+
+  let signUpPolicyAddress: Address;
+  let trait: string;
+  try {
+    signUpPolicyAddress = await client.readContract({
+      address: community.id as Address,
+      abi: SIGN_UP_POLICY_ABI,
+      functionName: "signUpPolicy",
+    });
+    trait = await client.readContract({
+      address: signUpPolicyAddress,
+      abi: TRAIT_ABI,
+      functionName: "trait",
+    });
+  } catch {
+    return community;
+  }
+
+  const signUpPolicyType = TRAIT_TO_SIGN_UP_POLICY_TYPE[trait];
+  if (!signUpPolicyType) return community;
+
+  const checksummedPolicyAddress = getAddress(signUpPolicyAddress);
+  await db
+    .update(communities)
+    .set({ signUpPolicyType, signUpPolicyAddress: checksummedPolicyAddress })
+    .where(eq(communities.id, community.id));
+
+  return { ...community, signUpPolicyType, signUpPolicyAddress: checksummedPolicyAddress };
 }
 
 export async function create(data: CommunityBody): Promise<{ community: CommunityRecord; created: boolean }> {

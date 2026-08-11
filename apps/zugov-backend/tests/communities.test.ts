@@ -1,7 +1,10 @@
-import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
-import { clearCommunities } from "./helpers/testDb.js";
+import { encodeFunctionResult } from "viem";
+import { eq } from "drizzle-orm";
+import { clearCommunities, testDb } from "./helpers/testDb.js";
+import { communities } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -22,6 +25,18 @@ vi.mock("../src/services/contractOwnership.js", async () => {
   return {
     ...actual,
     verifyContractOwner: (...args: unknown[]) => verifyContractOwnerMock(...args) as Promise<void>,
+  };
+});
+
+// chainRpc.js reads its RPC_URLS map from process.env once at import time, so a test can't just
+// set process.env — this lets each signUpPolicy reconciliation test control getRpcUrl's return
+// value directly instead.
+const getRpcUrlMock = vi.fn((_chainId: number) => null as string | null);
+vi.mock("../src/services/chainRpc.js", async () => {
+  const actual = await vi.importActual<typeof import("../src/services/chainRpc.js")>("../src/services/chainRpc.js");
+  return {
+    ...actual,
+    getRpcUrl: (chainId: number) => getRpcUrlMock(chainId),
   };
 });
 
@@ -96,6 +111,8 @@ const POLL_DEPLOY_CONFIG = {
 beforeEach(async () => {
   verifyContractOwnerMock.mockReset();
   verifyContractOwnerMock.mockResolvedValue(undefined);
+  getRpcUrlMock.mockReset();
+  getRpcUrlMock.mockReturnValue(null);
   try {
     await clearCommunities();
   } catch {
@@ -136,6 +153,212 @@ describe("GET /api/communities/:id", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("Community not found");
+  });
+
+  describe("creatorAddress reconciliation against the subgraph's owner", () => {
+    const STALE_OWNER = "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB";
+    const NEW_OWNER = "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC";
+
+    async function registerReadyCommunity(id: string): Promise<void> {
+      const cookie = await authCookieFor(REGISTRANT);
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id, source: "wizard" }),
+      });
+      expect(res.status).toBe(201);
+      // POST always sets creatorAddress from the session wallet (REGISTRANT), never the client
+      // body — simulate a stale row (contract ownership transferred after registration) plus a
+      // ready subgraph directly, rather than waiting on the real fire-and-forget subgraph deploy
+      // (which fails in this test env — no graph-node running).
+      await testDb
+        .update(communities)
+        .set({
+          creatorAddress: STALE_OWNER,
+          subgraphName: `community-${id.toLowerCase()}`,
+          subgraphStatus: "ready",
+        })
+        .where(eq(communities.id, id));
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("updates creatorAddress when the subgraph reports a new on-chain owner", async () => {
+      const id = "0x7777777777777777777777777777777777777771";
+      await registerReadyCommunity(id);
+
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { maci: { owner: NEW_OWNER.toLowerCase() } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${id}`);
+      expect(res.status).toBe(200);
+      const { community } = (await res.json()) as { community: { creatorAddress: string } };
+      expect(community.creatorAddress).toBe(NEW_OWNER);
+
+      const [row] = await testDb.select().from(communities).where(eq(communities.id, id)).limit(1);
+      expect(row!.creatorAddress).toBe(NEW_OWNER);
+    });
+
+    it("leaves creatorAddress untouched when the subgraph reports the same owner", async () => {
+      const id = "0x7777777777777777777777777777777777777772";
+      await registerReadyCommunity(id);
+
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ data: { maci: { owner: STALE_OWNER.toLowerCase() } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${id}`);
+      const { community } = (await res.json()) as { community: { creatorAddress: string } };
+      expect(community.creatorAddress).toBe(STALE_OWNER);
+    });
+
+    it("does not query the subgraph when it isn't ready yet", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const id = "0x7777777777777777777777777777777777777773";
+      await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id, creatorAddress: STALE_OWNER, source: "wizard" }),
+      });
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${id}`);
+      const { community } = (await res.json()) as { community: { creatorAddress: string } };
+      expect(community.creatorAddress).toBe(REGISTRANT.address);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("falls back to the stored creatorAddress when the subgraph is unreachable", async () => {
+      const id = "0x7777777777777777777777777777777777777774";
+      await registerReadyCommunity(id);
+
+      vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network error")));
+
+      const res = await app.request(`/api/communities/${id}`);
+      expect(res.status).toBe(200);
+      const { community } = (await res.json()) as { community: { creatorAddress: string } };
+      expect(community.creatorAddress).toBe(STALE_OWNER);
+    });
+  });
+
+  describe("signUpPolicyType reconciliation against the chain", () => {
+    const SIGN_UP_POLICY_ABI = [
+      { type: "function", name: "signUpPolicy", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+    ] as const;
+    const TRAIT_ABI = [
+      { type: "function", name: "trait", stateMutability: "pure", inputs: [], outputs: [{ type: "string" }] },
+    ] as const;
+    const POLICY_ADDRESS = "0xDDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDDd";
+
+    async function registerCommunityMissingPolicy(id: string): Promise<void> {
+      const now = Math.floor(Date.now() / 1000);
+      await testDb.insert(communities).values({
+        id,
+        chainId: 534351,
+        displayName: "Legacy Community",
+        creatorAddress: REGISTRANT.address,
+        governanceType: "maci",
+        allowedPolicies: JSON.stringify([0, 1]),
+        supportedModes: JSON.stringify([0]),
+        signUpPolicyType: null,
+        signUpPolicyAddress: null,
+        voterCapacityPreset: "small",
+        stateTreeDepth: 6,
+        subgraphStatus: "pending",
+        createdAt: now,
+        registeredAt: now,
+      });
+    }
+
+    function rpcResponder(result: `0x${string}`) {
+      return async (_url: unknown, init?: RequestInit) => {
+        const body = JSON.parse(init!.body as string) as { id: number };
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      };
+    }
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("backfills signUpPolicyType/Address by reading the contract when null", async () => {
+      const id = "0x7777777777777777777777777777777777777776";
+      await registerCommunityMissingPolicy(id);
+      getRpcUrlMock.mockReturnValue("http://localhost:8545");
+
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(
+          rpcResponder(
+            encodeFunctionResult({
+              abi: SIGN_UP_POLICY_ABI,
+              functionName: "signUpPolicy",
+              result: POLICY_ADDRESS,
+            }),
+          ),
+        )
+        .mockImplementationOnce(
+          rpcResponder(encodeFunctionResult({ abi: TRAIT_ABI, functionName: "trait", result: "FreeForAll" })),
+        );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${id}`);
+      expect(res.status).toBe(200);
+      const { community } = (await res.json()) as {
+        community: { signUpPolicyType: string | null; signUpPolicyAddress: string | null };
+      };
+      expect(community.signUpPolicyType).toBe("FreeForAll");
+      expect(community.signUpPolicyAddress).toBe(POLICY_ADDRESS);
+
+      const [row] = await testDb.select().from(communities).where(eq(communities.id, id)).limit(1);
+      expect(row!.signUpPolicyType).toBe("FreeForAll");
+    });
+
+    it("leaves signUpPolicyType null when no RPC is configured for the chain", async () => {
+      const id = "0x7777777777777777777777777777777777777777";
+      await registerCommunityMissingPolicy(id);
+      getRpcUrlMock.mockReturnValue(null);
+
+      const res = await app.request(`/api/communities/${id}`);
+      expect(res.status).toBe(200);
+      const { community } = (await res.json()) as { community: { signUpPolicyType: string | null } };
+      expect(community.signUpPolicyType).toBeNull();
+    });
+
+    it("does not call the RPC when signUpPolicyType is already set", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const id = "0x7777777777777777777777777777777777777778";
+      await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id, source: "wizard" }),
+      });
+      getRpcUrlMock.mockReturnValue("http://localhost:8545");
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${id}`);
+      const { community } = (await res.json()) as { community: { signUpPolicyType: string | null } };
+      expect(community.signUpPolicyType).toBe("FreeForAll");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
 

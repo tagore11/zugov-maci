@@ -1,7 +1,11 @@
 /* eslint-disable no-underscore-dangle */
 import { Address, BigInt as GraphBN } from "@graphprotocol/graph-ts";
 
-import { DeployPoll as DeployPollEvent, SignUp as SignUpEvent } from "../generated/MACI/MACI";
+import {
+  DeployPoll as DeployPollEvent,
+  SignUp as SignUpEvent,
+  OwnershipTransferred as OwnershipTransferredEvent,
+} from "../generated/MACI/MACI";
 import { Poll } from "../generated/schema";
 import { Poll as PollTemplate } from "../generated/templates";
 import { Poll as PollContract } from "../generated/templates/Poll/Poll";
@@ -78,4 +82,12 @@ export function handleSignUp(event: SignUpEvent): void {
     poll.updatedAt = event.block.timestamp;
     poll.save();
   }
+}
+
+export function handleOwnershipTransferred(event: OwnershipTransferredEvent): void {
+  const maci = createOrLoadMACI(event);
+
+  maci.owner = event.params.newOwner;
+  maci.updatedAt = event.block.timestamp;
+  maci.save();
 }

@@ -46,7 +46,9 @@ communitiesRouter.get("/:id", async (c) => {
   if (!community) {
     return c.json({ error: "Community not found" }, 404);
   }
-  return c.json({ community });
+  const withCreator = await communityService.reconcileCreatorAddress(community);
+  const reconciled = await communityService.reconcileSignUpPolicy(withCreator);
+  return c.json({ community: reconciled });
 });
 
 // specs/002 FR-002/FR-013: the registering wallet MUST have an active SIWE session, and for the
