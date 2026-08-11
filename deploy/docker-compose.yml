@@ -85,7 +85,13 @@ services:
       # supportedChains needs an entry added here too (and in
       # apps/zugov-backend/src/services/chainRpc.ts's NETWORK_NAMES/RPC_URLS), or
       # that chain's communities fail subgraph deployment.
-      ethereum: "scroll-sepolia:${SCROLL_SEPOLIA_RPC_URL},sepolia:${SEPOLIA_RPC_URL}"
+      # graph-node's docker entrypoint runs `--ethereum-rpc $ethereum` UNQUOTED, so
+      # bash word-splits this on WHITESPACE into separate --ethereum-rpc arguments —
+      # a comma here (the multi-network separator for other graph-node config forms)
+      # instead makes the whole string one malformed NETWORK:URL entry and crashes
+      # graph-node on startup ("unable to parse network configuration: invalid port
+      # number"). Must be space-separated, not comma-separated.
+      ethereum: "scroll-sepolia:${SCROLL_SEPOLIA_RPC_URL} sepolia:${SEPOLIA_RPC_URL}"
       GRAPH_LOG: info
     # graph-node takes 30-60s+ to become ready after starting (connecting to
     # Postgres, running migrations) before the admin RPC port opens — without
