@@ -35,6 +35,8 @@ dataSources:
           handler: handleDeployPoll
         - event: SignUp(uint256,uint256,indexed uint256,indexed uint256)
           handler: handleSignUp
+        - event: OwnershipTransferred(indexed address,indexed address)
+          handler: handleOwnershipTransferred
       file: ./src/maci.ts
 templates:
   - kind: ethereum
