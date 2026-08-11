@@ -73,26 +73,27 @@ services:
       ipfs:
         condition: service_started
     environment:
-      postgres_host: graph-postgres
-      postgres_user: graph-node
-      postgres_pass: ${GRAPH_POSTGRES_PASSWORD}
-      postgres_db: graph-node
-      ipfs: "ipfs:5001"
       # Network names here must exactly match the `network:` field the deploy
       # script writes into each community's subgraph.yaml (see
       # apps/subgraph/scripts/deploy-community.mjs) — "scroll-sepolia"/"sepolia",
       # not underscored variants. A chain added to apps/zugov-frontend/src/config.ts's
-      # supportedChains needs an entry added here too (and in
+      # supportedChains needs an entry added here too (in graph-node-config.toml, and in
       # apps/zugov-backend/src/services/chainRpc.ts's NETWORK_NAMES/RPC_URLS), or
       # that chain's communities fail subgraph deployment.
-      # graph-node's docker entrypoint runs `--ethereum-rpc $ethereum` UNQUOTED, so
-      # bash word-splits this on WHITESPACE into separate --ethereum-rpc arguments —
-      # a comma here (the multi-network separator for other graph-node config forms)
-      # instead makes the whole string one malformed NETWORK:URL entry and crashes
-      # graph-node on startup ("unable to parse network configuration: invalid port
-      # number"). Must be space-separated, not comma-separated.
-      ethereum: "scroll-sepolia:${SCROLL_SEPOLIA_RPC_URL} sepolia:${SEPOLIA_RPC_URL}"
+      #
+      # Multi-chain setup lives in graph-node-config.toml (mounted below) rather than the
+      # simpler `ethereum` env var — that var only ever produces one --ethereum-rpc flag,
+      # so it can't describe more than one network. node_id must match the `ingestor` and
+      # `deployment.rule.indexers` values in that file.
+      node_id: node
+      GRAPH_NODE_CONFIG: /etc/graph-node/config.toml
+      GRAPH_POSTGRES_PASSWORD: ${GRAPH_POSTGRES_PASSWORD}
+      SCROLL_SEPOLIA_RPC_URL: ${SCROLL_SEPOLIA_RPC_URL}
+      SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL}
+      ipfs: "ipfs:5001"
       GRAPH_LOG: info
+    volumes:
+      - ./graph-node-config.toml:/etc/graph-node/config.toml:ro
     # graph-node takes 30-60s+ to become ready after starting (connecting to
     # Postgres, running migrations) before the admin RPC port opens — without
     # this, `backend`'s `depends_on: condition: service_started` only waits for
