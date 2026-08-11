@@ -160,9 +160,13 @@ describe("E2E hardhat tasks", function test() {
 
   it("should deploy poll contract properly", async () => {
     const now = Math.floor(Date.now() / 1000);
+    // MACI.deployPoll() reverts unless startDate is strictly after the timestamp of the block
+    // that mines this task's transaction, which is always at least a moment after `now` here —
+    // a bare `now` (or, as before, a value already in the past) races that confirmation delay.
+    const pollStartBuffer = 5;
 
-    deployment.updateDeployConfig(EContracts.Poll, "pollStartDate", now - pollDuration);
-    deployment.updateDeployConfig(EContracts.Poll, "pollEndDate", now + pollDuration);
+    deployment.updateDeployConfig(EContracts.Poll, "pollStartDate", now + pollStartBuffer);
+    deployment.updateDeployConfig(EContracts.Poll, "pollEndDate", now + pollStartBuffer + pollDuration);
 
     await hardhat.run(EDeploySteps.Poll, args);
   });
