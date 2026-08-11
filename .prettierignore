@@ -16,6 +16,7 @@ apps/website/versioned_docs/**/technical-references/smart-contracts/solidity-doc
 **/deployed-contracts.json
 **/deploy-config.json
 apps/subgraph/generated
+apps/zugov-frontend/src/generated
 apps/subgraph/templates/*.yaml
 apps/subgraph/subgraph.yaml
 **/zkeys

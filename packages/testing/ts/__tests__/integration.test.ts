@@ -6,7 +6,6 @@ import {
   cidToBytes32,
   createCidFromObject,
   generateVote,
-  getBlockTimestamp,
   getDefaultSigner,
   relayMessages,
   signup,
@@ -51,7 +50,14 @@ import {
   POLL_STATE_TREE_DEPTH,
 } from "../constants";
 import { type ITestSuite } from "../types";
-import { expectTally, generateTestUserCommands, isArm, writeBackupFile, backupFolder } from "../utils";
+import {
+  expectTally,
+  generateTestUserCommands,
+  getPollStartTimestamp,
+  isArm,
+  writeBackupFile,
+  backupFolder,
+} from "../utils";
 
 chai.use(chaiAsPromised);
 
@@ -147,7 +153,7 @@ describe("Integration tests", function test() {
     );
     const initialVoiceCreditProxyContractAddress = await initialVoiceCreditProxy.getAddress();
 
-    const startDate = await getBlockTimestamp(signer);
+    const startDate = await getPollStartTimestamp(signer);
 
     // 4. create a poll
     await deployPoll({
