@@ -379,7 +379,7 @@ export default function CommunityPage() {
               subgraph is indexed.
             </div>
 
-            <JoinSection communityId={dc.id} connected={!!address} />
+            <JoinSection communityId={dc.id} connected={!!address} rpcUrl={rpcUrl} />
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
