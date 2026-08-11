@@ -1,19 +1,47 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { JsonRpcProvider } from "ethers";
 import * as membershipApi from "@/src/services/membershipApi";
 import { useSignup } from "@/src/hooks/useSignup";
+import { useMaci } from "@/src/context/MaciContext";
 import { GovernanceTypes } from "@/src/config";
+import { MACI__factory } from "@/src/poll-factory-shim";
 
-export function JoinSection({ communityId, connected }: { communityId: string; connected: boolean }) {
+export function JoinSection({
+  communityId,
+  connected,
+  rpcUrl,
+}: {
+  communityId: string;
+  connected: boolean;
+  rpcUrl: string;
+}) {
   const queryClient = useQueryClient();
+  const { maciKeypair } = useMaci();
   const { isSigningUp, signupToMaci } = useSignup(GovernanceTypes.MACI);
-  const [joined, setJoined] = useState(false);
+  const [justJoined, setJustJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const { data: membership } = useQuery({
     queryKey: ["membershipStatus", communityId],
     queryFn: () => membershipApi.getMembershipStatus(communityId),
     enabled: connected,
+  });
+
+  // The MACI contract's state index is the ground truth for on-chain registration — it's
+  // available immediately after the signup tx is mined, unlike the backend membership row
+  // (secondary bookkeeping) or subgraph indexing (which lags and isn't wired up for every
+  // community yet).
+  const pubKeyHash = maciKeypair?.publicKey.hash();
+  const { data: isRegisteredOnChain = false } = useQuery({
+    queryKey: ["maciStateIndex", communityId, pubKeyHash?.toString()],
+    queryFn: async () => {
+      const provider = new JsonRpcProvider(rpcUrl);
+      const maciContract = MACI__factory.connect(communityId, provider);
+      const stateIndex = (await maciContract.getStateIndex(pubKeyHash)) as bigint;
+      return stateIndex >= 1n;
+    },
+    enabled: connected && !!maciKeypair,
   });
 
   async function handleJoin() {
@@ -34,13 +62,17 @@ export function JoinSection({ communityId, connected }: { communityId: string; c
       // best-effort
     }
 
-    setJoined(true);
+    setJustJoined(true);
     queryClient.invalidateQueries({ queryKey: ["membershipStatus", communityId] });
+    queryClient.invalidateQueries({ queryKey: ["maciStateIndex", communityId] });
   }
 
   if (!connected) return null;
 
-  if (joined) {
+  // justJoined is a local optimistic flag that covers the gap between the signup tx landing and
+  // the maciStateIndex query refetch; isRegisteredOnChain is the persisted source of truth that
+  // survives remounts (e.g. navigating away and back to the community card).
+  if (justJoined || isRegisteredOnChain) {
     return (
       <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
         Signed up — you&apos;re now registered to vote in this community&apos;s MACI state tree.
@@ -50,12 +82,6 @@ export function JoinSection({ communityId, connected }: { communityId: string; c
 
   return (
     <div className="space-y-2">
-      {membership?.status === "member" && (
-        <p className="text-xs text-gray-500">
-          Already recorded as a member{membership.tierLabel ? ` (${membership.tierLabel} tier)` : ""} — sign up below to
-          also register on-chain with MACI if you haven&apos;t yet.
-        </p>
-      )}
       {membership?.status === "pending" && (
         <p className="text-xs text-gray-500">Membership request pending admin review.</p>
       )}
