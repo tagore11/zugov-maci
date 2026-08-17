@@ -42,4 +42,18 @@ jobs:
             docker compose build backend
             docker compose run --rm backend node_modules/.bin/drizzle-kit migrate
             docker compose up -d
+            # graph-node-config.toml is bind-mounted — compose only recreates a container when
+            # the service definition itself changes, not when a mounted file's contents do, so
+            # config edits (e.g. provider `features`) would otherwise never take effect on a
+            # running graph-node otherwise. Its indexing state lives in the separate
+            # graph-postgres volume, not the container, so recreating it is safe — but only do
+            # it when the config actually changed, to avoid bouncing every community's subgraph
+            # on every unrelated backend deploy.
+            GRAPH_NODE_CONFIG_CHECKSUM_FILE="$HOME/.zugov-graph-node-config-checksum"
+            NEW_CHECKSUM=$(sha256sum graph-node-config.toml | awk '{print $1}')
+            OLD_CHECKSUM=$(cat "$GRAPH_NODE_CONFIG_CHECKSUM_FILE" 2>/dev/null || true)
+            if [ "$NEW_CHECKSUM" != "$OLD_CHECKSUM" ]; then
+              docker compose up -d --force-recreate graph-node
+              echo "$NEW_CHECKSUM" >"$GRAPH_NODE_CONFIG_CHECKSUM_FILE"
+            fi
             docker image prune -f
