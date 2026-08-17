@@ -75,7 +75,7 @@ export function StepMaciConfig({
           {POLICY_TYPE_OPTIONS.find(({ type }) => type === policyType)?.description}
         </p>
 
-        <PolicyArgsFields policyType={policyType} inputs={inputs} updateInput={updateInput} />
+        <PolicyArgsFields policyType={policyType} inputs={inputs} updateInput={updateInput} theme="dark" />
         {policyArgsError && <p className="mt-1 text-xs text-red-400">{policyArgsError}</p>}
       </div>
 

@@ -359,7 +359,13 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/confi
       {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: creatorCookie },
-        body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+        body: JSON.stringify({
+          pollAddress: "0xPoll",
+          pollId: "0",
+          txHash: "0xTx",
+          pollStartDate: 1000,
+          pollEndDate: 2000,
+        }),
       },
     );
     expect(res.status).toBe(200);
@@ -407,7 +413,13 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
     await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: creatorCookie },
-      body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+      }),
     });
 
     const res = await app.request(
@@ -523,6 +535,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(confirmRes.status).toBe(201);
@@ -554,6 +568,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(res.status).toBe(403);
@@ -618,6 +634,8 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(confirmRes.status).toBe(403);
@@ -649,7 +667,13 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
       {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+        body: JSON.stringify({
+          pollAddress: "0xPoll",
+          pollId: "0",
+          txHash: "0xTx",
+          pollStartDate: 1000,
+          pollEndDate: 2000,
+        }),
       },
     );
     expect(confirmRes.status).toBe(200);

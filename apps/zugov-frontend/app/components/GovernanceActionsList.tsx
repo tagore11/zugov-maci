@@ -96,7 +96,13 @@ function DeployPollPrompt({
           options,
         },
       });
-      await governanceActionApi.confirmFormalize(communityId, action.id, { pollAddress, pollId, txHash });
+      await governanceActionApi.confirmFormalize(communityId, action.id, {
+        pollAddress,
+        pollId,
+        txHash,
+        pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+        pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+      });
       onDeployed();
     } catch (err) {
       setConfirmError(err instanceof Error ? err.message : "Poll deployment failed");
@@ -182,6 +188,64 @@ async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: strin
   };
 }
 
+const IN_PROGRESS_TALLY_STATUSES: governanceActionApi.TallyStatus[] = ["pending", "processing"];
+
+function TallySection({ communityId, action }: { communityId: string; action: GovernanceActionWithMeta }) {
+  const queryClient = useQueryClient();
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+  const [isTriggering, setIsTriggering] = useState(false);
+
+  const { data: status } = useQuery({
+    queryKey: ["tallyStatus", communityId, action.id],
+    queryFn: () => governanceActionApi.getTallyStatus(communityId, action.id),
+    initialData: action,
+    // Merge → generate → submit can take minutes to hours for a real-size poll — poll for
+    // updates while it's actually running, stop once it lands on a terminal state.
+    refetchInterval: (query) =>
+      query.state.data && IN_PROGRESS_TALLY_STATUSES.includes(query.state.data.tallyStatus) ? 10000 : false,
+  });
+
+  const now = Date.now() / 1000;
+  const isClosed = !!action.pollEndDate && action.pollEndDate < now;
+  if (!action.pollAddress || !isClosed) return null;
+
+  const handleTally = async () => {
+    setTriggerError(null);
+    setIsTriggering(true);
+    try {
+      await governanceActionApi.triggerTally(communityId, action.id);
+      await queryClient.invalidateQueries({ queryKey: ["tallyStatus", communityId, action.id] });
+    } catch (err) {
+      setTriggerError(err instanceof Error ? err.message : "Failed to trigger tallying");
+    } finally {
+      setIsTriggering(false);
+    }
+  };
+
+  if (!status || status.tallyStatus === "not_started" || status.tallyStatus === "failed") {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleTally}
+          disabled={isTriggering}
+          className="px-3 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 disabled:opacity-60"
+        >
+          {isTriggering ? "Starting..." : status?.tallyStatus === "failed" ? "Retry Tally" : "Tally Results"}
+        </button>
+        {(status?.tallyError ?? triggerError) && (
+          <p className="text-xs text-red-400">{status?.tallyError ?? triggerError}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (IN_PROGRESS_TALLY_STATUSES.includes(status.tallyStatus)) {
+    return <p className="text-xs text-amber-300">Tallying in progress — this can take a while…</p>;
+  }
+
+  return <p className="text-xs text-emerald-400">Tallying complete.</p>;
+}
+
 function FormalizedActionRow({
   communityId,
   community,
@@ -233,6 +297,7 @@ function FormalizedActionRow({
         </div>
       </div>
       <p className="text-xs text-gray-500">Formalized{action.pollAddress ? ` — poll ${action.pollAddress}` : ""}</p>
+      <TallySection communityId={communityId} action={action} />
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
       {votingPoll && rpcUrl && (
         <VoteModal

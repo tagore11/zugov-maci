@@ -62,30 +62,47 @@ export async function deployPolicyContract(
   const { policyFactories, policyInfrastructure } = chainConstants;
   const ZERO = "0x0000000000000000000000000000000000000000";
 
+  // FreeForAllChecker is stateless (its check() always passes, unconditionally) — there is
+  // exactly one already deployed per chain (chainConstants.freeForAllChecker), so every
+  // FreeForAll policy reuses it rather than cloning a fresh, functionally-identical checker
+  // per poll/community.
+  if (policyArgs.type === "FreeForAll") {
+    if (chainConstants.freeForAllChecker === ZERO) {
+      throw new Error("FreeForAllChecker is not deployed on this network.");
+    }
+    if (policyFactories.freeForAll.policy === ZERO) {
+      throw new Error("Policy factories for FreeForAll are not deployed on this network.");
+    }
+    return deployClone(
+      policyFactories.freeForAll.policy,
+      POLICY_DEPLOY_ABI,
+      [chainConstants.freeForAllChecker],
+      signer,
+    );
+  }
+
   const { type } = policyArgs;
   const { checker: checkerFactoryAddr, policy: policyFactoryAddr } =
     policyFactories[
-      type === "FreeForAll"
-        ? "freeForAll"
-        : type === "EAS"
-          ? "eas"
-          : type === "Zupass"
-            ? "zupass"
-            : type === "GitcoinPassport"
-              ? "gitcoinPassport"
-              : type === "Semaphore"
-                ? "semaphore"
-                : type === "AnonAadhaar"
-                  ? "anonAadhaar"
-                  : type === "ERC20Token"
-                    ? "erc20Token"
-                    : type === "ERC20Votes"
-                      ? "erc20Votes"
-                      : type === "Token"
-                        ? "token"
-                        : type === "MerkleProof"
-                          ? "merkleProof"
-                          : "hatsProtocol"
+      type === "EAS"
+        ? "eas"
+        : type === "Zupass"
+          ? "zupass"
+          : type === "GitcoinPassport"
+            ? "gitcoinPassport"
+            : type === "Semaphore"
+              ? "semaphore"
+              : type === "AnonAadhaar"
+                ? "anonAadhaar"
+                : type === "ERC20Token"
+                  ? "erc20Token"
+                  : type === "ERC20Votes"
+                    ? "erc20Votes"
+                    : type === "Token"
+                      ? "token"
+                      : type === "MerkleProof"
+                        ? "merkleProof"
+                        : "hatsProtocol"
     ];
 
   if (checkerFactoryAddr === ZERO || policyFactoryAddr === ZERO) {
@@ -94,9 +111,6 @@ export async function deployPolicyContract(
 
   let checkerArgs: unknown[];
   switch (policyArgs.type) {
-    case "FreeForAll":
-      checkerArgs = [];
-      break;
     case "EAS":
       if (policyInfrastructure.easAddress === ZERO) throw new Error("EAS contract not configured for this network");
       checkerArgs = [policyInfrastructure.easAddress, policyArgs.attesterAddress, policyArgs.schemaUid];

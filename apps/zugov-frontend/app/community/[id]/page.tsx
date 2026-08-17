@@ -199,6 +199,36 @@ function formatRelativeTime(unixSec: number): string {
   return new Date(unixSec * 1000).toLocaleDateString();
 }
 
+const POLL_STATUS_LABELS: Record<string, string> = {
+  not_started: "Not started",
+  active: "Active",
+  closed: "Closed",
+};
+
+const POLL_STATUS_CLASSES: Record<string, string> = {
+  not_started: "text-amber-400",
+  active: "text-green-400",
+  closed: "text-gray-500",
+};
+
+function pollStatusLabel(status: string): string {
+  return POLL_STATUS_LABELS[status] ?? status;
+}
+
+function pollStatusClass(status: string): string {
+  return POLL_STATUS_CLASSES[status] ?? "text-gray-500";
+}
+
+const POLL_STATUS_BADGE_CLASSES: Record<string, string> = {
+  not_started: "bg-amber-100 text-amber-700",
+  active: "bg-green-100 text-green-700",
+  closed: "bg-gray-100 text-gray-700",
+};
+
+function pollStatusBadgeClass(status: string): string {
+  return POLL_STATUS_BADGE_CLASSES[status] ?? "bg-gray-100 text-gray-700";
+}
+
 export default function CommunityPage() {
   const params = useParams();
   const [showCreateProposal, setShowCreateProposal] = useState(false);
@@ -317,7 +347,7 @@ export default function CommunityPage() {
     id: poll.id,
     title: poll.name,
     description: poll.metadata,
-    status: Number(poll.endDate) > now ? "active" : "closed",
+    status: now < Number(poll.startDate) ? "not_started" : now < Number(poll.endDate) ? "active" : "closed",
     type: "onchain",
     privacy: "public",
     eligible: eligibilityMap[poll.id] ?? false,
@@ -426,10 +456,13 @@ export default function CommunityPage() {
                   <ul className="space-y-2">
                     {mappedPolls.map((poll) => (
                       <li key={poll.id} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-200">{poll.title}</span>
-                        <span className={poll.status === "active" ? "text-green-400" : "text-gray-500"}>
-                          {poll.status}
-                        </span>
+                        <div>
+                          <span className="text-gray-200">{poll.title}</span>
+                          <p className="text-xs text-gray-500">
+                            {new Date(poll.startDate).toLocaleDateString()} – {poll.endDate}
+                          </p>
+                        </div>
+                        <span className={pollStatusClass(poll.status)}>{pollStatusLabel(poll.status)}</span>
                       </li>
                     ))}
                   </ul>
@@ -632,13 +665,9 @@ export default function CommunityPage() {
                             </div>
                             <div className="flex flex-wrap gap-2">
                               <span
-                                className={`px-2 py-1 text-xs font-medium rounded ${
-                                  proposal.status === "active"
-                                    ? "bg-green-100 text-green-700"
-                                    : "bg-gray-100 text-gray-700"
-                                }`}
+                                className={`px-2 py-1 text-xs font-medium rounded ${pollStatusBadgeClass(proposal.status)}`}
                               >
-                                {proposal.status.toUpperCase()}
+                                {pollStatusLabel(proposal.status).toUpperCase()}
                               </span>
                               <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
                                 {proposal.type.toUpperCase()}
@@ -684,7 +713,11 @@ export default function CommunityPage() {
                             </span>
                             <span className="flex items-center gap-1">
                               <Calendar className="w-4 h-4" />
-                              Ends {proposal.endDate}
+                              {proposal.status === "not_started"
+                                ? `Starts ${new Date(proposal.startDate).toLocaleDateString()}`
+                                : proposal.status === "closed"
+                                  ? `Ended ${proposal.endDate}`
+                                  : `Ends ${proposal.endDate}`}
                             </span>
                           </div>
                           {proposal.eligible && proposal.status === "active" && daoConfig && (
