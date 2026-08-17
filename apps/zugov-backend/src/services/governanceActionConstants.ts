@@ -1,6 +1,6 @@
 export const EXECUTABLE_PRIVACY = "privacy_preserving" as const;
 export const EXECUTABLE_EXECUTION_LOCATION = "onchain" as const;
-export const EXECUTABLE_TALLY_MECHANISMS = ["simple", "quadratic", "ranked"] as const;
+export const EXECUTABLE_TALLY_MECHANISMS = ["simple", "quadratic", "ranked", "full"] as const;
 
 export function isExecutableCombination(privacy: string, executionLocation: string, tallyMechanism: string): boolean {
   return (

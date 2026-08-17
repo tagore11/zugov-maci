@@ -5,7 +5,7 @@ import { Search, TrendingUp, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AuthModal } from "./components/AuthModal";
 import { EXAMPLE_COMMUNITIES } from "@/app/lib/placeholder-data";
-import { appConstants } from "@/src/config";
+import { appConstants, type GovernanceType } from "@/src/config";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import * as communityApi from "@/src/services/communityApi";
 
@@ -19,6 +19,8 @@ type CommunityItem = {
   category: string;
   createdAt?: number;
   signUpPolicyType?: string | null;
+  subgraphStatus?: communityApi.Community["subgraphStatus"];
+  governanceType?: string;
 };
 
 const ONE_HOUR_SEC = 3600;
@@ -36,6 +38,8 @@ function apiToItem(c: communityApi.Community): CommunityItem {
     category: "MACI",
     createdAt: c.createdAt,
     signUpPolicyType: c.signUpPolicyType,
+    subgraphStatus: c.subgraphStatus,
+    governanceType: c.governanceType,
   };
 }
 
@@ -49,17 +53,34 @@ export default function Home() {
   const [isLoadingCommunities, setIsLoadingCommunities] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Static communities read their subgraph directly; backend-registered communities whose
+  // subgraph has finished indexing go through the backend's proxy (see
+  // app/community/[id]/page.tsx for the same pattern on the detail page).
+  const staticDaoIds = new Set(REAL_DAOS.map((dao) => dao.id));
+  const readyBackendCommunities = communities.filter(
+    (c) => c.subgraphStatus === "ready" && c.governanceType && !staticDaoIds.has(c.id),
+  );
+  const statsSources = [
+    ...REAL_DAOS.map((dao) => ({ id: dao.id!, subgraphUrl: dao.subgraphUrl, governanceType: dao.governanceType })),
+    ...readyBackendCommunities.map((c) => ({
+      id: c.id,
+      subgraphUrl: communityApi.subgraphQueryUrl(c.id),
+      governanceType: c.governanceType as GovernanceType,
+    })),
+  ];
+
   const { data: communityStats = {} } = useQuery({
-    queryKey: ["communityStats"],
+    queryKey: ["communityStats", statsSources.map((s) => s.id)],
     queryFn: () =>
       Promise.all(
-        REAL_DAOS.map((dao) =>
+        statsSources.map((source) =>
           Promise.all([
-            fetchMembers(dao.subgraphUrl, dao.governanceType),
-            fetchPolls(dao.subgraphUrl, dao.governanceType).then((p) => p.length),
-          ]).then(([members, proposals]) => [dao.id!, { members, proposals }] as const),
+            fetchMembers(source.subgraphUrl, source.governanceType),
+            fetchPolls(source.subgraphUrl, source.governanceType).then((p) => p.length),
+          ]).then(([members, proposals]) => [source.id, { members, proposals }] as const),
         ),
       ).then(Object.fromEntries<{ members: number; proposals: number }>),
+    enabled: statsSources.length > 0,
   });
 
   const categories = ["All", "Residency", "Regional", "Network State", "Social"];

@@ -18,7 +18,12 @@ vi.mock("@/src/services/governanceActionApi", () => ({
   confirmDirect: (...args: unknown[]) => confirmDirectMock(...args),
 }));
 
+vi.mock("wagmi", () => ({
+  useChainId: () => 11155111,
+}));
+
 const deployPollMock = vi.fn();
+const getEthersSignerMock = vi.fn(() => Promise.resolve({}));
 vi.mock("@/src/hooks/useDeployPoll", () => ({
   useDeployPoll: () => ({
     isDeploying: false,
@@ -26,6 +31,22 @@ vi.mock("@/src/hooks/useDeployPoll", () => ({
     deployError: null,
     deployPoll: (...args: unknown[]) => deployPollMock(...args),
   }),
+  getEthersSigner: () => getEthersSignerMock(),
+}));
+
+const deployPolicyContractMock = vi.fn((..._args: unknown[]) => Promise.resolve("0xPolicy"));
+vi.mock("@/src/services/policyDeploy", () => ({
+  deployPolicyContract: (...args: unknown[]) => deployPolicyContractMock(...args),
+  SET_TARGET_ABI: ["function setTarget(address _guarded)"],
+}));
+
+vi.mock("@/src/services/communityApi", () => ({
+  subgraphQueryUrl: (id: string) => `http://localhost:3001/api/communities/${id}/subgraph/query`,
+}));
+
+const fetchPollsMock = vi.fn((..._args: unknown[]) => Promise.resolve([]));
+vi.mock("@/src/services/subgraph", () => ({
+  fetchPolls: (...args: unknown[]) => fetchPollsMock(...args),
 }));
 
 const POLL_DEPLOY_CONFIG: PollDeployConfig = {
@@ -95,8 +116,12 @@ describe("CreateGovernanceActionModal", () => {
   });
 
   describe("direct deployment mode (specs/007 US2)", () => {
+    // No community prop is passed in these tests, so allowedPolicyTypes is empty and the
+    // eligibility policy picker falls back to "FreeForAll" / "Deploy a new instance" — which
+    // needs no extra fields, matching this mode's replacement of the old tier checkboxes.
     async function fillDirectModeFields() {
-      await fillCommonFields();
+      fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Fund the garden" } });
+      fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Details here" } });
       fireEvent.change(screen.getByLabelText(/Start Date/), { target: { value: "2026-01-01T00:00" } });
       fireEvent.change(screen.getByLabelText(/End Date/), { target: { value: "2026-01-02T00:00" } });
       const optionInputs = screen.getAllByPlaceholderText(/Option \d/);
@@ -119,7 +144,7 @@ describe("CreateGovernanceActionModal", () => {
         />,
       );
 
-      await waitFor(() => expect(screen.getByText("Voter")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
       await fillDirectModeFields();
       fireEvent.click(screen.getByText("Deploy Poll"));
 
@@ -147,7 +172,7 @@ describe("CreateGovernanceActionModal", () => {
         />,
       );
 
-      await waitFor(() => expect(screen.getByText("Voter")).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
       await fillDirectModeFields();
       fireEvent.click(screen.getByText("Deploy Poll"));
 

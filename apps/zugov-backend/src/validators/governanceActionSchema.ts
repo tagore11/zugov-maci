@@ -5,7 +5,7 @@ export const createDraftBodySchema = z.object({
   description: z.string().min(1),
   privacy: z.enum(["public", "privacy_preserving"]),
   executionLocation: z.enum(["onchain", "offchain", "hybrid"]),
-  tallyMechanism: z.enum(["simple", "quadratic", "ranked", "weighted"]),
+  tallyMechanism: z.enum(["simple", "quadratic", "ranked", "weighted", "full"]),
   eligibleTierIds: z.array(z.string()).nonempty(),
 });
 

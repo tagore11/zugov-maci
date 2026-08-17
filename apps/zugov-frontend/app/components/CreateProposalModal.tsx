@@ -1,7 +1,9 @@
 import { useState } from "react";
+import { useChainId } from "wagmi";
 import { X } from "lucide-react";
 import { GovernanceTypes, type GovernanceType, type PollDeployConfig } from "@/src/config";
-import { useDeployPoll } from "@/src/hooks/useDeployPoll";
+import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { deployPolicyContract } from "@/src/services/policyDeploy";
 
 const MACI_ELIGIBILITY_OPTIONS: { value: string; label: string; enabled: boolean }[] = [
   { value: "FreeForAll", label: "Free For All", enabled: true },
@@ -39,6 +41,7 @@ export function CreateProposalModal({
   existingPollAddress,
 }: CreateProposalModalProps) {
   const isMaci = governanceType === GovernanceTypes.MACI;
+  const chainId = useChainId();
   const { isDeploying, deployStep, deployError, deployPoll } = useDeployPoll(governanceType);
   const [formData, setFormData] = useState({
     title: "",
@@ -72,10 +75,15 @@ export function CreateProposalModal({
 
     if (isMaci && maciAddress && pollDeployConfig) {
       try {
+        // Only "Free For All" is enabled in MACI_ELIGIBILITY_OPTIONS above, so a fresh
+        // FreeForAll policy is always what's needed here — matches this modal's prior behavior.
+        const signer = await getEthersSigner();
+        const policyAddress = await deployPolicyContract({ type: "FreeForAll" }, signer, chainId);
         await deployPoll({
           maciAddress,
           pollDeployConfig,
           existingPollAddress: existingPollAddress ?? null,
+          policyAddress,
           formData,
         });
         setFormData({
@@ -203,6 +211,7 @@ export function CreateProposalModal({
               <option value="simple">Simple Majority</option>
               <option value="quadratic">Quadratic Voting</option>
               <option value="ranked">Ranked Choice</option>
+              <option value="full">Full Voting</option>
             </select>
           </div>
 

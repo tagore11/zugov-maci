@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useChainId } from "wagmi";
 import { Plus } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JsonRpcProvider } from "ethers";
@@ -10,7 +11,8 @@ import type {
 } from "@/src/services/governanceActionApi";
 import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
-import { useDeployPoll } from "@/src/hooks/useDeployPoll";
+import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { deployPolicyContract } from "@/src/services/policyDeploy";
 import { GovernanceTypes, appConstants } from "@/src/config";
 import { Poll__factory } from "@/src/poll-factory-shim";
 import type { SubgraphPoll, PollMode } from "@/src/services/subgraph";
@@ -66,6 +68,7 @@ function DeployPollPrompt({
   const [endDate, setEndDate] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [confirmError, setConfirmError] = useState<string | null>(null);
+  const chainId = useChainId();
   const { isDeploying, deployStep, deployError, deployPoll } = useDeployPoll(GovernanceTypes.MACI);
 
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
@@ -74,10 +77,15 @@ function DeployPollPrompt({
   const handleDeploy = async () => {
     setConfirmError(null);
     try {
+      // No eligibility picker here (see CreateGovernanceActionModal for that) — matches this
+      // prompt's prior behavior of always deploying a fresh FreeForAll policy.
+      const signer = await getEthersSigner();
+      const policyAddress = await deployPolicyContract({ type: "FreeForAll" }, signer, chainId);
       const { pollAddress, pollId, txHash } = await deployPoll({
         maciAddress,
         pollDeployConfig,
         existingPollAddress: null,
+        policyAddress,
         formData: {
           title: action.title,
           description: action.description,
@@ -137,12 +145,13 @@ function DeployPollPrompt({
   );
 }
 
-// FR-002's executable combination is always onchain + (simple|quadratic|ranked) — "weighted" can
-// never reach a formalized action, per the axis-combination validation at draft creation.
+// FR-002's executable combination is always onchain + (simple|quadratic|ranked|full) — "weighted"
+// can never reach a formalized action, per the axis-combination validation at draft creation.
 const TALLY_MECHANISM_TO_MODE: Record<GovernanceActionTallyMechanism, PollMode> = {
   simple: "1",
   quadratic: "0",
   ranked: "3",
+  full: "2",
   weighted: "1",
 };
 
@@ -407,6 +416,7 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
         communityId={communityId}
         directDeploymentEnabled={community?.directDeploymentEnabled}
         pollDeployConfig={community?.pollDeployConfig}
+        community={community ?? undefined}
       />
     </div>
   );
