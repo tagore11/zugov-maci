@@ -1,0 +1,2 @@
+ALTER TABLE "communities" ADD COLUMN "direct_deployment_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "governance_actions" ADD COLUMN "creation_path" text DEFAULT 'draft' NOT NULL;

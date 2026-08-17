@@ -81,7 +81,6 @@ const TEST_COMMUNITY = {
   signUpPolicyType: "FreeForAll",
   signUpPolicyAddress: "0xcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcC",
   maciDeploymentBlock: 100,
-  voterCapacityPreset: "small",
   stateTreeDepth: 6,
   source: "wizard",
 };
@@ -275,7 +274,6 @@ describe("GET /api/communities/:id", () => {
         supportedModes: JSON.stringify([0]),
         signUpPolicyType: null,
         signUpPolicyAddress: null,
-        voterCapacityPreset: "small",
         stateTreeDepth: 6,
         subgraphStatus: "pending",
         createdAt: now,
@@ -537,5 +535,58 @@ describe("POST /api/communities", () => {
       });
       expect(res.status).toBe(503);
     });
+  });
+});
+
+describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1, FR-001/FR-002)", () => {
+  const NON_ADMIN = privateKeyToAccount(`0x${"88".repeat(32)}`);
+
+  it("defaults to false and round-trips true then false", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const id = "0x8888888888888888888888888888888888888801";
+    await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
+    });
+
+    const initialRes = await app.request(`/api/communities/${id}`);
+    const { community: initial } = (await initialRes.json()) as { community: { directDeploymentEnabled: boolean } };
+    expect(initial.directDeploymentEnabled).toBe(false);
+
+    const enableRes = await app.request(`/api/communities/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ directDeploymentEnabled: true }),
+    });
+    expect(enableRes.status).toBe(200);
+    const { community: enabled } = (await enableRes.json()) as { community: { directDeploymentEnabled: boolean } };
+    expect(enabled.directDeploymentEnabled).toBe(true);
+
+    const disableRes = await app.request(`/api/communities/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ directDeploymentEnabled: false }),
+    });
+    const { community: disabled } = (await disableRes.json()) as { community: { directDeploymentEnabled: boolean } };
+    expect(disabled.directDeploymentEnabled).toBe(false);
+  });
+
+  it("returns 403 when a non-admin attempts to change it", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const id = "0x8888888888888888888888888888888888888802";
+    await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
+    });
+
+    const nonAdminCookie = await authCookieFor(NON_ADMIN);
+    const res = await app.request(`/api/communities/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: nonAdminCookie },
+      body: JSON.stringify({ directDeploymentEnabled: true }),
+    });
+    expect(res.status).toBe(403);
   });
 });

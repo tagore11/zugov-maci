@@ -373,7 +373,7 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
         >
           <Plus className="w-4 h-4" />
-          New Draft
+          {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}
         </button>
       </div>
 
@@ -405,6 +405,8 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
         onClose={() => setShowCreateModal(false)}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["governanceActions", communityId] })}
         communityId={communityId}
+        directDeploymentEnabled={community?.directDeploymentEnabled}
+        pollDeployConfig={community?.pollDeployConfig}
       />
     </div>
   );

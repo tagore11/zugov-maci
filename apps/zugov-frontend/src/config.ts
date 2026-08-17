@@ -3,8 +3,6 @@ import type { Hex } from "viem";
 
 import * as sepoliaDeployment from "./generated/sepolia";
 
-export const STATE_TREE_DEPTH = 10 as const;
-
 export type SignUpPolicyType =
   | "FreeForAll"
   | "Zupass"

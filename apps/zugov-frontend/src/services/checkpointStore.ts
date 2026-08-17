@@ -3,7 +3,6 @@ import type { SignUpPolicyArgs } from "@/src/config";
 
 export type DeployPhase = "deploy_sign_up_policy" | "deploy_maci" | "set_target" | "save_community";
 
-export type VoterCapacityPreset = "small" | "medium" | "large";
 export type MembershipPolicy = "open" | "approval";
 
 export interface TierDraft {
@@ -19,7 +18,6 @@ export interface MACIDeploymentConfig {
   signUpPolicy: SignUpPolicyArgs;
   allowedPolicies: number[];
   supportedModes: number[];
-  voterCapacityPreset: VoterCapacityPreset;
   stateTreeDepth: 10;
   membershipPolicy: MembershipPolicy;
   tierChangesRequireVote: boolean;

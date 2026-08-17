@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { buildPollDeployConfig, saveWithRetry } from "./useCreateCommunity";
-import { appConstants, FIXED_POLL_DEPLOY_CONSTANTS, STATE_TREE_DEPTH } from "@/src/config";
+import { appConstants, FIXED_POLL_DEPLOY_CONSTANTS } from "@/src/config";
+import { STATE_TREE_DEPTH } from "@/src/constants";
 import type { RegistryData } from "./useZuGovRegistry";
 import { sepolia } from "wagmi/chains";
 import * as communityApi from "@/src/services/communityApi";

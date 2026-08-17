@@ -2,7 +2,6 @@ import { useState, useCallback } from "react";
 import { createPublicClient, http, type Hex } from "viem";
 import { MACI_ABI, BASE_POLICY_ABI } from "@/src/generated/abis";
 import { appConstants, type SignUpPolicyType, type PollDeployConfig } from "@/src/config";
-import type { VoterCapacityPreset } from "@/src/services/checkpointStore";
 import { REGISTRY_ABI, type RegistryData } from "@/src/hooks/useZuGovRegistry";
 import { buildPollDeployConfig } from "@/src/hooks/useCreateCommunity";
 
@@ -12,7 +11,6 @@ export interface MaciContractConfig {
   allowedPolicies: number[];
   supportedModes: number[];
   stateTreeDepth: 6 | 10 | 14;
-  voterCapacityPreset: VoterCapacityPreset;
   // Only set when this chain's ZuGovRegistry is reachable and deployed — a MACI registered here
   // may be a genuinely external contract with no relationship to this platform's registry, so
   // this is best-effort, not required for the rest of the config to load successfully.
@@ -37,13 +35,9 @@ const TRAIT_TO_POLICY_TYPE: Record<string, SignUpPolicyType> = {
   Hats: "HatsProtocol",
 };
 
-// communityBodySchema only accepts these three depths — they're the platform's fixed
-// small/medium/large tiers, not an open range.
-const DEPTH_TO_PRESET: Partial<Record<number, VoterCapacityPreset>> = {
-  6: "small",
-  10: "medium",
-  14: "large",
-};
+// communityBodySchema only accepts these three depths — verifying keys are only registered
+// on-chain for these tiers (see VerifyingKeysRegistry deploy config), not an open range.
+const SUPPORTED_STATE_TREE_DEPTHS = new Set([6, 10, 14]);
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -141,8 +135,7 @@ export function useMaciContractConfig(): UseMaciContractConfigResult {
         ]);
 
         const stateTreeDepth = Number(stateTreeDepthRaw);
-        const voterCapacityPreset = DEPTH_TO_PRESET[stateTreeDepth];
-        if (!voterCapacityPreset) {
+        if (!SUPPORTED_STATE_TREE_DEPTHS.has(stateTreeDepth)) {
           throw new Error(`Unsupported state tree depth: ${stateTreeDepth} (only 6, 10, or 14 are supported)`);
         }
 
@@ -165,7 +158,6 @@ export function useMaciContractConfig(): UseMaciContractConfigResult {
           allowedPolicies: governanceConfig.allowedPolicies.map(Number),
           supportedModes: governanceConfig.supportedModes.map(Number),
           stateTreeDepth: stateTreeDepth as 6 | 10 | 14,
-          voterCapacityPreset,
           pollDeployConfig,
           deploymentBlock,
         };

@@ -2,13 +2,6 @@ import { useState } from "react";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { type SignUpPolicyType, type SignUpPolicyArgs } from "@/src/config";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
-import type { VoterCapacityPreset } from "@/src/services/checkpointStore";
-
-const VOTER_CAPACITY_PRESETS: { value: VoterCapacityPreset; label: string; description: string }[] = [
-  { value: "small", label: "Small", description: "Up to a few thousand voters" },
-  { value: "medium", label: "Medium", description: "Up to tens of thousands of voters" },
-  { value: "large", label: "Large", description: "Up to 1,048,576 voters" },
-];
 
 const SIGN_UP_POLICY_TYPES: { type: SignUpPolicyType; label: string; description: string }[] = [
   { type: "FreeForAll", label: "Free For All", description: "Anyone can sign up" },
@@ -66,7 +59,6 @@ interface Props {
   initialPolicies?: number[];
   initialModes?: number[];
   initialSignUpPolicy?: SignUpPolicyArgs;
-  initialVoterCapacityPreset?: VoterCapacityPreset;
   setMaciConfig: UseCreateCommunityResult["setMaciConfig"];
   goBack: UseCreateCommunityResult["goBack"];
 }
@@ -75,7 +67,6 @@ export function StepMaciConfig({
   initialPolicies = [],
   initialModes = [],
   initialSignUpPolicy,
-  initialVoterCapacityPreset = "small",
   setMaciConfig,
   goBack,
 }: Props) {
@@ -83,7 +74,6 @@ export function StepMaciConfig({
   const [modes, setModes] = useState<number[]>(initialModes);
   const [policyType, setPolicyType] = useState<SignUpPolicyType>(initialSignUpPolicy?.type ?? "FreeForAll");
   const [inputs, setInputs] = useState<PolicyInputState>(DEFAULT_INPUTS);
-  const [voterCapacityPreset, setVoterCapacityPreset] = useState<VoterCapacityPreset>(initialVoterCapacityPreset);
   const [submitted, setSubmitted] = useState(false);
 
   function updateInput(key: keyof PolicyInputState, value: string) {
@@ -175,7 +165,7 @@ export function StepMaciConfig({
     setSubmitted(true);
     const signUpPolicy = buildSignUpPolicyArgs();
     if (!signUpPolicy || policies.length === 0 || modes.length === 0) return;
-    setMaciConfig({ signUpPolicy, allowedPolicies: policies, supportedModes: modes, voterCapacityPreset });
+    setMaciConfig({ signUpPolicy, allowedPolicies: policies, supportedModes: modes });
   }
 
   return (
@@ -403,33 +393,6 @@ export function StepMaciConfig({
           })}
         </div>
         {modesError && <p className="mt-1 text-xs text-red-400">{modesError}</p>}
-      </div>
-
-      {/* Voter capacity preset */}
-      <div>
-        <label className="block text-sm font-medium text-gray-300 mb-2">
-          Voter capacity <span className="text-red-400">*</span>
-        </label>
-        <p className="text-xs text-gray-500 mb-2">Sizes the MACI state tree for your expected voter count.</p>
-        <div className="grid grid-cols-3 gap-2">
-          {VOTER_CAPACITY_PRESETS.map(({ value, label, description }) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setVoterCapacityPreset(value)}
-              className={`rounded-lg border p-2.5 text-left transition-colors ${
-                voterCapacityPreset === value
-                  ? "border-purple-500 bg-purple-900/20"
-                  : "border-gray-700 bg-gray-800/40 hover:border-gray-600"
-              }`}
-            >
-              <div className={`text-sm font-medium ${voterCapacityPreset === value ? "text-white" : "text-gray-300"}`}>
-                {label}
-              </div>
-              <div className="text-[11px] text-gray-500 mt-0.5">{description}</div>
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="flex gap-3 pt-2">

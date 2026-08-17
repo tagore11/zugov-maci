@@ -222,6 +222,15 @@ export default function CommunityPage() {
   const daoConfig = DAO_CONFIG_LOOKUP[params.id ?? ""];
   const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
 
+  // Static communities read their subgraph directly; backend-registered communities go through
+  // the backend's transparent proxy once their subgraph has finished indexing (subgraphStatus
+  // "ready") — the frontend never talks to graph-node directly for those.
+  const backendSubgraphReady = backendCommunity?.subgraphStatus === "ready";
+  const activeSubgraphUrl =
+    daoConfig?.subgraphUrl ?? (backendSubgraphReady ? communityApi.subgraphQueryUrl(backendCommunity!.id) : undefined);
+  const activeGovernanceType =
+    daoConfig?.governanceType ?? (backendCommunity?.governanceType as GovernanceType | undefined);
+
   const queryClient = useQueryClient();
   const { isSigningUp, signupToMaci } = useSignup(daoConfig?.governanceType);
   const { isJoiningPoll, joinPollError, joinThePoll, getPollStateIndex } = useJoinPoll(daoConfig?.governanceType);
@@ -251,25 +260,33 @@ export default function CommunityPage() {
     }
   };
 
-  const { data: membersData } = useQuery({
+  const {
+    data: membersData,
+    isError: isMembersError,
+    isLoading: isMembersLoading,
+  } = useQuery({
     queryKey: ["members", params.id],
-    queryFn: () => fetchMembers(daoConfig.subgraphUrl, daoConfig.governanceType),
-    enabled: !!daoConfig,
+    queryFn: () => fetchMembers(activeSubgraphUrl!, activeGovernanceType!),
+    enabled: !!activeSubgraphUrl && !!activeGovernanceType,
   });
 
-  const { data: pollsData } = useQuery({
+  const {
+    data: pollsData,
+    isError: isPollsError,
+    isLoading: isPollsLoading,
+  } = useQuery({
     queryKey: ["polls", params.id],
-    queryFn: () => fetchPolls(daoConfig.subgraphUrl, daoConfig.governanceType),
-    enabled: !!daoConfig,
+    queryFn: () => fetchPolls(activeSubgraphUrl!, activeGovernanceType!),
+    enabled: !!activeSubgraphUrl && !!activeGovernanceType,
   });
 
   const { data: messageCounts = {} } = useQuery({
     queryKey: ["pollMessageCounts", pollsData?.map((p) => p.id)],
     queryFn: () =>
       Promise.all(
-        pollsData!.map((p) => fetchNumMessages(daoConfig.governanceType, p.id).then((n) => [p.id, n] as const)),
+        pollsData!.map((p) => fetchNumMessages(activeGovernanceType!, p.id).then((n) => [p.id, n] as const)),
       ).then(Object.fromEntries<number>),
-    enabled: !!pollsData?.length && !!daoConfig,
+    enabled: !!pollsData?.length && !!activeGovernanceType,
   });
 
   const { data: eligibilityMap = {} } = useQuery({
@@ -277,12 +294,12 @@ export default function CommunityPage() {
     queryFn: () =>
       Promise.all(
         pollsData!.map((p) =>
-          fetchIsEligible(daoConfig.governanceType, p.policy, p.policyType, address!).then(
+          fetchIsEligible(activeGovernanceType!, p.policy, p.policyType, address!).then(
             (eligible) => [p.id, eligible] as const,
           ),
         ),
       ).then(Object.fromEntries<boolean>),
-    enabled: !!pollsData?.length && !!daoConfig && !!address,
+    enabled: !!pollsData?.length && !!activeGovernanceType && !!address,
   });
 
   const maciUserId = maciKeypair ? formatMaciUserId(maciKeypair) : null;
@@ -296,20 +313,22 @@ export default function CommunityPage() {
   const memberCount = membersData ?? community?.members ?? 0;
 
   const now = Date.now() / 1000;
-  const displayProposals: typeof COMMUNITY_PROPOSALS = pollsData
-    ? pollsData.map((poll) => ({
-        id: poll.id,
-        title: poll.name,
-        description: poll.metadata,
-        status: Number(poll.endDate) > now ? "active" : "closed",
-        type: "onchain",
-        privacy: "public",
-        eligible: eligibilityMap[poll.id] ?? false,
-        votes: messageCounts[poll.id] ?? 0,
-        startDate: new Date(Number(poll.startDate) * 1000).toISOString(),
-        endDate: new Date(Number(poll.endDate) * 1000).toISOString().slice(0, 10),
-      }))
-    : proposals;
+  const mappedPolls = pollsData?.map((poll) => ({
+    id: poll.id,
+    title: poll.name,
+    description: poll.metadata,
+    status: Number(poll.endDate) > now ? "active" : "closed",
+    type: "onchain",
+    privacy: "public",
+    eligible: eligibilityMap[poll.id] ?? false,
+    votes: messageCounts[poll.id] ?? 0,
+    startDate: new Date(Number(poll.startDate) * 1000).toISOString(),
+    endDate: new Date(Number(poll.endDate) * 1000).toISOString().slice(0, 10),
+  }));
+  // Static demo communities fall back to seeded/local-storage placeholder proposals when no
+  // subgraph data has loaded yet; backend-registered communities never use this fallback (see
+  // the backend-fetched render branch below), so as not to show fake data under a "ready" state.
+  const displayProposals: typeof COMMUNITY_PROPOSALS = mappedPolls ?? proposals;
 
   useEffect(() => {
     if (pollsData) return;
@@ -374,10 +393,49 @@ export default function CommunityPage() {
               <InfoRow label="Creator" value={`${dc.creatorAddress.slice(0, 6)}…${dc.creatorAddress.slice(-4)}`} mono />
             </div>
 
-            <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
-              Subgraph data not available for this community yet. Member count and poll history will appear once the
-              subgraph is indexed.
-            </div>
+            {dc.subgraphStatus === "failed" ? (
+              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                This community's data failed to index. Member count and poll history are unavailable.
+              </div>
+            ) : dc.subgraphStatus !== "ready" ? (
+              <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+                This community's data is still being indexed. Member count and poll history will appear here once
+                indexing finishes.
+              </div>
+            ) : isMembersError || isPollsError ? (
+              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                Couldn't load this community's data right now. Please try again later.
+              </div>
+            ) : isMembersLoading || isPollsLoading ? (
+              <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500 animate-pulse">
+                Loading member count and poll history…
+              </div>
+            ) : (
+              <div className="rounded-lg border border-gray-700 p-3 space-y-3">
+                <div className="flex items-center gap-4 text-sm text-gray-400">
+                  <div className="flex items-center gap-1">
+                    <Users className="w-4 h-4" />
+                    <span>{memberCount} members</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <FileText className="w-4 h-4" />
+                    <span>{mappedPolls?.length ?? 0} polls</span>
+                  </div>
+                </div>
+                {!!mappedPolls?.length && (
+                  <ul className="space-y-2">
+                    {mappedPolls.map((poll) => (
+                      <li key={poll.id} className="flex items-center justify-between text-sm">
+                        <span className="text-gray-200">{poll.title}</span>
+                        <span className={poll.status === "active" ? "text-green-400" : "text-gray-500"}>
+                          {poll.status}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
 
             <JoinSection communityId={dc.id} connected={!!address} rpcUrl={rpcUrl} />
           </div>

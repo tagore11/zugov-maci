@@ -23,6 +23,7 @@ export default function EditCommunityPage() {
   const [logo, setLogo] = useState("");
   const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>("open");
   const [tierChangesRequireVote, setTierChangesRequireVote] = useState(false);
+  const [directDeploymentEnabled, setDirectDeploymentEnabled] = useState(false);
   const [defaultTierLabel, setDefaultTierLabel] = useState("");
   const [tiers, setTiers] = useState<EditableTier[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<Set<string>>(new Set());
@@ -47,6 +48,7 @@ export default function EditCommunityPage() {
       setLogo(community.logo ?? "");
       setMembershipPolicy(community.membershipPolicy);
       setTierChangesRequireVote(community.tierChangesRequireVote);
+      setDirectDeploymentEnabled(community.directDeploymentEnabled);
       setTiers(tierRows);
       setOriginalTierIds(new Set(tierRows.map((t) => t.id)));
       const defaultTier = tierRows.find((t) => t.id === community.defaultTierId);
@@ -95,6 +97,7 @@ export default function EditCommunityPage() {
         logo: logo.trim(),
         membershipPolicy,
         tierChangesRequireVote,
+        directDeploymentEnabled,
         defaultTierLabel,
       });
 
@@ -332,6 +335,21 @@ export default function EditCommunityPage() {
                 Tier changes require a community vote
                 <span className="block text-xs text-gray-500">
                   Not yet available — enabling this blocks tier edits.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={directDeploymentEnabled}
+                onChange={(e) => setDirectDeploymentEnabled(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Allow direct poll deployment (skip draft & co-sponsorship)
+                <span className="block text-xs text-gray-500">
+                  When on, eligible members deploy a poll in one step instead of going through a draft.
                 </span>
               </span>
             </label>

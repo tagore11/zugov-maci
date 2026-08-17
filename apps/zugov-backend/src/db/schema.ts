@@ -47,12 +47,12 @@ export const communities = pgTable("communities", {
   // Nullable: communities registered before this column existed have no recorded value.
   signUpPolicyType: text("sign_up_policy_type"),
   signUpPolicyAddress: text("sign_up_policy_address"),
-  voterCapacityPreset: text("voter_capacity_preset").notNull(),
   stateTreeDepth: integer("state_tree_depth").notNull(),
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
   tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
   defaultTierId: text("default_tier_id"),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
+  directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
   coordinatorPublicKey: text("coordinator_public_key"),
   tallyProcessingStateTreeDepth: integer("tally_processing_state_tree_depth"),
   voteOptionTreeDepth: integer("vote_option_tree_depth"),
@@ -125,6 +125,7 @@ export const governanceActions = pgTable("governance_actions", {
   tallyMechanism: text("tally_mechanism").$type<"simple" | "quadratic" | "ranked" | "weighted">().notNull(),
   eligibleTierIds: text("eligible_tier_ids").notNull(), // JSON-stringified string[]
   status: text("status").$type<"draft" | "formalized">().notNull().default("draft"),
+  creationPath: text("creation_path").$type<"draft" | "direct">().notNull().default("draft"),
   creatorAddress: text("creator_address").notNull(),
   pollAddress: text("poll_address"),
   pollId: text("poll_id"),

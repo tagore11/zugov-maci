@@ -63,6 +63,18 @@ export class ThresholdNotMetError extends Error {
   }
 }
 
+export class DirectDeploymentDisabledError extends Error {
+  constructor() {
+    super("Direct deployment is not enabled for this community");
+  }
+}
+
+export class DraftPathDisabledError extends Error {
+  constructor() {
+    super("Direct deployment is enabled for this community — drafts are not accepted");
+  }
+}
+
 type ViewableGovernanceAction = Omit<GovernanceAction, "eligibleTierIds"> & { eligibleTierIds: string[] };
 
 function deserialize(row: GovernanceAction): ViewableGovernanceAction {
@@ -84,6 +96,38 @@ async function getCosponsorshipThreshold(communityId: string): Promise<number> {
     .where(eq(communities.id, communityId))
     .limit(1);
   return community?.cosponsorshipThreshold ?? 0;
+}
+
+async function getDirectDeploymentEnabled(communityId: string): Promise<boolean> {
+  const [community] = await db
+    .select({ directDeploymentEnabled: communities.directDeploymentEnabled })
+    .from(communities)
+    .where(eq(communities.id, communityId))
+    .limit(1);
+  return community?.directDeploymentEnabled ?? false;
+}
+
+/** Shared by createDraft, authorizeDirect, and confirmDirect (research.md #2) — the eligibility rules
+ * for who may create a governance action, and what it may contain, don't change based on which path
+ * (draft vs. direct) creates it. */
+async function validateTierAndAxis(communityId: string, creatorAddress: string, body: CreateDraftBody): Promise<void> {
+  if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateGovernanceActions"))) {
+    throw new NotAuthorizedToCreateError();
+  }
+
+  if (!isExecutableCombination(body.privacy, body.executionLocation, body.tallyMechanism)) {
+    throw new NonExecutableAxisCombinationError();
+  }
+
+  const tiers = await db
+    .select({ id: membershipTiers.id, canVote: membershipTiers.canVote })
+    .from(membershipTiers)
+    .where(eq(membershipTiers.communityId, communityId));
+  const tierById = new Map(tiers.map((t) => [t.id, t.canVote]));
+  const invalidTierIds = body.eligibleTierIds.filter((id) => !tierById.get(id));
+  if (invalidTierIds.length > 0) {
+    throw new IneligibleTiersError(invalidTierIds);
+  }
 }
 
 async function getMemberTier(
@@ -111,23 +155,10 @@ export async function createDraft(
   creatorAddress: string,
   body: CreateDraftBody,
 ): Promise<{ governanceAction: ViewableGovernanceAction; sponsorCount: number; thresholdMet: boolean }> {
-  if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateGovernanceActions"))) {
-    throw new NotAuthorizedToCreateError();
+  if (await getDirectDeploymentEnabled(communityId)) {
+    throw new DraftPathDisabledError();
   }
-
-  if (!isExecutableCombination(body.privacy, body.executionLocation, body.tallyMechanism)) {
-    throw new NonExecutableAxisCombinationError();
-  }
-
-  const tiers = await db
-    .select({ id: membershipTiers.id, canVote: membershipTiers.canVote })
-    .from(membershipTiers)
-    .where(eq(membershipTiers.communityId, communityId));
-  const tierById = new Map(tiers.map((t) => [t.id, t.canVote]));
-  const invalidTierIds = body.eligibleTierIds.filter((id) => !tierById.get(id));
-  if (invalidTierIds.length > 0) {
-    throw new IneligibleTiersError(invalidTierIds);
-  }
+  await validateTierAndAxis(communityId, creatorAddress, body);
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomUUID();
@@ -145,6 +176,7 @@ export async function createDraft(
       tallyMechanism: body.tallyMechanism,
       eligibleTierIds: JSON.stringify(body.eligibleTierIds),
       status: "draft",
+      creationPath: "draft",
       creatorAddress,
       pollAddress: null,
       pollId: null,
@@ -276,6 +308,56 @@ export async function confirmFormalize(
     .returning();
 
   return deserialize(updated!);
+}
+
+export async function authorizeDirect(
+  communityId: string,
+  creatorAddress: string,
+  body: CreateDraftBody,
+): Promise<{ authorized: true }> {
+  if (!(await getDirectDeploymentEnabled(communityId))) {
+    throw new DirectDeploymentDisabledError();
+  }
+  await validateTierAndAxis(communityId, creatorAddress, body);
+  return { authorized: true };
+}
+
+export async function confirmDirect(
+  communityId: string,
+  creatorAddress: string,
+  body: CreateDraftBody & { pollAddress: string; pollId: string; txHash: string },
+): Promise<ViewableGovernanceAction> {
+  if (!(await getDirectDeploymentEnabled(communityId))) {
+    throw new DirectDeploymentDisabledError();
+  }
+  await validateTierAndAxis(communityId, creatorAddress, body);
+
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomUUID();
+
+  const [inserted] = await db
+    .insert(governanceActions)
+    .values({
+      id,
+      communityId,
+      type: "poll",
+      title: body.title,
+      description: body.description,
+      privacy: body.privacy,
+      executionLocation: body.executionLocation,
+      tallyMechanism: body.tallyMechanism,
+      eligibleTierIds: JSON.stringify(body.eligibleTierIds),
+      status: "formalized",
+      creationPath: "direct",
+      creatorAddress,
+      pollAddress: body.pollAddress,
+      pollId: body.pollId,
+      createdAt: now,
+      formalizedAt: now,
+    })
+    .returning();
+
+  return deserialize(inserted!);
 }
 
 export type VoteEligibilityReason = "tier_lacks_voting_rights" | "tier_not_eligible_for_action" | "not_formalized";

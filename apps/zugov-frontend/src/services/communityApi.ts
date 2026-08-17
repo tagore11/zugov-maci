@@ -1,5 +1,5 @@
 import type { SignUpPolicyType, PollDeployConfig } from "@/src/config";
-import type { VoterCapacityPreset, MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
+import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
@@ -16,14 +16,16 @@ export type Community = {
   // Null for communities registered before this field was tracked.
   signUpPolicyType: SignUpPolicyType | null;
   signUpPolicyAddress: string | null;
-  voterCapacityPreset: VoterCapacityPreset;
   stateTreeDepth: 6 | 10 | 14;
   membershipPolicy: MembershipPolicy;
   tierChangesRequireVote: boolean;
+  directDeploymentEnabled: boolean;
   defaultTierId: string | null;
   pollDeployConfig?: PollDeployConfig;
   createdAt: number;
   registeredAt: number;
+  subgraphStatus: "pending" | "ready" | "failed";
+  subgraphName: string | null;
 };
 
 export type ListResponse = {
@@ -42,7 +44,6 @@ export type RegistrationPayload = {
   signUpPolicyType: SignUpPolicyType;
   signUpPolicyAddress: string;
   maciDeploymentBlock: number;
-  voterCapacityPreset: VoterCapacityPreset;
   stateTreeDepth: 6 | 10 | 14;
   description?: string;
   logo?: string;
@@ -59,7 +60,10 @@ export type CommunityUpdatePayload = Partial<
     RegistrationPayload,
     "displayName" | "description" | "logo" | "membershipPolicy" | "tierChangesRequireVote" | "defaultTierLabel"
   >
->;
+> & {
+  // PATCH-only — not settable at registration time (data-model.md: "Changed only via PATCH").
+  directDeploymentEnabled?: boolean;
+};
 
 export class AuthError extends Error {
   constructor() {
@@ -71,6 +75,11 @@ export class OwnershipError extends Error {
   constructor(message: string) {
     super(message);
   }
+}
+
+/** URL of the transparent backend proxy in front of a community's isolated subgraph deployment. */
+export function subgraphQueryUrl(id: string): string {
+  return `${BASE_URL}/api/communities/${id}/subgraph/query`;
 }
 
 export async function list(page = 1, chainId?: number, creatorAddress?: string): Promise<ListResponse> {

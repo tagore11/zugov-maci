@@ -126,7 +126,6 @@ export function CreateCommunityWizard() {
             initialPolicies={state.config.allowedPolicies}
             initialModes={state.config.supportedModes}
             initialSignUpPolicy={state.config.signUpPolicy}
-            initialVoterCapacityPreset={state.config.voterCapacityPreset}
             setMaciConfig={setMaciConfig}
             goBack={goBack}
           />

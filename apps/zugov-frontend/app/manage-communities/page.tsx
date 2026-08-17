@@ -3,7 +3,7 @@ import { useAccount } from "wagmi";
 import { Header } from "../components/Header";
 import { Plus, Edit, Users, FileText } from "lucide-react";
 import { CreateCommunityModal } from "../components/CreateCommunityModal";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import * as communityApi from "@/src/services/communityApi";
 
 type UserCommunityItem = {
@@ -28,6 +28,7 @@ function apiToItem(c: communityApi.Community): UserCommunityItem {
 
 export default function ManageCommunitiesPage() {
   const { address } = useAccount();
+  const navigate = useNavigate();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [userCommunities, setUserCommunities] = useState<UserCommunityItem[]>([]);
 
@@ -98,7 +99,16 @@ export default function ManageCommunitiesPage() {
               {userCommunities.map((community) => (
                 <div
                   key={community.id}
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate(`/community/${community.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/community/${community.id}`);
+                    }
+                  }}
+                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="text-3xl">{community.logo}</div>
@@ -120,6 +130,7 @@ export default function ManageCommunitiesPage() {
 
                   <Link
                     to={`/manage-communities/${community.id}/edit`}
+                    onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
                   >
                     <Edit className="w-4 h-4" />
