@@ -1,15 +1,10 @@
 import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
-import { BrowserProvider, ZeroAddress, toUtf8Bytes, getAddress, type Log, type Interface } from "ethers";
+import { BrowserProvider, Contract, ZeroAddress, toUtf8Bytes, getAddress, type Log, type Interface } from "ethers";
 import { PublicKey } from "@maci-protocol/domainobjs";
-import {
-  MACI__factory,
-  Poll__factory,
-  FreeForAllPolicy__factory,
-  FreeForAllPolicyFactory__factory,
-  ConstantVoiceCreditProxyFactory__factory,
-} from "../poll-factory-shim";
+import { MACI__factory, Poll__factory, ConstantVoiceCreditProxyFactory__factory } from "../poll-factory-shim";
 import { GovernanceTypes, PolicyType, type GovernanceType, type PollDeployConfig } from "../config";
+import { SET_TARGET_ABI } from "../services/policyDeploy";
 
 /** EMode enum values matching DomainObjs.Mode on-chain */
 const EMode = { QV: 0, NON_QV: 1, FULL: 2, RANKED: 3 } as const;
@@ -17,6 +12,7 @@ const EMode = { QV: 0, NON_QV: 1, FULL: 2, RANKED: 3 } as const;
 function votingMechanismToMode(mechanism: string): number {
   if (mechanism === "quadratic") return EMode.QV;
   if (mechanism === "ranked") return EMode.RANKED;
+  if (mechanism === "full") return EMode.FULL;
   return EMode.NON_QV; // "simple" → 1-person-1-vote
 }
 
@@ -38,11 +34,15 @@ export interface UseDeployPollResult {
     maciAddress: string;
     pollDeployConfig: PollDeployConfig;
     existingPollAddress: string | null;
+    /** Address of the eligibility policy this poll should use — either an already-deployed
+     * instance being reused, or one freshly deployed by the caller (see
+     * src/services/policyDeploy.ts's deployPolicyContract) immediately before calling this. */
+    policyAddress: string;
     formData: DeployPollFormData;
   }) => Promise<{ pollAddress: string; pollId: string; txHash: string }>;
 }
 
-async function getEthersSigner() {
+export async function getEthersSigner() {
   if (!window.ethereum) throw new Error("No wallet found");
   const provider = new BrowserProvider(window.ethereum);
   return provider.getSigner();
@@ -71,16 +71,6 @@ async function resolveInitialVoiceCreditProxy(
   return extractCloneAddress(receipt.logs, factory.interface, "ConstantInitialVoiceCreditProxy");
 }
 
-async function deployFreeForAllPolicy(policyFactoryAddress: string, checkerAddress: string): Promise<string> {
-  const signer = await getEthersSigner();
-  const factory = FreeForAllPolicyFactory__factory.connect(policyFactoryAddress, signer);
-  const tx = await factory.deploy(checkerAddress);
-  const receipt = await tx.wait();
-  if (!receipt || receipt.status !== 1) throw new Error("FreeForAllPolicy deployment failed");
-
-  return extractCloneAddress(receipt.logs, factory.interface, "FreeForAllPolicy");
-}
-
 /** Extracts the clone address from a CloneDeployed event.
  * The `clone` param is indexed, so it lives in topics[1] as a 32-byte word. */
 function extractCloneAddress(logs: readonly Log[], iface: Interface, label: string): string {
@@ -104,11 +94,13 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
       maciAddress,
       pollDeployConfig,
       existingPollAddress,
+      policyAddress,
       formData,
     }: {
       maciAddress: string;
       pollDeployConfig: PollDeployConfig;
       existingPollAddress: string | null;
+      policyAddress: string;
       formData: DeployPollFormData;
     }) => {
       if (!address) throw new Error("Wallet not connected");
@@ -127,13 +119,7 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
           pollDeployConfig.initialVoiceCreditAmount,
         );
 
-        setDeployStep("Deploying FreeForAll policy (tx 1/2)...");
-        const policyAddress = await deployFreeForAllPolicy(
-          pollDeployConfig.freeForAllPolicyFactory,
-          pollDeployConfig.freeForAllChecker,
-        );
-
-        setDeployStep("Deploying poll (tx 2/2)...");
+        setDeployStep("Deploying poll...");
         const signer = await getEthersSigner();
         const maci = MACI__factory.connect(maciAddress, signer);
         const coordinatorKey = PublicKey.deserialize(pollDeployConfig.coordinatorPublicKey);
@@ -173,8 +159,10 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
         const { contracts } = await maci.getPoll(pollId);
 
         setDeployStep("Setting policy target...");
-        const policy = FreeForAllPolicy__factory.connect(policyAddress, signer);
-        const setTargetTx = await policy.setTarget(contracts.poll);
+        const policy = new Contract(policyAddress, SET_TARGET_ABI, signer);
+        const setTargetTx = await (policy.setTarget as (guarded: string) => Promise<{ wait: () => Promise<unknown> }>)(
+          contracts.poll,
+        );
         await setTargetTx.wait();
 
         return { pollAddress: contracts.poll, pollId: pollId.toString(), txHash: deployPollTx.hash };

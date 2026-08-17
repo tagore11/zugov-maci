@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useChainId } from "wagmi";
 import { X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import * as membershipApi from "@/src/services/membershipApi";
@@ -8,8 +9,30 @@ import type {
   GovernanceActionPrivacy,
   GovernanceActionTallyMechanism,
 } from "@/src/services/governanceActionApi";
-import { useDeployPoll } from "@/src/hooks/useDeployPoll";
-import { GovernanceTypes, type PollDeployConfig } from "@/src/config";
+import * as communityApi from "@/src/services/communityApi";
+import type { Community } from "@/src/services/communityApi";
+import { fetchPolls } from "@/src/services/subgraph";
+import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { deployPolicyContract } from "@/src/services/policyDeploy";
+import {
+  GovernanceTypes,
+  PolicyType,
+  type GovernanceType,
+  type SignUpPolicyType,
+  type PollDeployConfig,
+} from "@/src/config";
+import {
+  POLICY_TYPE_OPTIONS,
+  DEFAULT_POLICY_INPUTS,
+  buildPolicyArgs,
+  PolicyArgsFields,
+  type PolicyInputState,
+} from "./PolicyArgsFields";
+
+function policyIdToType(id: number): SignUpPolicyType | undefined {
+  const entry = Object.entries(PolicyType).find(([, value]) => Number(value) === id);
+  return entry?.[0] as SignUpPolicyType | undefined;
+}
 
 interface CreateGovernanceActionModalProps {
   isOpen: boolean;
@@ -22,6 +45,9 @@ interface CreateGovernanceActionModalProps {
   /** Required to actually deploy on-chain when directDeploymentEnabled is true; null/undefined means
    * this community has no linked on-chain governance contract yet (FR-006). */
   pollDeployConfig?: PollDeployConfig | null;
+  /** Needed to build the eligibility policy picker below (allowedPolicies, subgraph access for
+   * discovering reusable existing policy instances, chainId/governanceType). */
+  community?: Community;
 }
 
 export function CreateGovernanceActionModal({
@@ -31,7 +57,9 @@ export function CreateGovernanceActionModal({
   communityId,
   directDeploymentEnabled = false,
   pollDeployConfig,
+  community,
 }: CreateGovernanceActionModalProps) {
+  const chainId = useChainId();
   const { data: tiers = [] } = useQuery({
     queryKey: ["tiers", communityId],
     queryFn: () => membershipApi.getTiers(communityId),
@@ -39,12 +67,36 @@ export function CreateGovernanceActionModal({
   });
   const votingTiers = tiers.filter((t) => t.canVote);
 
+  const allowedPolicyTypes = (community?.allowedPolicies ?? [])
+    .map(policyIdToType)
+    .filter((t): t is SignUpPolicyType => !!t);
+
+  // Existing policy instances that are safe to reuse for a new poll: only from CLOSED past
+  // polls. A policy contract has a single `target` (see src/services/policyDeploy.ts) — reusing
+  // one from a still-open poll (or the community's sign-up policy) would repoint it and break
+  // that poll's/the community's ability to use it. Requires the subgraph to be indexed.
+  const subgraphUrl = community?.subgraphStatus === "ready" ? communityApi.subgraphQueryUrl(communityId) : undefined;
+  const eligibilityGovernanceType = community?.governanceType as GovernanceType | undefined;
+  const { data: pastPolls = [] } = useQuery({
+    queryKey: ["pastPollsForEligibility", communityId],
+    queryFn: () => fetchPolls(subgraphUrl!, eligibilityGovernanceType!),
+    enabled: isOpen && directDeploymentEnabled && !!subgraphUrl && !!eligibilityGovernanceType,
+  });
+  const nowSec = Date.now() / 1000;
+  const closedPolls = pastPolls.filter((p) => Number(p.endDate) <= nowSec);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [privacy] = useState<GovernanceActionPrivacy>("privacy_preserving");
   const [executionLocation] = useState<GovernanceActionExecutionLocation>("onchain");
   const [tallyMechanism, setTallyMechanism] = useState<GovernanceActionTallyMechanism>("simple");
   const [eligibleTierIds, setEligibleTierIds] = useState<string[]>([]);
+  const [eligibilityPolicyType, setEligibilityPolicyType] = useState<SignUpPolicyType>(
+    allowedPolicyTypes[0] ?? "FreeForAll",
+  );
+  const [eligibilityMode, setEligibilityMode] = useState<"reuse" | "new">("new");
+  const [selectedExistingPolicy, setSelectedExistingPolicy] = useState("");
+  const [newPolicyInputs, setNewPolicyInputs] = useState<PolicyInputState>(DEFAULT_POLICY_INPUTS);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [options, setOptions] = useState(["", ""]);
@@ -58,13 +110,31 @@ export function CreateGovernanceActionModal({
     setEligibleTierIds((prev) => (prev.includes(tierId) ? prev.filter((id) => id !== tierId) : [...prev, tierId]));
   };
 
+  const existingInstancesForType = closedPolls
+    .filter((p) => policyIdToType(Number(p.policyType)) === eligibilityPolicyType)
+    .reduce<{ address: string; usedInPollName: string }[]>((acc, p) => {
+      if (!acc.some((e) => e.address.toLowerCase() === p.policy.toLowerCase())) {
+        acc.push({ address: p.policy, usedInPollName: p.name });
+      }
+      return acc;
+    }, []);
+
+  const newPolicyArgs = buildPolicyArgs(eligibilityPolicyType, newPolicyInputs);
+  const eligibilityPolicyReady =
+    !directDeploymentEnabled || (eligibilityMode === "reuse" ? !!selectedExistingPolicy : newPolicyArgs !== null);
+
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
-  const directModeReady = !directDeploymentEnabled || (!!startDate && !!endDate && filledOptionCount >= 2);
+  const directModeReady =
+    !directDeploymentEnabled || (!!startDate && !!endDate && filledOptionCount >= 2 && eligibilityPolicyReady);
 
   const resetForm = () => {
     setTitle("");
     setDescription("");
     setEligibleTierIds([]);
+    setEligibilityPolicyType(allowedPolicyTypes[0] ?? "FreeForAll");
+    setEligibilityMode("new");
+    setSelectedExistingPolicy("");
+    setNewPolicyInputs(DEFAULT_POLICY_INPUTS);
     setStartDate("");
     setEndDate("");
     setOptions(["", ""]);
@@ -73,7 +143,8 @@ export function CreateGovernanceActionModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (eligibleTierIds.length === 0) {
+
+    if (!directDeploymentEnabled && eligibleTierIds.length === 0) {
       setError("Select at least one eligible tier.");
       return;
     }
@@ -81,25 +152,42 @@ export function CreateGovernanceActionModal({
     setIsSubmitting(true);
     try {
       if (directDeploymentEnabled && pollDeployConfig) {
+        // The backend's checkVoteEligibility (used for the "Vote" button badge) still gates on
+        // eligibleTierIds regardless of creation path — the UI no longer asks for tiers here
+        // since the real gate is now the on-chain eligibility policy below, so every
+        // voting-capable tier is recorded automatically rather than picked manually.
+        const directEligibleTierIds = votingTiers.map((t) => t.id);
+
         await governanceActionApi.authorizeDirect(communityId, {
           title,
           description,
           privacy,
           executionLocation,
           tallyMechanism,
-          eligibleTierIds,
+          eligibleTierIds: directEligibleTierIds,
         });
+
+        const policyAddress =
+          eligibilityMode === "reuse"
+            ? selectedExistingPolicy
+            : await (async () => {
+                if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
+                const signer = await getEthersSigner();
+                return deployPolicyContract(newPolicyArgs, signer, chainId);
+              })();
+
         const { pollAddress, pollId, txHash } = await deployPoll({
           maciAddress: communityId,
           pollDeployConfig,
           existingPollAddress: null,
+          policyAddress,
           formData: {
             title,
             description,
             votingMechanism: tallyMechanism,
             startDate,
             endDate,
-            eligibility: "FreeForAll",
+            eligibility: eligibilityPolicyType,
             options,
           },
         });
@@ -109,7 +197,7 @@ export function CreateGovernanceActionModal({
           privacy,
           executionLocation,
           tallyMechanism,
-          eligibleTierIds,
+          eligibleTierIds: directEligibleTierIds,
           pollAddress,
           pollId,
           txHash,
@@ -242,40 +330,107 @@ export function CreateGovernanceActionModal({
                 <option value="simple">Simple Majority</option>
                 <option value="quadratic">Quadratic Voting</option>
                 <option value="ranked">Ranked Choice</option>
+                <option value="full">Full Voting</option>
                 <option value="weighted" disabled>
                   Weighted (coming soon)
                 </option>
               </select>
             </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Eligible Tiers *</label>
-              <div className="space-y-2">
-                {votingTiers.length === 0 && (
-                  <p className="text-sm text-gray-500">No voting-capable tiers exist in this community yet.</p>
-                )}
-                {votingTiers.map((tier) => (
-                  <label
-                    key={tier.id}
-                    className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={eligibleTierIds.includes(tier.id)}
-                      onChange={() => toggleTier(tier.id)}
-                      className="w-5 h-5 rounded text-indigo-600"
-                    />
-                    <span className="text-gray-900">{tier.label}</span>
-                  </label>
-                ))}
+            {!directDeploymentEnabled && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-3">Eligible Tiers *</label>
+                <div className="space-y-2">
+                  {votingTiers.length === 0 && (
+                    <p className="text-sm text-gray-500">No voting-capable tiers exist in this community yet.</p>
+                  )}
+                  {votingTiers.map((tier) => (
+                    <label
+                      key={tier.id}
+                      className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={eligibleTierIds.includes(tier.id)}
+                        onChange={() => toggleTier(tier.id)}
+                        className="w-5 h-5 rounded text-indigo-600"
+                      />
+                      <span className="text-gray-900">{tier.label}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             {directDeploymentEnabled && (
               <div className="space-y-4 p-4 border-2 border-indigo-100 bg-indigo-50 rounded-lg">
                 <p className="text-sm font-semibold text-gray-900">
                   This community deploys polls directly — no draft or co-sponsorship needed.
                 </p>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-900 mb-3">Eligibility Policy *</label>
+                  <p className="text-xs text-gray-600 mb-2">Who can vote on this poll, enforced on-chain.</p>
+                  <select
+                    value={eligibilityPolicyType}
+                    onChange={(e) => {
+                      setEligibilityPolicyType(e.target.value as SignUpPolicyType);
+                      setEligibilityMode("new");
+                      setSelectedExistingPolicy("");
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
+                  >
+                    {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
+                    {allowedPolicyTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {POLICY_TYPE_OPTIONS.find((p) => p.type === type)?.label ?? type}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div className="mt-3 space-y-2">
+                    {existingInstancesForType.map((instance) => (
+                      <label
+                        key={instance.address}
+                        className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50"
+                      >
+                        <input
+                          type="radio"
+                          name="eligibility-mode"
+                          checked={eligibilityMode === "reuse" && selectedExistingPolicy === instance.address}
+                          onChange={() => {
+                            setEligibilityMode("reuse");
+                            setSelectedExistingPolicy(instance.address);
+                          }}
+                          className="w-5 h-5 text-indigo-600"
+                        />
+                        <span className="text-sm text-gray-900">
+                          Reuse existing — <span className="font-mono text-xs">{instance.address}</span> (used in &quot;
+                          {instance.usedInPollName}&quot;)
+                        </span>
+                      </label>
+                    ))}
+                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="radio"
+                        name="eligibility-mode"
+                        checked={eligibilityMode === "new"}
+                        onChange={() => setEligibilityMode("new")}
+                        className="w-5 h-5 text-indigo-600"
+                      />
+                      <span className="text-sm text-gray-900">Deploy a new instance</span>
+                    </label>
+                  </div>
+
+                  {eligibilityMode === "new" && (
+                    <PolicyArgsFields
+                      policyType={eligibilityPolicyType}
+                      inputs={newPolicyInputs}
+                      updateInput={(key, value) => setNewPolicyInputs((prev) => ({ ...prev, [key]: value }))}
+                    />
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="poll-start-date" className="block text-xs font-semibold text-gray-700 mb-1">

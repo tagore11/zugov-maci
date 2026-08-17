@@ -2,7 +2,7 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http:/
 
 export type GovernanceActionPrivacy = "public" | "privacy_preserving";
 export type GovernanceActionExecutionLocation = "onchain" | "offchain" | "hybrid";
-export type GovernanceActionTallyMechanism = "simple" | "quadratic" | "ranked" | "weighted";
+export type GovernanceActionTallyMechanism = "simple" | "quadratic" | "ranked" | "weighted" | "full";
 export type GovernanceActionStatus = "draft" | "formalized";
 
 export type GovernanceActionCreationPath = "draft" | "direct";

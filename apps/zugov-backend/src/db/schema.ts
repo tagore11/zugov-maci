@@ -122,7 +122,7 @@ export const governanceActions = pgTable("governance_actions", {
   description: text("description").notNull(),
   privacy: text("privacy").$type<"public" | "privacy_preserving">().notNull(),
   executionLocation: text("execution_location").$type<"onchain" | "offchain" | "hybrid">().notNull(),
-  tallyMechanism: text("tally_mechanism").$type<"simple" | "quadratic" | "ranked" | "weighted">().notNull(),
+  tallyMechanism: text("tally_mechanism").$type<"simple" | "quadratic" | "ranked" | "weighted" | "full">().notNull(),
   eligibleTierIds: text("eligible_tier_ids").notNull(), // JSON-stringified string[]
   status: text("status").$type<"draft" | "formalized">().notNull().default("draft"),
   creationPath: text("creation_path").$type<"draft" | "direct">().notNull().default("draft"),

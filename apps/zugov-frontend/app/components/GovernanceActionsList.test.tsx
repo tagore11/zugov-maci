@@ -28,6 +28,7 @@ vi.mock("@/src/services/communityApi", () => ({
 }));
 
 const deployPollMock = vi.fn();
+const getEthersSignerMock = vi.fn(() => Promise.resolve({}));
 vi.mock("@/src/hooks/useDeployPoll", () => ({
   useDeployPoll: () => ({
     isDeploying: false,
@@ -35,6 +36,13 @@ vi.mock("@/src/hooks/useDeployPoll", () => ({
     deployError: null,
     deployPoll: (...args: unknown[]) => deployPollMock(...args),
   }),
+  getEthersSigner: () => getEthersSignerMock(),
+}));
+
+const deployPolicyContractMock = vi.fn((..._args: unknown[]) => Promise.resolve("0xPolicy"));
+vi.mock("@/src/services/policyDeploy", () => ({
+  deployPolicyContract: (...args: unknown[]) => deployPolicyContractMock(...args),
+  SET_TARGET_ABI: ["function setTarget(address _guarded)"],
 }));
 
 const voteOptionsMock = vi.fn();
@@ -49,6 +57,7 @@ vi.mock("@/src/poll-factory-shim", () => ({
 // out of scope for this feature (specs/006/specs/005 T039 only wires up *reaching* VoteModal).
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: "0xVoter" }),
+  useChainId: () => 11155111,
 }));
 const castVoteMock = vi.fn();
 vi.mock("@/src/hooks/useVote", () => ({

@@ -1,13 +1,14 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount, useChainId } from "wagmi";
-import { BrowserProvider, Contract, ContractFactory, Interface, type Signer } from "ethers";
+import { BrowserProvider, Contract, ContractFactory, type Signer } from "ethers";
 import type { Hex } from "viem";
 import { MACI__factory } from "@maci-protocol/contracts/typechain-types";
 import { generateEmptyBallotRoots } from "@maci-protocol/sdk";
 import { PublicKey } from "@maci-protocol/domainobjs";
-import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type SignUpPolicyArgs, type PollDeployConfig } from "@/src/config";
+import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type PollDeployConfig } from "@/src/config";
 import { STATE_TREE_DEPTH } from "@/src/constants";
 import { DEFAULT_MEMBERSHIP_TIERS } from "@/app/lib/placeholder-data";
+import { deployPolicyContract, SET_TARGET_ABI } from "@/src/services/policyDeploy";
 import {
   savePendingCheckpoint,
   getPendingCheckpoint,
@@ -69,26 +70,6 @@ export interface UseCreateCommunityResult {
   saveCommunity: () => Promise<void>;
   reset: () => void;
 }
-
-// ─── ABIs ──────────────────────────────────────────────────────────────────
-
-const CLONE_DEPLOYED_EVENT_ABI = ["event CloneDeployed(address indexed clone)"];
-const SET_TARGET_ABI = ["function setTarget(address _guarded)"];
-const POLICY_DEPLOY_ABI = ["function deploy(address checkerAddress) returns (address)"];
-
-const CHECKER_DEPLOY_ABI: Record<string, string[]> = {
-  FreeForAll: ["function deploy() returns (address)"],
-  EAS: ["function deploy(address eas, address attester, bytes32 schema) returns (address)"],
-  Zupass: ["function deploy(uint256 eventId, uint256 signer1, uint256 signer2, address verifier) returns (address)"],
-  GitcoinPassport: ["function deploy(address passportDecoder, uint256 thresholdScore) returns (address)"],
-  Semaphore: ["function deploy(address semaphore, uint256 groupId) returns (address)"],
-  AnonAadhaar: ["function deploy(address anonAadhaarVerifier, uint256 nullifierSeed) returns (address)"],
-  ERC20Token: ["function deploy(address _token, uint256 _threshold) returns (address)"],
-  ERC20Votes: ["function deploy(address _token, uint256 _snapshotBlock, uint256 _threshold) returns (address)"],
-  Token: ["function deploy(address token) returns (address)"],
-  MerkleProof: ["function deploy(bytes32 root) returns (address)"],
-  HatsProtocol: ["function deploy(address hats, uint256[] criterionHats) returns (address)"],
-};
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -159,122 +140,6 @@ function linkPoseidon(bytecode: string, registry: RegistryData): string {
     .replace(new RegExp("__\\$dc01a9744591ab014bc46a3b7671cdaefb\\$__", "g"), strip(registry.poseidonT4))
     .replace(new RegExp("__\\$ce9c2c925f157047e54fa833ec4e61409f\\$__", "g"), strip(registry.poseidonT5))
     .replace(new RegExp("__\\$20527677031d76601747626a9845039fe4\\$__", "g"), strip(registry.poseidonT6));
-}
-
-async function deployClone(factoryAddr: Hex, abi: string[], args: unknown[], signer: Signer): Promise<Hex> {
-  const factory = new Contract(factoryAddr, abi, signer);
-  const tx = await (factory.deploy as (...a: unknown[]) => Promise<{ wait: () => Promise<unknown> }>)(...args);
-  const receipt = (await tx.wait()) as {
-    status: number;
-    logs: Array<{ topics: string[]; data: string }>;
-  };
-  if (!receipt || receipt.status !== 1) throw new Error("Clone deployment failed");
-
-  const iface = new Interface(CLONE_DEPLOYED_EVENT_ABI);
-  for (const log of receipt.logs) {
-    try {
-      const parsed = iface.parseLog({ topics: log.topics, data: log.data });
-      if (parsed?.name === "CloneDeployed") return parsed.args[0] as Hex;
-    } catch {
-      // not our event
-    }
-  }
-  throw new Error("CloneDeployed event not found");
-}
-
-async function deploySignUpPolicy(policyArgs: SignUpPolicyArgs, signer: Signer, chainId: number): Promise<Hex> {
-  const chainConstants = appConstants[chainId as keyof typeof appConstants];
-  if (!chainConstants) throw new Error(`Unsupported chain: ${chainId}`);
-
-  const { policyFactories, policyInfrastructure } = chainConstants;
-  const ZERO = "0x0000000000000000000000000000000000000000";
-
-  const { type } = policyArgs;
-  const { checker: checkerFactoryAddr, policy: policyFactoryAddr } =
-    policyFactories[
-      type === "FreeForAll"
-        ? "freeForAll"
-        : type === "EAS"
-          ? "eas"
-          : type === "Zupass"
-            ? "zupass"
-            : type === "GitcoinPassport"
-              ? "gitcoinPassport"
-              : type === "Semaphore"
-                ? "semaphore"
-                : type === "AnonAadhaar"
-                  ? "anonAadhaar"
-                  : type === "ERC20Token"
-                    ? "erc20Token"
-                    : type === "ERC20Votes"
-                      ? "erc20Votes"
-                      : type === "Token"
-                        ? "token"
-                        : type === "MerkleProof"
-                          ? "merkleProof"
-                          : "hatsProtocol"
-    ];
-
-  if (checkerFactoryAddr === ZERO || policyFactoryAddr === ZERO) {
-    throw new Error(`Policy factories for ${type} are not deployed on this network.`);
-  }
-
-  let checkerArgs: unknown[];
-  switch (policyArgs.type) {
-    case "FreeForAll":
-      checkerArgs = [];
-      break;
-    case "EAS":
-      if (policyInfrastructure.easAddress === ZERO) throw new Error("EAS contract not configured for this network");
-      checkerArgs = [policyInfrastructure.easAddress, policyArgs.attesterAddress, policyArgs.schemaUid];
-      break;
-    case "Zupass":
-      if (policyInfrastructure.zupassVerifier === ZERO)
-        throw new Error("Zupass verifier not configured for this network");
-      checkerArgs = [
-        BigInt(policyArgs.eventId),
-        BigInt(policyArgs.signer1),
-        BigInt(policyArgs.signer2),
-        policyInfrastructure.zupassVerifier,
-      ];
-      break;
-    case "GitcoinPassport":
-      if (policyInfrastructure.gitcoinDecoder === ZERO)
-        throw new Error("Gitcoin Passport decoder not configured for this network");
-      checkerArgs = [policyInfrastructure.gitcoinDecoder, BigInt(policyArgs.thresholdScore)];
-      break;
-    case "Semaphore":
-      if (policyInfrastructure.semaphoreAddress === ZERO)
-        throw new Error("Semaphore contract not configured for this network");
-      checkerArgs = [policyInfrastructure.semaphoreAddress, BigInt(policyArgs.groupId)];
-      break;
-    case "AnonAadhaar":
-      if (policyInfrastructure.anonAadhaarVerifier === ZERO)
-        throw new Error("AnonAadhaar verifier not configured for this network");
-      checkerArgs = [policyInfrastructure.anonAadhaarVerifier, policyArgs.nullifierSeed];
-      break;
-    case "ERC20Token":
-      checkerArgs = [policyArgs.tokenAddress, policyArgs.threshold];
-      break;
-    case "ERC20Votes":
-      checkerArgs = [policyArgs.tokenAddress, policyArgs.snapshotBlock, policyArgs.threshold];
-      break;
-    case "Token":
-      checkerArgs = [policyArgs.tokenAddress];
-      break;
-    case "MerkleProof":
-      checkerArgs = [policyArgs.merkleRoot];
-      break;
-    case "HatsProtocol":
-      if (policyInfrastructure.hatsAddress === ZERO)
-        throw new Error("Hats Protocol contract not configured for this network");
-      checkerArgs = [policyInfrastructure.hatsAddress, policyArgs.criterionHats.map((h) => BigInt(h))];
-      break;
-  }
-
-  const checkerAddr = await deployClone(checkerFactoryAddr, CHECKER_DEPLOY_ABI[type], checkerArgs, signer);
-  const policyAddr = await deployClone(policyFactoryAddr, POLICY_DEPLOY_ABI, [checkerAddr], signer);
-  return policyAddr;
 }
 
 export async function saveWithRetry(
@@ -419,7 +284,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
         // Phase 1: Deploy sign-up policy
         if (!fromPhase || fromPhase === "deploy_sign_up_policy") {
           setPhase(setState, "deploy_sign_up_policy");
-          signUpPolicyAddress = await deploySignUpPolicy(config.signUpPolicy, signer, chainId);
+          signUpPolicyAddress = await deployPolicyContract(config.signUpPolicy, signer, chainId);
           checkpoint.deployedSignUpPolicyAddress = signUpPolicyAddress;
           checkpoint.lastPhase = "deploy_sign_up_policy";
           savePendingCheckpoint(address as Hex, checkpoint);
