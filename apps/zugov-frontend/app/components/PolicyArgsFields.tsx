@@ -130,6 +130,25 @@ export function buildPolicyArgs(policyType: SignUpPolicyType, inputs: PolicyInpu
   }
 }
 
+/** StepMaciConfig.tsx renders inside a solid dark modal (bg-gray-900); CreateGovernanceActionModal
+ * renders inside a solid light modal (bg-white) — the two contexts these fields are shared
+ * between need different colors to stay legible, since Tailwind classes here are static (no
+ * parent-aware theming). Defaults to "light" (the more common of the two call sites). */
+export type PolicyArgsTheme = "light" | "dark";
+
+const THEME_CLASSES = {
+  light: {
+    wrapper: "border-gray-200 bg-gray-50",
+    label: "text-gray-700",
+    input: "border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:ring-indigo-500",
+  },
+  dark: {
+    wrapper: "border-gray-700 bg-gray-800/40",
+    label: "text-gray-400",
+    input: "border-gray-700 bg-gray-900 text-white placeholder-gray-600 focus:ring-purple-500",
+  },
+} as const;
+
 export function PolicyArgInput({
   label,
   value,
@@ -137,6 +156,7 @@ export function PolicyArgInput({
   placeholder,
   type = "text",
   mono = false,
+  theme = "light",
 }: {
   label: string;
   value: string;
@@ -144,17 +164,18 @@ export function PolicyArgInput({
   placeholder?: string;
   type?: string;
   mono?: boolean;
+  theme?: PolicyArgsTheme;
 }) {
+  const classes = THEME_CLASSES[theme];
   return (
     <div>
-      <label className="block text-xs text-gray-400 mb-1">{label}</label>
+      <label className={`block text-xs mb-1 ${classes.label}`}>{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className={`w-full px-3 py-1.5 rounded-md border border-gray-700 bg-gray-900 text-sm text-white
-          placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500
+        className={`w-full px-3 py-1.5 rounded-md border text-sm focus:outline-none focus:ring-1 ${classes.input}
           ${mono ? "font-mono text-xs" : ""}`}
       />
     </div>
@@ -167,15 +188,17 @@ export function PolicyArgsFields({
   policyType,
   inputs,
   updateInput,
+  theme = "light",
 }: {
   policyType: SignUpPolicyType;
   inputs: PolicyInputState;
   updateInput: (key: keyof PolicyInputState, value: string) => void;
+  theme?: PolicyArgsTheme;
 }) {
   if (policyType === "FreeForAll") return null;
 
   return (
-    <div className="mt-3 rounded-lg border border-gray-700 bg-gray-800/40 p-3 space-y-2.5">
+    <div className={`mt-3 rounded-lg border p-3 space-y-2.5 ${THEME_CLASSES[theme].wrapper}`}>
       {policyType === "Zupass" && (
         <>
           <PolicyArgInput
@@ -183,18 +206,21 @@ export function PolicyArgsFields({
             value={inputs.zupassEventId}
             onChange={(v) => updateInput("zupassEventId", v)}
             placeholder="Event UUID as uint256"
+            theme={theme}
           />
           <PolicyArgInput
             label="Signer 1"
             value={inputs.zupassSigner1}
             onChange={(v) => updateInput("zupassSigner1", v)}
             placeholder="EdDSA public key part 1"
+            theme={theme}
           />
           <PolicyArgInput
             label="Signer 2"
             value={inputs.zupassSigner2}
             onChange={(v) => updateInput("zupassSigner2", v)}
             placeholder="EdDSA public key part 2"
+            theme={theme}
           />
         </>
       )}
@@ -206,6 +232,7 @@ export function PolicyArgsFields({
             onChange={(v) => updateInput("easSchemaUid", v)}
             placeholder="0x..."
             mono
+            theme={theme}
           />
           <PolicyArgInput
             label="Attester address"
@@ -213,6 +240,7 @@ export function PolicyArgsFields({
             onChange={(v) => updateInput("easAttester", v)}
             placeholder="0x..."
             mono
+            theme={theme}
           />
         </>
       )}
@@ -223,6 +251,7 @@ export function PolicyArgsFields({
           onChange={(v) => updateInput("gitcoinScore", v)}
           placeholder="e.g. 15"
           type="number"
+          theme={theme}
         />
       )}
       {policyType === "Semaphore" && (
@@ -231,6 +260,7 @@ export function PolicyArgsFields({
           value={inputs.semaphoreGroupId}
           onChange={(v) => updateInput("semaphoreGroupId", v)}
           placeholder="Semaphore group ID"
+          theme={theme}
         />
       )}
       {policyType === "AnonAadhaar" && (
@@ -239,6 +269,7 @@ export function PolicyArgsFields({
           value={inputs.anonAadhaarSeed}
           onChange={(v) => updateInput("anonAadhaarSeed", v)}
           placeholder="uint256 seed value"
+          theme={theme}
         />
       )}
       {policyType === "ERC20Token" && (
@@ -249,12 +280,14 @@ export function PolicyArgsFields({
             onChange={(v) => updateInput("erc20Token", v)}
             placeholder="0x..."
             mono
+            theme={theme}
           />
           <PolicyArgInput
             label="Minimum balance"
             value={inputs.erc20Threshold}
             onChange={(v) => updateInput("erc20Threshold", v)}
             placeholder="Amount in wei (default 0)"
+            theme={theme}
           />
         </>
       )}
@@ -266,6 +299,7 @@ export function PolicyArgsFields({
             onChange={(v) => updateInput("erc20VotesToken", v)}
             placeholder="0x..."
             mono
+            theme={theme}
           />
           <PolicyArgInput
             label="Snapshot block"
@@ -273,12 +307,14 @@ export function PolicyArgsFields({
             onChange={(v) => updateInput("erc20VotesSnapshotBlock", v)}
             placeholder="Block number"
             type="number"
+            theme={theme}
           />
           <PolicyArgInput
             label="Minimum voting power"
             value={inputs.erc20VotesThreshold}
             onChange={(v) => updateInput("erc20VotesThreshold", v)}
             placeholder="Amount in wei (default 0)"
+            theme={theme}
           />
         </>
       )}
@@ -289,6 +325,7 @@ export function PolicyArgsFields({
           onChange={(v) => updateInput("tokenAddress", v)}
           placeholder="0x..."
           mono
+          theme={theme}
         />
       )}
       {policyType === "MerkleProof" && (
@@ -298,6 +335,7 @@ export function PolicyArgsFields({
           onChange={(v) => updateInput("merkleRoot", v)}
           placeholder="0x..."
           mono
+          theme={theme}
         />
       )}
       {policyType === "HatsProtocol" && (
@@ -306,6 +344,7 @@ export function PolicyArgsFields({
           value={inputs.hatsIds}
           onChange={(v) => updateInput("hatsIds", v)}
           placeholder="Comma-separated hat IDs"
+          theme={theme}
         />
       )}
     </div>

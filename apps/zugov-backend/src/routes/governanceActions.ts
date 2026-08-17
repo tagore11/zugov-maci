@@ -20,6 +20,14 @@ import {
   DirectDeploymentDisabledError,
   DraftPathDisabledError,
 } from "../services/governanceActionService.js";
+import * as tallyService from "../services/tallyService.js";
+import {
+  NotAuthorizedToTallyError,
+  PollNotDeployedError,
+  PollNotClosedError,
+  TallyAlreadyInProgressError,
+  UnsupportedChainForTallyError,
+} from "../services/tallyService.js";
 
 export const governanceActionsRouter = new Hono();
 
@@ -174,6 +182,35 @@ governanceActionsRouter.get("/:id/governance-actions/:actionId/vote-eligibility"
       c.req.param("actionId"),
       session.address!,
     );
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    throw err;
+  }
+});
+
+governanceActionsRouter.post("/:id/governance-actions/:actionId/tally", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  const session = await getSession(c);
+  try {
+    await tallyService.triggerTally(communityId, c.req.param("actionId"), session.address!);
+    return c.json({ tallyStatus: "pending" }, 202);
+  } catch (err) {
+    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof NotAuthorizedToTallyError) return c.json({ error: err.message }, 403);
+    if (err instanceof PollNotDeployedError || err instanceof PollNotClosedError) {
+      return c.json({ error: err.message }, 409);
+    }
+    if (err instanceof TallyAlreadyInProgressError) return c.json({ error: err.message }, 409);
+    if (err instanceof UnsupportedChainForTallyError) return c.json({ error: err.message }, 422);
+    throw err;
+  }
+});
+
+governanceActionsRouter.get("/:id/governance-actions/:actionId/tally", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  try {
+    const result = await tallyService.getTallyStatus(communityId, c.req.param("actionId"));
     return c.json(result);
   } catch (err) {
     if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);

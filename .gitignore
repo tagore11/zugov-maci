@@ -120,6 +120,12 @@ typings/
 .env
 .env.test
 
+# per-service env files on deploy hosts (e.g. deploy/coordinator.env) — /opt/zugov on the
+# deploy VPS is a git checkout of this repo (see .github/workflows/deploy-backend.yml), so
+# anything holding real secrets there needs to be excluded by pattern, not just the bare
+# ".env" name above, or it's one `git add -A` away from landing in a commit.
+deploy/*.env
+
 # generated secrets (coordinator keypairs, etc.) — never commit
 *.secret.json
 

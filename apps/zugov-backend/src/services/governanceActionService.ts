@@ -291,7 +291,7 @@ export async function authorizeFormalize(communityId: string, actionId: string):
 export async function confirmFormalize(
   communityId: string,
   actionId: string,
-  result: { pollAddress: string; pollId: string; txHash: string },
+  result: { pollAddress: string; pollId: string; txHash: string; pollStartDate: number; pollEndDate: number },
 ): Promise<ViewableGovernanceAction> {
   await assertReadyToFormalize(communityId, actionId);
 
@@ -302,6 +302,8 @@ export async function confirmFormalize(
       status: "formalized",
       pollAddress: result.pollAddress,
       pollId: result.pollId,
+      pollStartDate: result.pollStartDate,
+      pollEndDate: result.pollEndDate,
       formalizedAt: now,
     })
     .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
@@ -325,7 +327,13 @@ export async function authorizeDirect(
 export async function confirmDirect(
   communityId: string,
   creatorAddress: string,
-  body: CreateDraftBody & { pollAddress: string; pollId: string; txHash: string },
+  body: CreateDraftBody & {
+    pollAddress: string;
+    pollId: string;
+    txHash: string;
+    pollStartDate: number;
+    pollEndDate: number;
+  },
 ): Promise<ViewableGovernanceAction> {
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
@@ -352,6 +360,8 @@ export async function confirmDirect(
       creatorAddress,
       pollAddress: body.pollAddress,
       pollId: body.pollId,
+      pollStartDate: body.pollStartDate,
+      pollEndDate: body.pollEndDate,
       createdAt: now,
       formalizedAt: now,
     })

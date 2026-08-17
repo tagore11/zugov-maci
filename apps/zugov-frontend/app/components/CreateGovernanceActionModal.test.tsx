@@ -40,15 +40,6 @@ vi.mock("@/src/services/policyDeploy", () => ({
   SET_TARGET_ABI: ["function setTarget(address _guarded)"],
 }));
 
-vi.mock("@/src/services/communityApi", () => ({
-  subgraphQueryUrl: (id: string) => `http://localhost:3001/api/communities/${id}/subgraph/query`,
-}));
-
-const fetchPollsMock = vi.fn((..._args: unknown[]) => Promise.resolve([]));
-vi.mock("@/src/services/subgraph", () => ({
-  fetchPolls: (...args: unknown[]) => fetchPollsMock(...args),
-}));
-
 const POLL_DEPLOY_CONFIG: PollDeployConfig = {
   coordinatorPublicKey: "macipk.842ada068e4156f836e02336160ae0172f0dd9b43280edeb4572c57793068dd3",
   treeDepths: { tallyProcessingStateTreeDepth: 1, voteOptionTreeDepth: 2, stateTreeDepth: 6 },
@@ -117,8 +108,8 @@ describe("CreateGovernanceActionModal", () => {
 
   describe("direct deployment mode (specs/007 US2)", () => {
     // No community prop is passed in these tests, so allowedPolicyTypes is empty and the
-    // eligibility policy picker falls back to "FreeForAll" / "Deploy a new instance" — which
-    // needs no extra fields, matching this mode's replacement of the old tier checkboxes.
+    // eligibility policy picker falls back to "FreeForAll", which needs no extra parameter
+    // fields, matching this mode's replacement of the old tier checkboxes.
     async function fillDirectModeFields() {
       fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Fund the garden" } });
       fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Details here" } });

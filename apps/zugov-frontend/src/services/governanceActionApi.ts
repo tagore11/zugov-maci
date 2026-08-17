@@ -7,6 +7,8 @@ export type GovernanceActionStatus = "draft" | "formalized";
 
 export type GovernanceActionCreationPath = "draft" | "direct";
 
+export type TallyStatus = "not_started" | "pending" | "processing" | "completed" | "failed";
+
 export interface GovernanceAction {
   id: string;
   communityId: string;
@@ -22,8 +24,15 @@ export interface GovernanceAction {
   creatorAddress: string;
   pollAddress: string | null;
   pollId: string | null;
+  pollStartDate: number | null;
+  pollEndDate: number | null;
   createdAt: number;
   formalizedAt: number | null;
+  tallyStatus: TallyStatus;
+  tallyError: string | null;
+  tallyRequestedAt: number | null;
+  tallyCompletedAt: number | null;
+  tallyResult: string | null;
 }
 
 export type GovernanceActionWithMeta = GovernanceAction & { sponsorCount: number; thresholdMet: boolean };
@@ -97,7 +106,7 @@ export async function authorizeFormalize(communityId: string, actionId: string):
 export async function confirmFormalize(
   communityId: string,
   actionId: string,
-  input: { pollAddress: string; pollId: string; txHash: string },
+  input: { pollAddress: string; pollId: string; txHash: string; pollStartDate: number; pollEndDate: number },
 ): Promise<{ governanceAction: GovernanceAction }> {
   const res = await fetch(
     `${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/formalize/confirm`,
@@ -132,7 +141,13 @@ export async function authorizeDirect(communityId: string, input: DirectDeployIn
 
 export async function confirmDirect(
   communityId: string,
-  input: DirectDeployInput & { pollAddress: string; pollId: string; txHash: string },
+  input: DirectDeployInput & {
+    pollAddress: string;
+    pollId: string;
+    txHash: string;
+    pollStartDate: number;
+    pollEndDate: number;
+  },
 ): Promise<{ governanceAction: GovernanceAction }> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/confirm`, {
     method: "POST",
@@ -141,6 +156,26 @@ export async function confirmDirect(
     body: JSON.stringify(input),
   });
   return parseErrorOr(res, `Failed to confirm direct deployment: ${res.status}`);
+}
+
+export async function triggerTally(communityId: string, actionId: string): Promise<{ tallyStatus: TallyStatus }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/tally`, {
+    method: "POST",
+    credentials: "include",
+  });
+  return parseErrorOr(res, `Failed to trigger tallying: ${res.status}`);
+}
+
+export async function getTallyStatus(
+  communityId: string,
+  actionId: string,
+): Promise<
+  Pick<GovernanceAction, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">
+> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/tally`, {
+    credentials: "include",
+  });
+  return parseErrorOr(res, `Failed to fetch tally status: ${res.status}`);
 }
 
 export type VoteEligibilityReason = "tier_lacks_voting_rights" | "tier_not_eligible_for_action" | "not_formalized";
