@@ -27,6 +27,12 @@ jobs:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
+          # Default command_timeout is 10m — the multi-stage Docker build alone (pnpm install
+          # for both the backend and subgraph deploy stages) already takes ~9-10m, leaving no
+          # room for drizzle-kit migrate/compose up/image prune before the SSH session is killed
+          # (see run 32031989077: build succeeded, "Run Command Timeout" hit right after image
+          # export — docker compose up -d never ran, so the new image was built but not deployed).
+          command_timeout: 25m
           script: |
             set -euo pipefail
             cd /opt/zugov
