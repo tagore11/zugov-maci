@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
 import { Header } from "../components/Header";
 import { Plus, Edit, Users, FileText } from "lucide-react";
 import { CreateCommunityModal } from "../components/CreateCommunityModal";
 import { Link, useNavigate } from "react-router-dom";
 import * as communityApi from "@/src/services/communityApi";
+import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
+import type { GovernanceType } from "@/src/config";
 
 type UserCommunityItem = {
   id: string;
@@ -13,6 +16,8 @@ type UserCommunityItem = {
   logo: string;
   members: number;
   proposals: number;
+  subgraphStatus: communityApi.Community["subgraphStatus"];
+  governanceType: string;
 };
 
 function apiToItem(c: communityApi.Community): UserCommunityItem {
@@ -23,6 +28,8 @@ function apiToItem(c: communityApi.Community): UserCommunityItem {
     logo: c.logo ?? "🏛️",
     members: 0,
     proposals: 0,
+    subgraphStatus: c.subgraphStatus,
+    governanceType: c.governanceType,
   };
 }
 
@@ -48,6 +55,25 @@ export default function ManageCommunitiesPage() {
   useEffect(() => {
     void fetchUserCommunities();
   }, [fetchUserCommunities]);
+
+  // Same pattern as the Explore page and community detail page: only communities whose
+  // subgraph has finished indexing get real stats, fetched via the backend proxy.
+  const readyCommunities = userCommunities.filter((c) => c.subgraphStatus === "ready");
+  const { data: communityStats = {} } = useQuery({
+    queryKey: ["ownedCommunityStats", readyCommunities.map((c) => c.id)],
+    queryFn: () =>
+      Promise.all(
+        readyCommunities.map((c) => {
+          const subgraphUrl = communityApi.subgraphQueryUrl(c.id);
+          const governanceType = c.governanceType as GovernanceType;
+          return Promise.all([
+            fetchMembers(subgraphUrl, governanceType),
+            fetchPolls(subgraphUrl, governanceType).then((p) => p.length),
+          ]).then(([members, proposals]) => [c.id, { members, proposals }] as const);
+        }),
+      ).then(Object.fromEntries<{ members: number; proposals: number }>),
+    enabled: readyCommunities.length > 0,
+  });
 
   // Refresh immediately after a new community is created (see app/page.tsx for the same pattern).
   useEffect(() => {
@@ -118,11 +144,11 @@ export default function ManageCommunitiesPage() {
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
-                          <span>{community.members} members</span>
+                          <span>{communityStats[community.id]?.members ?? community.members} members</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <FileText className="w-4 h-4" />
-                          <span>{community.proposals} proposals</span>
+                          <span>{communityStats[community.id]?.proposals ?? community.proposals} proposals</span>
                         </div>
                       </div>
                     </div>
