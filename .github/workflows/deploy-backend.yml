@@ -42,4 +42,10 @@ jobs:
             docker compose build backend
             docker compose run --rm backend node_modules/.bin/drizzle-kit migrate
             docker compose up -d
+            # graph-node-config.toml is bind-mounted — compose only recreates a container when
+            # the service definition itself changes, not when a mounted file's contents do, so
+            # config edits (e.g. provider `features`) would otherwise never take effect on a
+            # running graph-node. Its indexing state lives in the separate graph-postgres
+            # volume, not the container, so recreating it on every deploy is safe.
+            docker compose up -d --force-recreate graph-node
             docker image prune -f
