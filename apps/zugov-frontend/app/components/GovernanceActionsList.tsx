@@ -18,6 +18,7 @@ import { Poll__factory } from "@/src/poll-factory-shim";
 import type { SubgraphPoll, PollMode } from "@/src/services/subgraph";
 import { CreateGovernanceActionModal } from "./CreateGovernanceActionModal";
 import { VoteModal } from "./VoteModal";
+import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
 
 interface GovernanceActionsListProps {
   communityId: string;
@@ -205,8 +206,10 @@ function TallySection({ communityId, action }: { communityId: string; action: Go
       query.state.data && IN_PROGRESS_TALLY_STATUSES.includes(query.state.data.tallyStatus) ? 10000 : false,
   });
 
-  const now = Date.now() / 1000;
-  const isClosed = !!action.pollEndDate && action.pollEndDate < now;
+  const isClosed =
+    !!action.pollStartDate &&
+    !!action.pollEndDate &&
+    computePollStatus(action.pollStartDate, action.pollEndDate) === "closed";
   if (!action.pollAddress || !isClosed) return null;
 
   const handleTally = async () => {
@@ -297,6 +300,18 @@ function FormalizedActionRow({
         </div>
       </div>
       <p className="text-xs text-gray-500">Formalized{action.pollAddress ? ` — poll ${action.pollAddress}` : ""}</p>
+      {action.pollStartDate && action.pollEndDate && (
+        <p className="text-xs">
+          <span className={pollStatusClass(computePollStatus(action.pollStartDate, action.pollEndDate))}>
+            {pollStatusLabel(computePollStatus(action.pollStartDate, action.pollEndDate))}
+          </span>
+          <span className="text-gray-500">
+            {" "}
+            · {new Date(action.pollStartDate * 1000).toLocaleString()} –{" "}
+            {new Date(action.pollEndDate * 1000).toLocaleString()}
+          </span>
+        </p>
+      )}
       <TallySection communityId={communityId} action={action} />
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
       {votingPoll && rpcUrl && (
