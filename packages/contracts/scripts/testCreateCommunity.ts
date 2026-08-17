@@ -165,7 +165,6 @@ async function main(): Promise<void> {
     supportedModes: initialSupportedModes,
     signUpPolicyType: "FreeForAll",
     signUpPolicyAddress,
-    voterCapacityPreset: "small",
     stateTreeDepth,
     source: "wizard",
     membershipPolicy: "open",

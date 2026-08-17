@@ -1,4 +1,4 @@
-import { create } from "../services/communityService.js";
+import { create, update } from "../services/communityService.js";
 import type { CommunityBody } from "../validators/communitySchema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
 
@@ -66,7 +66,6 @@ const SEED_COMMUNITIES: CommunityBody[] = [
     signUpPolicyType: "FreeForAll",
     signUpPolicyAddress: "0x0000000000000000000000000000000000000011",
     maciDeploymentBlock: 18199019,
-    voterCapacityPreset: "small",
     stateTreeDepth: 6,
     source: "wizard",
     membershipPolicy: "open",
@@ -86,7 +85,6 @@ const SEED_COMMUNITIES: CommunityBody[] = [
     signUpPolicyType: "FreeForAll",
     signUpPolicyAddress: "0x0000000000000000000000000000000000000012",
     maciDeploymentBlock: 16833449,
-    voterCapacityPreset: "medium",
     stateTreeDepth: 10,
     source: "wizard",
     membershipPolicy: "open",
@@ -96,12 +94,19 @@ const SEED_COMMUNITIES: CommunityBody[] = [
   },
 ];
 
+// specs/007 T022: seeded separately from SEED_COMMUNITIES via update() rather than as a create()
+// field, since directDeploymentEnabled is deliberately PATCH-only (data-model.md) — there's no
+// creation-time path for it.
+const DIRECT_DEPLOYMENT_COMMUNITY_ID = "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b";
+
 async function seed() {
   console.log("Seeding communities...");
   for (const community of SEED_COMMUNITIES) {
     const { created } = await create(community);
     console.log(`  ${created ? "✓ Created" : "  Skipped (exists)"}: ${community.displayName}`);
   }
+  await update(DIRECT_DEPLOYMENT_COMMUNITY_ID, { directDeploymentEnabled: true });
+  console.log("  ✓ Enabled direct deployment on ETH-NS (for local direct-deploy testing)");
   console.log("Done.");
   process.exit(0);
 }

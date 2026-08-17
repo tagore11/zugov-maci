@@ -5,13 +5,8 @@ import type { Hex } from "viem";
 import { MACI__factory } from "@maci-protocol/contracts/typechain-types";
 import { generateEmptyBallotRoots } from "@maci-protocol/sdk";
 import { PublicKey } from "@maci-protocol/domainobjs";
-import {
-  STATE_TREE_DEPTH,
-  FIXED_POLL_DEPLOY_CONSTANTS,
-  appConstants,
-  type SignUpPolicyArgs,
-  type PollDeployConfig,
-} from "@/src/config";
+import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type SignUpPolicyArgs, type PollDeployConfig } from "@/src/config";
+import { STATE_TREE_DEPTH } from "@/src/constants";
 import { DEFAULT_MEMBERSHIP_TIERS } from "@/app/lib/placeholder-data";
 import {
   savePendingCheckpoint,
@@ -67,9 +62,7 @@ export interface UseCreateCommunityResult {
   goBack: () => void;
   setMechanism: (mechanism: "maci") => void;
   setCommunityInfo: (name: string, description: string) => void;
-  setMaciConfig: (
-    config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes" | "voterCapacityPreset">,
-  ) => void;
+  setMaciConfig: (config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">) => void;
   startNetworkCheck: () => Promise<void>;
   startDeployment: () => Promise<void>;
   retryDeployment: () => Promise<void>;
@@ -373,9 +366,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
   }, []);
 
   const setMaciConfig = useCallback(
-    (
-      config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes" | "voterCapacityPreset">,
-    ) => {
+    (config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">) => {
       setState((prev) => ({
         ...prev,
         config: { ...prev.config, ...config, stateTreeDepth: STATE_TREE_DEPTH },
@@ -519,7 +510,6 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           signUpPolicyType: config.signUpPolicy.type,
           signUpPolicyAddress: signUpPolicyAddress,
           maciDeploymentBlock: maciBlockNumber,
-          voterCapacityPreset: config.voterCapacityPreset,
           stateTreeDepth: STATE_TREE_DEPTH,
           source: "wizard",
           membershipPolicy: config.membershipPolicy,

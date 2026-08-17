@@ -22,6 +22,7 @@ const communityUpdateSchema = z.object({
   tierChangesRequireVote: z.boolean().optional(),
   defaultTierLabel: z.string().min(1).optional(),
   cosponsorshipThreshold: z.number().int().min(0).optional(),
+  directDeploymentEnabled: z.boolean().optional(),
 });
 
 export const communitiesRouter = new Hono();

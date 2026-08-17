@@ -5,6 +5,8 @@ export type GovernanceActionExecutionLocation = "onchain" | "offchain" | "hybrid
 export type GovernanceActionTallyMechanism = "simple" | "quadratic" | "ranked" | "weighted";
 export type GovernanceActionStatus = "draft" | "formalized";
 
+export type GovernanceActionCreationPath = "draft" | "direct";
+
 export interface GovernanceAction {
   id: string;
   communityId: string;
@@ -16,6 +18,7 @@ export interface GovernanceAction {
   tallyMechanism: GovernanceActionTallyMechanism;
   eligibleTierIds: string[];
   status: GovernanceActionStatus;
+  creationPath: GovernanceActionCreationPath;
   creatorAddress: string;
   pollAddress: string | null;
   pollId: string | null;
@@ -106,6 +109,38 @@ export async function confirmFormalize(
     },
   );
   return parseErrorOr(res, `Failed to confirm formalization: ${res.status}`);
+}
+
+export interface DirectDeployInput {
+  title: string;
+  description: string;
+  privacy: GovernanceActionPrivacy;
+  executionLocation: GovernanceActionExecutionLocation;
+  tallyMechanism: GovernanceActionTallyMechanism;
+  eligibleTierIds: string[];
+}
+
+export async function authorizeDirect(communityId: string, input: DirectDeployInput): Promise<{ authorized: true }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/authorize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  return parseErrorOr(res, `Failed to authorize direct deployment: ${res.status}`);
+}
+
+export async function confirmDirect(
+  communityId: string,
+  input: DirectDeployInput & { pollAddress: string; pollId: string; txHash: string },
+): Promise<{ governanceAction: GovernanceAction }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+  return parseErrorOr(res, `Failed to confirm direct deployment: ${res.status}`);
 }
 
 export type VoteEligibilityReason = "tier_lacks_voting_rights" | "tier_not_eligible_for_action" | "not_formalized";

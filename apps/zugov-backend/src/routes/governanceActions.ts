@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
-import { createDraftBodySchema, formalizeConfirmBodySchema } from "../validators/governanceActionSchema.js";
+import {
+  createDraftBodySchema,
+  formalizeConfirmBodySchema,
+  directAuthorizeBodySchema,
+  directConfirmBodySchema,
+} from "../validators/governanceActionSchema.js";
 import * as governanceActionService from "../services/governanceActionService.js";
 import {
   NotAuthorizedToCreateError,
@@ -12,6 +17,8 @@ import {
   AlreadyFormalizedError,
   CreatorNoLongerAuthorizedError,
   ThresholdNotMetError,
+  DirectDeploymentDisabledError,
+  DraftPathDisabledError,
 } from "../services/governanceActionService.js";
 
 export const governanceActionsRouter = new Hono();
@@ -30,6 +37,55 @@ governanceActionsRouter.post("/:id/governance-actions", requireAuth, async (c) =
     const result = await governanceActionService.createDraft(communityId, session.address!, parsed.data);
     return c.json(result, 201);
   } catch (err) {
+    if (err instanceof DraftPathDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
+    if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
+    if (err instanceof IneligibleTiersError) {
+      return c.json({ error: err.message, details: { invalidTierIds: err.invalidTierIds } }, 422);
+    }
+    throw err;
+  }
+});
+
+governanceActionsRouter.post("/:id/governance-actions/direct/authorize", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  const session = await getSession(c);
+
+  const body = await c.req.json();
+  const parsed = directAuthorizeBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
+  }
+
+  try {
+    const result = await governanceActionService.authorizeDirect(communityId, session.address!, parsed.data);
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
+    if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
+    if (err instanceof IneligibleTiersError) {
+      return c.json({ error: err.message, details: { invalidTierIds: err.invalidTierIds } }, 422);
+    }
+    throw err;
+  }
+});
+
+governanceActionsRouter.post("/:id/governance-actions/direct/confirm", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  const session = await getSession(c);
+
+  const body = await c.req.json();
+  const parsed = directConfirmBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
+  }
+
+  try {
+    const governanceAction = await governanceActionService.confirmDirect(communityId, session.address!, parsed.data);
+    return c.json({ governanceAction }, 201);
+  } catch (err) {
+    if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {

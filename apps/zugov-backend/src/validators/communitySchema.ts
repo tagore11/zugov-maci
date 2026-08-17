@@ -50,7 +50,6 @@ export const communityBodySchema = z
     ]),
     signUpPolicyAddress: z.string().regex(addressRegex, "Must be a 0x-prefixed 42-character hex address"),
     maciDeploymentBlock: z.number().int().nonnegative(),
-    voterCapacityPreset: z.enum(["small", "medium", "large"]),
     stateTreeDepth: z.union([z.literal(6), z.literal(10), z.literal(14)]),
     description: z.string().max(500).optional(),
     logo: z.string().optional(),

@@ -38,7 +38,6 @@ const VALID_COMMUNITY_BODY = {
   signUpPolicyType: "FreeForAll",
   signUpPolicyAddress: "0xdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdD",
   maciDeploymentBlock: 100,
-  voterCapacityPreset: "small",
   stateTreeDepth: 6,
   source: "wizard",
   membershipPolicy: "open",

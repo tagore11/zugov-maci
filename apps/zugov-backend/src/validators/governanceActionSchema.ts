@@ -18,3 +18,17 @@ export const formalizeConfirmBodySchema = z.object({
 });
 
 export type FormalizeConfirmBody = z.infer<typeof formalizeConfirmBodySchema>;
+
+// specs/007: same shape as createDraftBodySchema — direct deployment reuses drafting's own
+// eligibility/axis rules (research.md #2), it just skips the draft/co-sponsorship stage.
+export const directAuthorizeBodySchema = createDraftBodySchema;
+
+export type DirectAuthorizeBody = z.infer<typeof directAuthorizeBodySchema>;
+
+export const directConfirmBodySchema = createDraftBodySchema.extend({
+  pollAddress: z.string().min(1),
+  pollId: z.string().min(1),
+  txHash: z.string().min(1),
+});
+
+export type DirectConfirmBody = z.infer<typeof directConfirmBodySchema>;

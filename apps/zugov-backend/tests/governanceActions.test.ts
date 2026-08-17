@@ -50,7 +50,6 @@ function communityBody(overrides: Record<string, unknown> = {}) {
     signUpPolicyType: "FreeForAll",
     signUpPolicyAddress: "0xeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeE",
     maciDeploymentBlock: 100,
-    voterCapacityPreset: "small",
     stateTreeDepth: 6,
     source: "wizard",
     membershipPolicy: "open",
@@ -423,5 +422,238 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
   it("returns 401 without authentication", async () => {
     const res = await app.request("/api/communities/0xdead/governance-actions/0xdead/vote-eligibility");
     expect(res.status).toBe(401);
+  });
+});
+
+async function enableDirectDeployment(cookie: string, communityId: string): Promise<void> {
+  await app.request(`/api/communities/${communityId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ directDeploymentEnabled: true }),
+  });
+}
+
+describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/007 US2, FR-004/FR-005/FR-006)", () => {
+  it("returns 200 authorized for an eligible member", async () => {
+    const communityId = "0xC000000000000000000000000000000000000001";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { authorized: boolean };
+    expect(body.authorized).toBe(true);
+  });
+
+  it("returns 403 when the community's directDeploymentEnabled is false", async () => {
+    const communityId = "0xC000000000000000000000000000000000000002";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 when the caller's tier lacks canCreateGovernanceActions", async () => {
+    const communityId = "0xC000000000000000000000000000000000000003";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: outsiderCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 422 for a non-executable axis combination", async () => {
+    const communityId = "0xC000000000000000000000000000000000000004";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, privacy: "public", eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 when an eligible tier lacks canVote", async () => {
+    const communityId = "0xC000000000000000000000000000000000000005";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId, [CREATE_TIER, NO_RIGHTS_TIER]);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Guest"]] }),
+    });
+    expect(res.status).toBe(422);
+  });
+});
+
+describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007 US2, FR-004/FR-007/FR-010)", () => {
+  it("inserts a formalized, direct-path governance action with no sponsor row", async () => {
+    const communityId = "0xC000000000000000000000000000000000000006";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { governanceAction } = (await confirmRes.json()) as {
+      governanceAction: { id: string; status: string; creationPath: string; pollAddress: string };
+    };
+    expect(governanceAction.status).toBe("formalized");
+    expect(governanceAction.creationPath).toBe("direct");
+    expect(governanceAction.pollAddress).toBe("0xPoll");
+
+    const getRes = await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}`, {
+      headers: { Cookie: creatorCookie },
+    });
+    const getBody = (await getRes.json()) as { sponsorCount: number };
+    expect(getBody.sponsorCount).toBe(0);
+  });
+
+  it("returns 403 and leaves no record when directDeploymentEnabled is false", async () => {
+    const communityId = "0xC000000000000000000000000000000000000007";
+    const creatorCookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+      }),
+    });
+    expect(res.status).toBe(403);
+
+    const listRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      headers: { Cookie: creatorCookie },
+    });
+    const { governanceActions } = (await listRes.json()) as { governanceActions: unknown[] };
+    expect(governanceActions).toHaveLength(0);
+  });
+});
+
+describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", () => {
+  it("still creates a draft normally when directDeploymentEnabled is false (regression)", async () => {
+    const communityId = "0xC000000000000000000000000000000000000008";
+    const cookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(cookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { governanceAction: { status: string }; sponsorCount: number };
+    expect(body.governanceAction.status).toBe("draft");
+    expect(body.sponsorCount).toBe(1);
+  });
+
+  it("returns 403 for draft creation once directDeploymentEnabled is true", async () => {
+    const communityId = "0xC000000000000000000000000000000000000009";
+    const cookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    await enableDirectDeployment(cookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for direct/authorize and direct/confirm when directDeploymentEnabled is false", async () => {
+    const communityId = "0xC00000000000000000000000000000000000000a";
+    const cookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(cookie, communityId);
+
+    const authRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(authRes.status).toBe(403);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+      }),
+    });
+    expect(confirmRes.status).toBe(403);
+  });
+
+  it("lets a draft created before the toggle still formalize normally after it's flipped", async () => {
+    const communityId = "0xC00000000000000000000000000000000000000b";
+    const cookie = await authCookieFor(CREATOR);
+    const tierIds = await createCommunityWithTiers(cookie, communityId);
+
+    const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    const { governanceAction } = (await createRes.json()) as { governanceAction: { id: string } };
+
+    // Flip the toggle after the draft already exists — must not retroactively affect it (FR-008).
+    await enableDirectDeployment(cookie, communityId);
+
+    const authorizeRes = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/authorize`,
+      { method: "POST", headers: { Cookie: cookie } },
+    );
+    expect(authorizeRes.status).toBe(200);
+
+    const confirmRes = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+      },
+    );
+    expect(confirmRes.status).toBe(200);
+    const body = (await confirmRes.json()) as { governanceAction: { status: string } };
+    expect(body.governanceAction.status).toBe("formalized");
   });
 });

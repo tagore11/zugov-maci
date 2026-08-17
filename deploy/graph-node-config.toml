@@ -13,11 +13,11 @@ ingestor = "node"
 
 [chains.scroll-sepolia]
 shard = "primary"
-provider = [{ label = "scroll-sepolia", url = "${SCROLL_SEPOLIA_RPC_URL}", features = [] }]
+provider = [{ label = "scroll-sepolia", url = "${SCROLL_SEPOLIA_RPC_URL}", features = ["archive"] }]
 
 [chains.sepolia]
 shard = "primary"
-provider = [{ label = "sepolia", url = "${SEPOLIA_RPC_URL}", features = [] }]
+provider = [{ label = "sepolia", url = "${SEPOLIA_RPC_URL}", features = ["archive"] }]
 
 [store]
 [store.primary]

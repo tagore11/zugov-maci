@@ -218,7 +218,6 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
     signUpPolicyType: data.signUpPolicyType,
     signUpPolicyAddress: data.signUpPolicyAddress,
     maciDeploymentBlock: data.maciDeploymentBlock,
-    voterCapacityPreset: data.voterCapacityPreset,
     stateTreeDepth: data.stateTreeDepth,
     membershipPolicy: data.membershipPolicy,
     tierChangesRequireVote: data.tierChangesRequireVote,
@@ -288,6 +287,7 @@ export interface CommunityUpdatePatch {
   tierChangesRequireVote?: boolean;
   defaultTierLabel?: string;
   cosponsorshipThreshold?: number;
+  directDeploymentEnabled?: boolean;
 }
 
 export class TierLabelNotFoundError extends Error {
@@ -304,6 +304,7 @@ export async function update(id: string, patch: CommunityUpdatePatch): Promise<C
   if (patch.membershipPolicy !== undefined) dbPatch.membershipPolicy = patch.membershipPolicy;
   if (patch.tierChangesRequireVote !== undefined) dbPatch.tierChangesRequireVote = patch.tierChangesRequireVote;
   if (patch.cosponsorshipThreshold !== undefined) dbPatch.cosponsorshipThreshold = patch.cosponsorshipThreshold;
+  if (patch.directDeploymentEnabled !== undefined) dbPatch.directDeploymentEnabled = patch.directDeploymentEnabled;
 
   if (patch.defaultTierLabel !== undefined) {
     const tiers = await listTiers(id);

@@ -92,7 +92,6 @@ export default function RegisterCommunityPage() {
         signUpPolicyType: contractConfig.signUpPolicyType,
         signUpPolicyAddress: contractConfig.signUpPolicyAddress,
         maciDeploymentBlock: contractConfig.deploymentBlock,
-        voterCapacityPreset: contractConfig.voterCapacityPreset,
         stateTreeDepth: contractConfig.stateTreeDepth,
         source: "manual",
         membershipPolicy: "open",
@@ -246,8 +245,7 @@ export default function RegisterCommunityPage() {
                   </span>
                 </p>
                 <p className="text-gray-300">
-                  Voter capacity: <span className="text-white capitalize">{contractConfig.voterCapacityPreset}</span>{" "}
-                  <span className="text-gray-500">(state tree depth {contractConfig.stateTreeDepth})</span>
+                  Voter capacity: <span className="text-white">state tree depth {contractConfig.stateTreeDepth}</span>
                 </p>
                 <p className="text-gray-300">
                   Poll deployment:{" "}
