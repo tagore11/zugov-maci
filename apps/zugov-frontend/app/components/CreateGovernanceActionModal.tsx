@@ -202,13 +202,13 @@ export function CreateGovernanceActionModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
-        <div className="p-6 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
-          <h2 className="text-2xl font-bold text-gray-900">Create Governance Action</h2>
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
+        <div className="p-6 border-b border-gray-700 flex items-center justify-between sticky top-0 bg-gray-900 rounded-t-2xl z-10">
+          <h2 className="text-2xl font-bold text-white">Create Governance Action</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500 hover:text-gray-900"
+            className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
           >
             <X className="w-5 h-5" />
           </button>
@@ -216,12 +216,12 @@ export function CreateGovernanceActionModal({
 
         {directDeploymentEnabled && !pollDeployConfig ? (
           <div className="p-8 space-y-6">
-            <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/40 rounded-lg p-4">
               On-chain deployment isn't linked for this community yet.
             </p>
             <button
               onClick={onClose}
-              className="px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-50 text-gray-900"
+              className="px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 text-white"
             >
               Close
             </button>
@@ -229,7 +229,7 @@ export function CreateGovernanceActionModal({
         ) : (
           <form onSubmit={handleSubmit} className="p-8 space-y-8">
             <div>
-              <label htmlFor="governance-action-title" className="block text-sm font-semibold text-gray-900 mb-3">
+              <label htmlFor="governance-action-title" className="block text-sm font-semibold text-white mb-3">
                 Title *
               </label>
               <input
@@ -238,12 +238,12 @@ export function CreateGovernanceActionModal({
                 required
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
               />
             </div>
 
             <div>
-              <label htmlFor="governance-action-description" className="block text-sm font-semibold text-gray-900 mb-3">
+              <label htmlFor="governance-action-description" className="block text-sm font-semibold text-white mb-3">
                 Description *
               </label>
               <textarea
@@ -252,24 +252,24 @@ export function CreateGovernanceActionModal({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Privacy</label>
+              <label className="block text-sm font-semibold text-white mb-3">Privacy</label>
               <div className="grid grid-cols-2 gap-4">
-                <div className="flex items-center gap-3 p-4 border-2 border-indigo-500 bg-indigo-50 rounded-lg">
+                <div className="flex items-center gap-3 p-4 border-2 border-[#648DAF] bg-[#648DAF]/10 rounded-lg">
                   <input type="radio" checked readOnly className="w-5 h-5" />
-                  <span className="font-semibold text-gray-900">Privacy-preserving</span>
+                  <span className="font-semibold text-white">Privacy-preserving</span>
                 </div>
                 <div
-                  className="flex items-center gap-3 p-4 border-2 border-gray-100 bg-gray-50 rounded-lg opacity-50 cursor-not-allowed"
+                  className="flex items-center gap-3 p-4 border-2 border-gray-800 bg-gray-800/40 rounded-lg opacity-50 cursor-not-allowed"
                   title="Coming soon"
                 >
                   <input type="radio" disabled className="w-5 h-5" />
                   <div>
-                    <span className="font-semibold text-gray-900">Public</span>
+                    <span className="font-semibold text-white">Public</span>
                     <p className="text-xs text-gray-400">Coming soon</p>
                   </div>
                 </div>
@@ -277,21 +277,21 @@ export function CreateGovernanceActionModal({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Execution Location</label>
+              <label className="block text-sm font-semibold text-white mb-3">Execution Location</label>
               <div className="grid grid-cols-3 gap-4">
-                <div className="flex items-center gap-3 p-4 border-2 border-indigo-500 bg-indigo-50 rounded-lg">
+                <div className="flex items-center gap-3 p-4 border-2 border-[#648DAF] bg-[#648DAF]/10 rounded-lg">
                   <input type="radio" checked readOnly className="w-5 h-5" />
-                  <span className="font-semibold text-gray-900">Onchain</span>
+                  <span className="font-semibold text-white">Onchain</span>
                 </div>
                 {["Offchain", "Hybrid"].map((label) => (
                   <div
                     key={label}
-                    className="flex items-center gap-3 p-4 border-2 border-gray-100 bg-gray-50 rounded-lg opacity-50 cursor-not-allowed"
+                    className="flex items-center gap-3 p-4 border-2 border-gray-800 bg-gray-800/40 rounded-lg opacity-50 cursor-not-allowed"
                     title="Coming soon"
                   >
                     <input type="radio" disabled className="w-5 h-5" />
                     <div>
-                      <span className="font-semibold text-gray-900">{label}</span>
+                      <span className="font-semibold text-white">{label}</span>
                       <p className="text-xs text-gray-400">Coming soon</p>
                     </div>
                   </div>
@@ -300,11 +300,11 @@ export function CreateGovernanceActionModal({
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Tally Mechanism *</label>
+              <label className="block text-sm font-semibold text-white mb-3">Tally Mechanism *</label>
               <select
                 value={tallyMechanism}
                 onChange={(e) => setTallyMechanism(e.target.value as GovernanceActionTallyMechanism)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
               >
                 {allowedTallyOptions.length === 0 && <option value="">No supported tally mechanisms configured</option>}
                 {allowedTallyOptions.map((opt) => (
@@ -320,7 +320,7 @@ export function CreateGovernanceActionModal({
 
             {!directDeploymentEnabled && (
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-3">Eligible Tiers *</label>
+                <label className="block text-sm font-semibold text-white mb-3">Eligible Tiers *</label>
                 <div className="space-y-2">
                   {votingTiers.length === 0 && (
                     <p className="text-sm text-gray-500">No voting-capable tiers exist in this community yet.</p>
@@ -328,15 +328,15 @@ export function CreateGovernanceActionModal({
                   {votingTiers.map((tier) => (
                     <label
                       key={tier.id}
-                      className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50"
+                      className="flex items-center gap-3 p-3 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-800/60"
                     >
                       <input
                         type="checkbox"
                         checked={eligibleTierIds.includes(tier.id)}
                         onChange={() => toggleTier(tier.id)}
-                        className="w-5 h-5 rounded text-indigo-600"
+                        className="w-5 h-5 rounded text-[#648DAF]"
                       />
-                      <span className="text-gray-900">{tier.label}</span>
+                      <span className="text-white">{tier.label}</span>
                     </label>
                   ))}
                 </div>
@@ -344,18 +344,18 @@ export function CreateGovernanceActionModal({
             )}
 
             {directDeploymentEnabled && (
-              <div className="space-y-4 p-4 border-2 border-indigo-100 bg-indigo-50 rounded-lg">
-                <p className="text-sm font-semibold text-gray-900">
+              <div className="space-y-4 p-4 border-2 border-[#648DAF]/40 bg-[#648DAF]/10 rounded-lg">
+                <p className="text-sm font-semibold text-white">
                   This community deploys polls directly — no draft or co-sponsorship needed.
                 </p>
 
                 <div>
-                  <label className="block text-sm font-semibold text-gray-900 mb-3">Eligibility Policy *</label>
-                  <p className="text-xs text-gray-600 mb-2">Who can vote on this poll, enforced on-chain.</p>
+                  <label className="block text-sm font-semibold text-white mb-3">Eligibility Policy *</label>
+                  <p className="text-xs text-gray-400 mb-2">Who can vote on this poll, enforced on-chain.</p>
                   <select
                     value={eligibilityPolicyType}
                     onChange={(e) => setEligibilityPolicyType(e.target.value as SignUpPolicyType)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
                   >
                     {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
                     {allowedPolicyTypes.map((type) => (
@@ -369,12 +369,13 @@ export function CreateGovernanceActionModal({
                     policyType={eligibilityPolicyType}
                     inputs={newPolicyInputs}
                     updateInput={(key, value) => setNewPolicyInputs((prev) => ({ ...prev, [key]: value }))}
+                    theme="dark"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label htmlFor="poll-start-date" className="block text-xs font-semibold text-gray-700 mb-1">
+                    <label htmlFor="poll-start-date" className="block text-xs font-semibold text-gray-300 mb-1">
                       Start Date *
                     </label>
                     <input
@@ -382,11 +383,11 @@ export function CreateGovernanceActionModal({
                       type="datetime-local"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
                     />
                   </div>
                   <div>
-                    <label htmlFor="poll-end-date" className="block text-xs font-semibold text-gray-700 mb-1">
+                    <label htmlFor="poll-end-date" className="block text-xs font-semibold text-gray-300 mb-1">
                       End Date *
                     </label>
                     <input
@@ -394,12 +395,12 @@ export function CreateGovernanceActionModal({
                       type="datetime-local"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
                     />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">Options * (at least 2)</label>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Options * (at least 2)</label>
                   <div className="space-y-2">
                     {options.map((option, i) => (
                       <div key={i} className="flex gap-2">
@@ -408,13 +409,13 @@ export function CreateGovernanceActionModal({
                           value={option}
                           placeholder={`Option ${i + 1}`}
                           onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                          className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
                         />
                         {options.length > 2 && (
                           <button
                             type="button"
                             onClick={() => setOptions(options.filter((_, j) => j !== i))}
-                            className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            className="px-3 py-2 text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
                           >
                             <X className="w-4 h-4" />
                           </button>
@@ -424,7 +425,7 @@ export function CreateGovernanceActionModal({
                     <button
                       type="button"
                       onClick={() => setOptions([...options, ""])}
-                      className="w-full px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-indigo-500 hover:text-indigo-600 transition-colors font-medium"
+                      className="w-full px-3 py-2 border-2 border-dashed border-gray-600 rounded-lg text-sm text-gray-400 hover:border-[#648DAF] hover:text-[#86A6C1] transition-colors font-medium"
                     >
                       + Add Option
                     </button>
@@ -434,24 +435,24 @@ export function CreateGovernanceActionModal({
             )}
 
             {error && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                <p className="text-sm text-red-700">{error}</p>
+              <div className="p-4 bg-red-900/20 border border-red-600/50 rounded-lg">
+                <p className="text-sm text-red-300">{error}</p>
               </div>
             )}
 
-            <div className="flex gap-4 pt-6 border-t border-gray-200">
+            <div className="flex gap-4 pt-6 border-t border-gray-700">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
-                className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-50 text-gray-900 disabled:opacity-50"
+                className="flex-1 px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 text-white disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={isSubmitting || !directModeReady}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-60"
+                className="flex-1 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] disabled:opacity-60"
               >
                 {isSubmitting
                   ? directDeploymentEnabled

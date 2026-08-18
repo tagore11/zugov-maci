@@ -58,8 +58,8 @@ export function StepSuccess({ communityId, reset }: Props) {
           <button
             type="button"
             onClick={handleGoNow}
-            className="w-full py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-              hover:bg-purple-700 transition-colors text-sm"
+            className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+              hover:bg-[#86A6C1] transition-colors text-sm"
           >
             Go to community now
           </button>

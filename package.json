@@ -63,7 +63,8 @@
     "ts-node": "^10.9.1",
     "typedoc": "^0.28.14",
     "typedoc-plugin-markdown": "^4.9.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vite-plugin-node-polyfills": "^0.26.0"
   },
   "config": {
     "commitizen": {
@@ -73,5 +74,6 @@
   "engines": {
     "node": "20",
     "pnpm": "9 || 10"
-  }
+  },
+  "packageManager": "pnpm@9.15.9"
 }

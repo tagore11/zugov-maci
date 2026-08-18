@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { communities } from "../db/schema.js";
+import { maciGovernanceConfigs } from "../db/schema.js";
 import { getNetworkName } from "./chainRpc.js";
 
 const execFileAsync = promisify(execFile);
@@ -15,24 +15,37 @@ const GRAPH_NODE_ADMIN_URL = process.env.GRAPH_NODE_ADMIN_URL ?? "http://localho
 const GRAPH_NODE_IPFS_URL = process.env.GRAPH_NODE_IPFS_URL ?? "http://localhost:5001";
 const GRAPH_NODE_QUERY_URL = process.env.GRAPH_NODE_QUERY_URL ?? "http://localhost:8000";
 
-export function subgraphNameFor(communityId: string): string {
-  return `community-${communityId.toLowerCase()}`;
+export function subgraphNameFor(contractAddress: string): string {
+  return `community-${contractAddress.toLowerCase()}`;
 }
 
 export function subgraphQueryUrlFor(subgraphName: string): string {
   return `${GRAPH_NODE_QUERY_URL}/subgraphs/name/${subgraphName}`;
 }
 
-// Fire-and-forget: a subgraph deploy failure must never fail community
-// registration. Failures are recorded on the row (subgraphStatus: "failed")
+// Fire-and-forget: a subgraph deploy failure must never fail community registration or
+// governance attach. Failures are recorded on the governance row (subgraphStatus: "failed")
 // for the retry route to pick up instead of being thrown into the caller.
-export async function deployCommunitySubgraph(communityId: string, chainId: number, startBlock: number): Promise<void> {
+//
+// communityId and contractAddress are deliberately separate params (Architecture 1C): status
+// writes go to maciGovernanceConfigs, keyed by communityId (the identity's stable PK), while
+// the actual on-chain indexing target passed to the deploy script is contractAddress — a
+// community's id is no longer guaranteed to be a deployed contract's address.
+export async function deployCommunitySubgraph(
+  communityId: string,
+  contractAddress: string,
+  chainId: number,
+  startBlock: number,
+): Promise<void> {
   const network = getNetworkName(chainId);
-  const name = subgraphNameFor(communityId);
+  const name = subgraphNameFor(contractAddress);
 
   if (!network) {
     console.error(`[subgraphDeployService] No network configured for chainId ${chainId} (community ${communityId})`);
-    await db.update(communities).set({ subgraphStatus: "failed" }).where(eq(communities.id, communityId));
+    await db
+      .update(maciGovernanceConfigs)
+      .set({ subgraphStatus: "failed" })
+      .where(eq(maciGovernanceConfigs.communityId, communityId));
     return;
   }
 
@@ -42,7 +55,7 @@ export async function deployCommunitySubgraph(communityId: string, chainId: numb
       [
         "scripts/deploy-community.mjs",
         "--address",
-        communityId,
+        contractAddress,
         "--start-block",
         String(startBlock),
         "--network",
@@ -57,11 +70,14 @@ export async function deployCommunitySubgraph(communityId: string, chainId: numb
       { cwd: SUBGRAPH_DIR, timeout: 5 * 60 * 1000 },
     );
     await db
-      .update(communities)
+      .update(maciGovernanceConfigs)
       .set({ subgraphName: name, subgraphStatus: "ready" })
-      .where(eq(communities.id, communityId));
+      .where(eq(maciGovernanceConfigs.communityId, communityId));
   } catch (err) {
     console.error(`[subgraphDeployService] Deploy failed for community ${communityId}:`, err);
-    await db.update(communities).set({ subgraphStatus: "failed" }).where(eq(communities.id, communityId));
+    await db
+      .update(maciGovernanceConfigs)
+      .set({ subgraphStatus: "failed" })
+      .where(eq(maciGovernanceConfigs.communityId, communityId));
   }
 }

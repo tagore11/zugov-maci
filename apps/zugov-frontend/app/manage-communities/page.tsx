@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Header } from "../components/Header";
 import { Plus, Edit, Users, FileText } from "lucide-react";
 import { CreateCommunityModal } from "../components/CreateCommunityModal";
+import { UnionsPanel } from "./UnionsPanel";
 import { Link, useNavigate } from "react-router-dom";
 import * as communityApi from "@/src/services/communityApi";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
@@ -29,7 +30,9 @@ function apiToItem(c: communityApi.Community): UserCommunityItem {
     members: 0,
     proposals: 0,
     subgraphStatus: c.subgraphStatus,
-    governanceType: c.governanceType,
+    // Only read when subgraphStatus === "ready" (see readyCommunities below), which implies
+    // governance is configured — the "" fallback here is unreachable in practice.
+    governanceType: c.governanceType ?? "",
   };
 }
 
@@ -82,40 +85,40 @@ export default function ManageCommunitiesPage() {
   }, [fetchUserCommunities]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-950 text-white">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Manage Your Communities</h1>
-          <p className="text-gray-600">Create and manage your communities</p>
+          <h1 className="text-3xl font-bold text-white mb-2">Manage Your Communities</h1>
+          <p className="text-gray-400">Create and manage your communities</p>
         </div>
 
         <div className="mb-6 flex gap-3 flex-wrap">
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+            className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-[6px] font-semibold hover:bg-[#86A6C1] transition-colors"
           >
             <Plus className="w-5 h-5" />
             Create New Community
           </button>
           <Link
             to="/manage-communities/register"
-            className="flex items-center gap-2 px-6 py-3 bg-white text-indigo-600 border border-indigo-600 rounded-lg font-semibold hover:bg-indigo-50 transition-colors"
+            className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-[#86A6C1] border border-[#648DAF] rounded-[6px] font-semibold hover:bg-[#648DAF]/10 transition-colors"
           >
             Register Existing Community
           </Link>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-6">Your Communities</h2>
+        <div className="bg-gray-900 rounded-xl border border-gray-700 p-6">
+          <h2 className="text-xl font-semibold text-white mb-6">Your Communities</h2>
 
           {userCommunities.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500 mb-4">You don't own any communities yet</p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="text-indigo-600 hover:text-indigo-700 font-medium"
+                className="text-[#86A6C1] hover:text-[#648DAF] font-medium"
               >
                 Create your first community
               </button>
@@ -134,13 +137,13 @@ export default function ManageCommunitiesPage() {
                       navigate(`/community/${community.id}`);
                     }
                   }}
-                  className="flex items-center justify-between p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                  className="flex items-center justify-between p-4 border border-gray-700 rounded-lg hover:bg-gray-800/60 transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-4">
                     <div className="text-3xl">{community.logo}</div>
                     <div>
-                      <h3 className="font-semibold text-lg text-gray-900">{community.name}</h3>
-                      <p className="text-sm text-gray-600">{community.description}</p>
+                      <h3 className="font-semibold text-lg text-white">{community.name}</h3>
+                      <p className="text-sm text-gray-400">{community.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                         <div className="flex items-center gap-1">
                           <Users className="w-4 h-4" />
@@ -157,7 +160,7 @@ export default function ManageCommunitiesPage() {
                   <Link
                     to={`/manage-communities/${community.id}/edit`}
                     onClick={(e) => e.stopPropagation()}
-                    className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
                   >
                     <Edit className="w-4 h-4" />
                     <span>Edit Community</span>
@@ -167,6 +170,8 @@ export default function ManageCommunitiesPage() {
             </div>
           )}
         </div>
+
+        <UnionsPanel communities={userCommunities.map((c) => ({ id: c.id, name: c.name, logo: c.logo }))} />
       </main>
 
       <CreateCommunityModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />

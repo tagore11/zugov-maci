@@ -132,7 +132,7 @@ export default function EditCommunityPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-950 text-white">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <p className="text-gray-500">Loading community…</p>
@@ -143,11 +143,11 @@ export default function EditCommunityPage() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-950 text-white">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <p className="text-gray-500">Community not found.</p>
-          <Link to="/manage-communities" className="text-indigo-600 hover:text-indigo-700 font-medium">
+          <Link to="/manage-communities" className="text-[#86A6C1] hover:text-[#648DAF] font-medium">
             Back to Manage Communities
           </Link>
         </main>
@@ -156,24 +156,24 @@ export default function EditCommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-950 text-white">
       <Header />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           to="/manage-communities"
-          className="inline-flex items-center gap-2 text-indigo-600 hover:text-indigo-700 mb-6 font-medium"
+          className="inline-flex items-center gap-2 text-[#86A6C1] hover:text-[#648DAF] mb-6 font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Manage Communities
         </Link>
 
-        <div className="bg-white rounded-2xl border border-gray-200 p-8">
+        <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8">
           <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">Edit Community</h1>
+            <h1 className="text-3xl font-bold text-white">Edit Community</h1>
             <Link
               to={`/manage-communities/${communityId}/members`}
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-700"
+              className="text-sm font-medium text-[#86A6C1] hover:text-[#648DAF]"
             >
               Review pending requests →
             </Link>
@@ -181,78 +181,78 @@ export default function EditCommunityPage() {
 
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Community Name *</label>
+              <label className="block text-sm font-semibold text-white mb-3">Community Name *</label>
               <input
                 type="text"
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Description</label>
+              <label className="block text-sm font-semibold text-white mb-3">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Logo (emoji or URL)</label>
+              <label className="block text-sm font-semibold text-white mb-3">Logo (emoji or URL)</label>
               <input
                 type="text"
                 value={logo}
                 onChange={(e) => setLogo(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-semibold text-gray-900">Membership Tiers *</label>
+                <label className="block text-sm font-semibold text-white">Membership Tiers *</label>
                 {!tiersLocked && (
                   <button
                     type="button"
                     onClick={addTier}
-                    className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                    className="text-sm text-[#86A6C1] hover:text-[#648DAF] font-medium"
                   >
                     + Add tier
                   </button>
                 )}
               </div>
               {tiersLocked && (
-                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 mb-3">
                   This community's tier changes require a community vote, which is not yet available.
                 </p>
               )}
               <div className="space-y-3">
                 {tiers.map((tier, i) => (
-                  <div key={tier.id ?? `new-${i}`} className="p-4 border-2 border-gray-200 rounded-lg space-y-2">
+                  <div key={tier.id ?? `new-${i}`} className="p-4 border-2 border-gray-700 rounded-lg space-y-2">
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
                         value={tier.label}
                         disabled={tiersLocked}
                         onChange={(e) => updateTierField(i, { label: e.target.value })}
-                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg text-sm disabled:bg-gray-800/40 disabled:text-gray-500"
                       />
                       {!tiersLocked && (
                         <button
                           type="button"
                           onClick={() => removeTierAt(i)}
                           disabled={tiers.length <= 1}
-                          className="text-xs text-red-500 hover:text-red-600 disabled:opacity-30 px-2"
+                          className="text-xs text-red-400 hover:text-red-300 disabled:opacity-30 px-2"
                         >
                           Remove
                         </button>
                       )}
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      <label className="flex items-center gap-1.5 text-sm">
+                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
                         <input
                           type="checkbox"
                           disabled={tiersLocked}
@@ -261,7 +261,7 @@ export default function EditCommunityPage() {
                         />
                         Can create polls
                       </label>
-                      <label className="flex items-center gap-1.5 text-sm">
+                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
                         <input
                           type="checkbox"
                           disabled={tiersLocked}
@@ -270,7 +270,7 @@ export default function EditCommunityPage() {
                         />
                         Can vote
                       </label>
-                      <label className="flex items-center gap-1.5 text-sm">
+                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
                         <input
                           type="checkbox"
                           disabled={tiersLocked}
@@ -286,11 +286,11 @@ export default function EditCommunityPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Default Tier</label>
+              <label className="block text-sm font-semibold text-white mb-3">Default Tier</label>
               <select
                 value={defaultTierLabel}
                 onChange={(e) => setDefaultTierLabel(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
               >
                 {tiers.map((t, i) => (
                   <option key={t.id ?? `new-${i}`} value={t.label}>
@@ -301,9 +301,9 @@ export default function EditCommunityPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-900 mb-3">Membership Policy</label>
+              <label className="block text-sm font-semibold text-white mb-3">Membership Policy</label>
               <div className="flex gap-6">
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 text-sm text-gray-300">
                   <input
                     type="radio"
                     name="membershipPolicy"
@@ -312,7 +312,7 @@ export default function EditCommunityPage() {
                   />
                   Open (auto-approve)
                 </label>
-                <label className="flex items-center gap-2 text-sm">
+                <label className="flex items-center gap-2 text-sm text-gray-300">
                   <input
                     type="radio"
                     name="membershipPolicy"
@@ -324,7 +324,7 @@ export default function EditCommunityPage() {
               </div>
             </div>
 
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex items-start gap-2 text-sm text-gray-300">
               <input
                 type="checkbox"
                 checked={tierChangesRequireVote}
@@ -339,7 +339,7 @@ export default function EditCommunityPage() {
               </span>
             </label>
 
-            <label className="flex items-start gap-2 text-sm">
+            <label className="flex items-start gap-2 text-sm text-gray-300">
               <input
                 type="checkbox"
                 checked={directDeploymentEnabled}
@@ -355,20 +355,20 @@ export default function EditCommunityPage() {
             </label>
 
             {error && (
-              <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+              <div className="rounded-lg border border-red-600/50 bg-red-900/20 p-3 text-sm text-red-300">{error}</div>
             )}
 
-            <div className="flex gap-4 pt-6 border-t border-gray-200">
+            <div className="flex gap-4 pt-6 border-t border-gray-700">
               <Link
                 to="/manage-communities"
-                className="flex-1 px-6 py-3 border-2 border-gray-300 rounded-lg font-semibold hover:bg-gray-50 transition-colors text-center text-base"
+                className="flex-1 px-6 py-3 border-2 border-gray-600 text-gray-300 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center text-base"
               >
                 Cancel
               </Link>
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors text-base disabled:opacity-60"
+                className="flex-1 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors text-base disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Save Changes"}
               </button>

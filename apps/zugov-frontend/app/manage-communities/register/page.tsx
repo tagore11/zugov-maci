@@ -80,13 +80,13 @@ export default function RegisterCommunityPage() {
 
     setIsSubmitting(true);
     try {
-      const community = await communityApi.register({
+      const community = await communityApi.registerManual({
         id: contractAddress,
+        contractAddress,
         chainId,
         displayName: details.displayName.trim(),
         description: details.description.trim() || undefined,
         logo: details.logo.trim() || undefined,
-        creatorAddress: contractAddress,
         allowedPolicies: contractConfig.allowedPolicies,
         supportedModes: contractConfig.supportedModes,
         signUpPolicyType: contractConfig.signUpPolicyType,
@@ -130,7 +130,7 @@ export default function RegisterCommunityPage() {
             <p className="text-gray-400">Your community is now globally discoverable on ZuGov.</p>
             <Link
               to={`/community/${registeredId}`}
-              className="inline-block px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+              className="inline-block px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors"
             >
               View Community
             </Link>
@@ -169,7 +169,7 @@ export default function RegisterCommunityPage() {
               onClick={() => setGovernanceType(GovernanceTypes.MACI)}
               className={`w-full text-left px-4 py-3 rounded-lg border transition-colors ${
                 governanceType === GovernanceTypes.MACI
-                  ? "border-indigo-500 bg-indigo-900/30"
+                  ? "border-[#648DAF] bg-[#648DAF]/10"
                   : "border-gray-700 bg-gray-800 hover:border-gray-600"
               }`}
             >
@@ -190,7 +190,7 @@ export default function RegisterCommunityPage() {
                   setContractConfig(null);
                   contract.reset();
                 }}
-                className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white focus:outline-none focus:border-indigo-500"
+                className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white focus:outline-none focus:border-[#648DAF]"
               >
                 {supportedChains.map((chain) => (
                   <option key={chain.id} value={chain.id}>
@@ -210,7 +210,7 @@ export default function RegisterCommunityPage() {
                   placeholder="0x..."
                   value={contractAddress}
                   onChange={(e) => handleAddressChange(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 font-mono text-sm focus:outline-none focus:border-indigo-500"
+                  className="flex-1 px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 font-mono text-sm focus:outline-none focus:border-[#648DAF]"
                 />
                 <button
                   type="button"
@@ -272,7 +272,7 @@ export default function RegisterCommunityPage() {
                     placeholder="My Community"
                     value={details.displayName}
                     onChange={(e) => setDetails((d) => ({ ...d, displayName: e.target.value }))}
-                    className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                    className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-[#648DAF]"
                   />
                 </div>
 
@@ -284,7 +284,7 @@ export default function RegisterCommunityPage() {
                     value={details.description}
                     onChange={(e) => setDetails((d) => ({ ...d, description: e.target.value }))}
                     rows={3}
-                    className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
+                    className="w-full px-4 py-2.5 rounded-lg bg-gray-800 border border-gray-600 text-white placeholder-gray-500 focus:outline-none focus:border-[#648DAF] resize-none"
                   />
                 </div>
 
@@ -298,7 +298,7 @@ export default function RegisterCommunityPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full py-3 px-4 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full py-3 px-4 rounded-lg bg-[#648DAF] text-white font-semibold hover:bg-[#86A6C1] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     {isSubmitting ? "Verifying ownership & registering..." : "Register Community"}
                   </button>

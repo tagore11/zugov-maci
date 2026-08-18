@@ -54,20 +54,24 @@ beforeEach(() => {
 describe("JoinSection", () => {
   it("renders nothing when the wallet isn't connected", () => {
     const { container } = renderWithProviders(
-      <JoinSection communityId="0xabc" connected={false} rpcUrl="http://localhost:8545" />,
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={false} rpcUrl="http://localhost:8545" />,
     );
     expect(container).toBeEmptyDOMElement();
   });
 
   it("shows a Join button when connected", () => {
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
 
   it("signs up on-chain and records backend membership after a successful join", async () => {
     signupToMaciMock.mockResolvedValue(undefined);
     joinMock.mockResolvedValue({ status: "approved", tierLabel: "Regular" });
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
 
     fireEvent.click(screen.getByText("Join"));
 
@@ -79,7 +83,9 @@ describe("JoinSection", () => {
   it("still succeeds if the backend join fails after a successful on-chain signup", async () => {
     signupToMaciMock.mockResolvedValue(undefined);
     joinMock.mockRejectedValue(new Error("Already a member or already have a pending request for this community"));
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
 
     fireEvent.click(screen.getByText("Join"));
 
@@ -89,7 +95,9 @@ describe("JoinSection", () => {
   it("shows the joined state (not an enabled Join button) when already registered on-chain, e.g. after a remount", async () => {
     maciKeypairMock = { publicKey: { hash: () => "hash123" } };
     getStateIndexMock.mockResolvedValue(1n);
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
 
     await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
     expect(screen.queryByText("Join")).not.toBeInTheDocument();
@@ -99,15 +107,27 @@ describe("JoinSection", () => {
   it("shows a Join button when the on-chain state index is 0 (not yet registered)", async () => {
     maciKeypairMock = { publicKey: { hash: () => "hash123" } };
     getStateIndexMock.mockResolvedValue(0n);
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
 
     await waitFor(() => expect(getStateIndexMock).toHaveBeenCalled());
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
 
+  it("shows a not-configured message instead of a Join button when governance isn't set up yet", () => {
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+    );
+    expect(screen.getByText(/Governance not yet configured/)).toBeInTheDocument();
+    expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+
   it("shows an error message when the on-chain signup fails", async () => {
     signupToMaciMock.mockRejectedValue(new Error("Wallet not connected"));
-    renderWithProviders(<JoinSection communityId="0xabc" connected={true} rpcUrl="http://localhost:8545" />);
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
 
     fireEvent.click(screen.getByText("Join"));
 

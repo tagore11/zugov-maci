@@ -28,17 +28,11 @@ const DEFAULT_TIER = {
   canManageMembership: false,
 };
 
-const VALID_COMMUNITY_BODY = {
-  id: "0xbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbB",
-  chainId: 534351,
+// Membership/tiers/joining are identity-layer concerns (Architecture 2b) — none of these tests
+// need governance configured, so registration is identity-only. Communities.id is server-
+// generated now; each test captures it from the registration response rather than hardcoding.
+const IDENTITY_BODY = {
   displayName: "Test Membership Community",
-  creatorAddress: TEST_ACCOUNT.address,
-  allowedPolicies: [0],
-  supportedModes: [0],
-  signUpPolicyType: "FreeForAll",
-  signUpPolicyAddress: "0xdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdD",
-  maciDeploymentBlock: 100,
-  stateTreeDepth: 6,
   source: "wizard",
   membershipPolicy: "open",
   tierChangesRequireVote: false,
@@ -46,14 +40,14 @@ const VALID_COMMUNITY_BODY = {
   defaultTierLabel: "Regular",
 };
 
-async function getAuthCookie(): Promise<string> {
+async function authCookieFor(account: typeof TEST_ACCOUNT): Promise<string> {
   const nonceRes = await app.request("/api/auth/nonce");
   const cookie = nonceRes.headers.get("set-cookie")!.split(";")[0]!;
   const { nonce } = (await nonceRes.json()) as { nonce: string };
 
   const siweMessage = new SiweMessage({
     domain: "localhost",
-    address: TEST_ACCOUNT.address,
+    address: account.address,
     statement: "Sign in with Ethereum to ZuGov",
     uri: "http://localhost:5173",
     version: "1",
@@ -61,7 +55,7 @@ async function getAuthCookie(): Promise<string> {
     nonce,
   });
   const message = siweMessage.prepareMessage();
-  const signature = await TEST_ACCOUNT.signMessage({ message });
+  const signature = await account.signMessage({ message });
 
   const verifyRes = await app.request("/api/auth/verify", {
     method: "POST",
@@ -70,6 +64,20 @@ async function getAuthCookie(): Promise<string> {
   });
   expect(verifyRes.status).toBe(200);
   return verifyRes.headers.get("set-cookie")!.split(";")[0]!;
+}
+
+async function getAuthCookie(): Promise<string> {
+  return authCookieFor(TEST_ACCOUNT);
+}
+
+async function registerIdentity(cookie: string, overrides: Record<string, unknown> = {}) {
+  const res = await app.request("/api/communities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ ...IDENTITY_BODY, ...overrides }),
+  });
+  const body = (await res.json()) as { community: { id: string; defaultTierId: string } };
+  return { res, community: body.community };
 }
 
 beforeEach(async () => {
@@ -91,27 +99,18 @@ afterAll(async () => {
 describe("POST /api/communities — membership fields validation", () => {
   it("creates a community with tiers and a default tier when the body is valid", async () => {
     const cookie = await getAuthCookie();
-    const res = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify(VALID_COMMUNITY_BODY),
-    });
+    const { res, community } = await registerIdentity(cookie);
     expect(res.status).toBe(201);
-    const body = (await res.json()) as { community: { defaultTierId: string } };
-    expect(body.community.defaultTierId).toBeTruthy();
+    expect(community.defaultTierId).toBeTruthy();
   });
 });
 
 describe("GET /api/communities/:id/tiers", () => {
   it("returns tiers with isDefault set for the community's default tier", async () => {
     const cookie = await getAuthCookie();
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify(VALID_COMMUNITY_BODY),
-    });
+    const { community } = await registerIdentity(cookie);
 
-    const res = await app.request(`/api/communities/${VALID_COMMUNITY_BODY.id}/tiers`);
+    const res = await app.request(`/api/communities/${community.id}/tiers`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { tiers: { label: string; isDefault: boolean }[] };
     const regular = body.tiers.find((t) => t.label === "Regular");
@@ -122,19 +121,15 @@ describe("GET /api/communities/:id/tiers", () => {
 describe("Tier mutation authority (FR-008, FR-011)", () => {
   it("returns 403 when a non-authorized wallet attempts to create a tier", async () => {
     const cookie = await getAuthCookie();
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({
-        ...VALID_COMMUNITY_BODY,
-        id: "0xcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcC",
-        creatorAddress: "0x1111111111111111111111111111111111111e", // NOT the session's own address
-      }),
-    });
+    const { community } = await registerIdentity(cookie);
+    // POST /api/communities always sets creatorAddress from the session wallet — simulate a
+    // non-authorized caller with a second, unrelated authenticated account instead of trying to
+    // spoof creatorAddress (which the route ignores by design).
+    const otherCookie = await authCookieFor(privateKeyToAccount(`0x${"33".repeat(32)}`));
 
-    const res = await app.request("/api/communities/0xcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcC/tiers", {
+    const res = await app.request(`/api/communities/${community.id}/tiers`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
+      headers: { "Content-Type": "application/json", Cookie: otherCookie },
       body: JSON.stringify(DEFAULT_TIER),
     });
     expect(res.status).toBe(403);
@@ -142,17 +137,9 @@ describe("Tier mutation authority (FR-008, FR-011)", () => {
 
   it("returns 409 when tierChangesRequireVote is true", async () => {
     const cookie = await getAuthCookie();
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({
-        ...VALID_COMMUNITY_BODY,
-        id: "0xdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdD",
-        tierChangesRequireVote: true,
-      }),
-    });
+    const { community } = await registerIdentity(cookie, { tierChangesRequireVote: true });
 
-    const res = await app.request("/api/communities/0xdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdD/tiers", {
+    const res = await app.request(`/api/communities/${community.id}/tiers`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify(DEFAULT_TIER),
@@ -166,13 +153,9 @@ describe("Tier mutation authority (FR-008, FR-011)", () => {
 describe("POST /api/communities/:id/join (FR-009 duplicate prevention)", () => {
   it("returns 409 when the wallet already holds a membership (the creator is auto-enrolled)", async () => {
     const cookie = await getAuthCookie();
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify(VALID_COMMUNITY_BODY),
-    });
+    const { community } = await registerIdentity(cookie);
 
-    const res = await app.request(`/api/communities/${VALID_COMMUNITY_BODY.id}/join`, {
+    const res = await app.request(`/api/communities/${community.id}/join`, {
       method: "POST",
       headers: { Cookie: cookie },
     });
@@ -180,21 +163,43 @@ describe("POST /api/communities/:id/join (FR-009 duplicate prevention)", () => {
   });
 });
 
+describe("GET /api/memberships/mine", () => {
+  it("returns 401 when not authenticated", async () => {
+    const res = await app.request("/api/memberships/mine");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns the community ids the caller's wallet is a member of — the creator is auto-enrolled", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const res = await app.request("/api/memberships/mine", { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { communityIds: string[] };
+    expect(body.communityIds).toContain(community.id);
+  });
+
+  it("does not include a community the wallet never joined", async () => {
+    const cookie = await getAuthCookie();
+    await registerIdentity(cookie);
+
+    const otherCookie = await authCookieFor(privateKeyToAccount(`0x${"55".repeat(32)}`));
+    const res = await app.request("/api/memberships/mine", { headers: { Cookie: otherCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { communityIds: string[] };
+    expect(body.communityIds).toEqual([]);
+  });
+});
+
 describe("GET /api/communities/:id/join-requests", () => {
   it("returns 403 for a non-authorized wallet", async () => {
     const cookie = await getAuthCookie();
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({
-        ...VALID_COMMUNITY_BODY,
-        id: "0xeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeE",
-        creatorAddress: "0x1111111111111111111111111111111111111e",
-      }),
-    });
+    const { community } = await registerIdentity(cookie);
 
-    const res = await app.request("/api/communities/0xeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeE/join-requests", {
-      headers: { Cookie: cookie },
+    const otherCookie = await authCookieFor(privateKeyToAccount(`0x${"44".repeat(32)}`));
+
+    const res = await app.request(`/api/communities/${community.id}/join-requests`, {
+      headers: { Cookie: otherCookie },
     });
     expect(res.status).toBe(403);
   });

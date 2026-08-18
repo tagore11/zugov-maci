@@ -27,7 +27,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
       <div className="space-y-4">
         <h2 className="text-lg font-semibold text-white">Network Check</h2>
         <div className="flex items-center gap-3 text-gray-400">
-          <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-[#648DAF] border-t-transparent rounded-full animate-spin" />
           <span className="text-sm">Checking {networkName}…</span>
         </div>
       </div>
@@ -101,8 +101,8 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
         <button
           type="button"
           onClick={goToReview}
-          className="flex-1 py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-            hover:bg-purple-700 transition-colors text-sm"
+          className="flex-1 py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+            hover:bg-[#86A6C1] transition-colors text-sm"
         >
           Next
         </button>

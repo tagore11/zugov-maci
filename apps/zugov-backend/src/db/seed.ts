@@ -1,5 +1,10 @@
-import { create, update } from "../services/communityService.js";
-import type { CommunityBody } from "../validators/communitySchema.js";
+import {
+  createIdentity,
+  attachGovernance,
+  update,
+  GovernanceAlreadyConfiguredError,
+} from "../services/communityService.js";
+import type { IdentityBody, GovernanceBody } from "../validators/communitySchema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
 
 const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
@@ -53,44 +58,52 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
 ];
 
-const SEED_COMMUNITIES: CommunityBody[] = [
+const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: IdentityBody; governance: GovernanceBody }[] = [
   {
     id: "0xFCeA194e9B7A9A785C1a7d2bCd08f9D7b123456a",
-    chainId: 534351,
-    displayName: "ZuKas Residency",
-    description: "ZuKas Residency community governance via MACI",
-    logo: "🏛️",
     creatorAddress: "0x0000000000000000000000000000000000000001",
-    allowedPolicies: [0, 1],
-    supportedModes: [0, 1],
-    signUpPolicyType: "FreeForAll",
-    signUpPolicyAddress: "0x0000000000000000000000000000000000000011",
-    maciDeploymentBlock: 18199019,
-    stateTreeDepth: 6,
-    source: "wizard",
-    membershipPolicy: "open",
-    tierChangesRequireVote: false,
-    tiers: DEFAULT_TIERS,
-    defaultTierLabel: "Regular",
+    identity: {
+      displayName: "ZuKas Residency",
+      description: "ZuKas Residency community governance via MACI",
+      logo: "🏛️",
+      membershipPolicy: "open",
+      tierChangesRequireVote: false,
+      tiers: DEFAULT_TIERS,
+      defaultTierLabel: "Regular",
+    },
+    governance: {
+      contractAddress: "0xFCeA194e9B7A9A785C1a7d2bCd08f9D7b123456a",
+      chainId: 534351,
+      allowedPolicies: [0, 1],
+      supportedModes: [0, 1],
+      signUpPolicyType: "FreeForAll",
+      signUpPolicyAddress: "0x0000000000000000000000000000000000000011",
+      maciDeploymentBlock: 18199019,
+      stateTreeDepth: 6,
+    },
   },
   {
     id: "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b",
-    chainId: 534351,
-    displayName: "ETH-NS",
-    description: "ETH Name Service governance community",
-    logo: "🌐",
     creatorAddress: "0x0000000000000000000000000000000000000002",
-    allowedPolicies: [0],
-    supportedModes: [0],
-    signUpPolicyType: "FreeForAll",
-    signUpPolicyAddress: "0x0000000000000000000000000000000000000012",
-    maciDeploymentBlock: 16833449,
-    stateTreeDepth: 10,
-    source: "wizard",
-    membershipPolicy: "open",
-    tierChangesRequireVote: false,
-    tiers: DEFAULT_TIERS,
-    defaultTierLabel: "Regular",
+    identity: {
+      displayName: "ETH-NS",
+      description: "ETH Name Service governance community",
+      logo: "🌐",
+      membershipPolicy: "open",
+      tierChangesRequireVote: false,
+      tiers: DEFAULT_TIERS,
+      defaultTierLabel: "Regular",
+    },
+    governance: {
+      contractAddress: "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b",
+      chainId: 534351,
+      allowedPolicies: [0],
+      supportedModes: [0],
+      signUpPolicyType: "FreeForAll",
+      signUpPolicyAddress: "0x0000000000000000000000000000000000000012",
+      maciDeploymentBlock: 16833449,
+      stateTreeDepth: 10,
+    },
   },
 ];
 
@@ -101,9 +114,19 @@ const DIRECT_DEPLOYMENT_COMMUNITY_ID = "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789
 
 async function seed() {
   console.log("Seeding communities...");
-  for (const community of SEED_COMMUNITIES) {
-    const { created } = await create(community);
-    console.log(`  ${created ? "✓ Created" : "  Skipped (exists)"}: ${community.displayName}`);
+  for (const seedCommunity of SEED_COMMUNITIES) {
+    const { created } = await createIdentity({
+      id: seedCommunity.id,
+      creatorAddress: seedCommunity.creatorAddress,
+      ...seedCommunity.identity,
+    });
+    if (created) {
+      await attachGovernance(seedCommunity.id, seedCommunity.governance).catch((err: unknown) => {
+        if (err instanceof GovernanceAlreadyConfiguredError) return;
+        throw err;
+      });
+    }
+    console.log(`  ${created ? "✓ Created" : "  Skipped (exists)"}: ${seedCommunity.identity.displayName}`);
   }
   await update(DIRECT_DEPLOYMENT_COMMUNITY_ID, { directDeploymentEnabled: true });
   console.log("  ✓ Enabled direct deployment on ETH-NS (for local direct-deploy testing)");

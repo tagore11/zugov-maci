@@ -130,22 +130,22 @@ export function buildPolicyArgs(policyType: SignUpPolicyType, inputs: PolicyInpu
   }
 }
 
-/** StepMaciConfig.tsx renders inside a solid dark modal (bg-gray-900); CreateGovernanceActionModal
- * renders inside a solid light modal (bg-white) — the two contexts these fields are shared
- * between need different colors to stay legible, since Tailwind classes here are static (no
- * parent-aware theming). Defaults to "light" (the more common of the two call sites). */
+/** Every call site (CreateCommunityWizard's StepCommunitySetup, CreateGovernanceActionModal) now
+ * renders inside a dark modal/panel per DESIGN.md — "light" is kept only so a future light-toggle
+ * surface doesn't need this component's plumbing rebuilt, not because anything uses it today.
+ * Defaults to "dark" to match every current call site. */
 export type PolicyArgsTheme = "light" | "dark";
 
 const THEME_CLASSES = {
   light: {
     wrapper: "border-gray-200 bg-gray-50",
     label: "text-gray-700",
-    input: "border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:ring-indigo-500",
+    input: "border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:ring-[#2D5F8A]",
   },
   dark: {
     wrapper: "border-gray-700 bg-gray-800/40",
     label: "text-gray-400",
-    input: "border-gray-700 bg-gray-900 text-white placeholder-gray-600 focus:ring-purple-500",
+    input: "border-gray-700 bg-gray-900 text-white placeholder-gray-600 focus:ring-[#648DAF]",
   },
 } as const;
 
@@ -156,7 +156,7 @@ export function PolicyArgInput({
   placeholder,
   type = "text",
   mono = false,
-  theme = "light",
+  theme = "dark",
 }: {
   label: string;
   value: string;
@@ -188,7 +188,7 @@ export function PolicyArgsFields({
   policyType,
   inputs,
   updateInput,
-  theme = "light",
+  theme = "dark",
 }: {
   policyType: SignUpPolicyType;
   inputs: PolicyInputState;

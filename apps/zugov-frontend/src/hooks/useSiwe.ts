@@ -80,10 +80,16 @@ export function useSiwe() {
 
   const signOut = useCallback(async () => {
     try {
+      // Best-effort — clearing the local session must not depend on reaching the backend.
+      // If the auth service is down (coordinator outage, network partition, etc.), the
+      // resident can still sign out locally rather than getting stuck "authenticated" with
+      // no way to recover.
       await fetch(`${BASE_URL}/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       });
+    } catch {
+      // Swallowed intentionally — see comment above.
     } finally {
       sessionStorage.removeItem(SESSION_KEY);
       setIsAuthenticated(false);

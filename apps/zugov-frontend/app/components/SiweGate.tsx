@@ -23,7 +23,7 @@ export function SiweGate({ children, message = "Sign in with Ethereum to continu
       <button
         onClick={() => void signIn()}
         disabled={isSigning}
-        className="px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+        className="px-6 py-3 bg-[#648DAF] text-white rounded-[6px] font-semibold hover:bg-[#86A6C1] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {isSigning ? (
           <span className="flex items-center gap-2">

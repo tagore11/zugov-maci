@@ -75,7 +75,9 @@ function DeployPollPrompt({
   pollDeployConfig: NonNullable<Community["pollDeployConfig"]>;
   onDeployed: () => void;
 }) {
-  const allowedPolicyTypes = community.allowedPolicies.map(policyIdToType).filter((t): t is SignUpPolicyType => !!t);
+  const allowedPolicyTypes = (community.allowedPolicies ?? [])
+    .map(policyIdToType)
+    .filter((t): t is SignUpPolicyType => !!t);
 
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -193,14 +195,14 @@ function DeployPollPrompt({
       <button
         type="button"
         onClick={() => setOptions([...options, ""])}
-        className="w-full border border-dashed border-gray-600 rounded px-2 py-1 text-gray-400 hover:border-indigo-500 hover:text-indigo-400"
+        className="w-full border border-dashed border-gray-600 rounded px-2 py-1 text-gray-400 hover:border-[#648DAF] hover:text-[#86A6C1]"
       >
         + Add Option
       </button>
       <button
         onClick={handleDeploy}
         disabled={isDeploying || !startDate || !endDate || !hasEnoughOptions || !policyArgs}
-        className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 disabled:opacity-60"
+        className="px-3 py-1.5 bg-[#648DAF] text-white rounded text-xs font-medium hover:bg-[#86A6C1] disabled:opacity-60"
       >
         {isDeploying ? (deployStep ?? "Deploying...") : "Deploy Poll"}
       </button>
@@ -324,7 +326,10 @@ function FormalizedActionRow({
   const [votingPoll, setVotingPoll] = useState<SubgraphPoll | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const rpcUrl = community ? appConstants[community.chainId as keyof typeof appConstants]?.rpcUrl : undefined;
+  const rpcUrl =
+    community?.governanceConfigured && community.chainId !== null
+      ? appConstants[community.chainId as keyof typeof appConstants]?.rpcUrl
+      : undefined;
 
   const handleVoteClick = async () => {
     setLoadError(null);
@@ -351,7 +356,7 @@ function FormalizedActionRow({
           {eligibility?.eligible && action.pollAddress && (
             <button
               onClick={handleVoteClick}
-              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700"
+              className="px-3 py-1.5 bg-[#648DAF] text-white rounded-lg text-xs font-medium hover:bg-[#86A6C1]"
             >
               Vote
             </button>
@@ -373,10 +378,10 @@ function FormalizedActionRow({
       )}
       <TallySection communityId={communityId} action={action} />
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
-      {votingPoll && rpcUrl && (
+      {votingPoll && rpcUrl && community?.contractAddress && (
         <VoteModal
           poll={votingPoll}
-          maciAddress={communityId}
+          maciAddress={community.contractAddress}
           rpcUrl={rpcUrl}
           governanceType={GovernanceTypes.MACI}
           onClose={() => setVotingPoll(null)}
@@ -454,7 +459,7 @@ function DraftRow({
         <button
           onClick={handleSponsor}
           disabled={isSponsoring}
-          className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+          className="shrink-0 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1] disabled:opacity-60"
         >
           {isSponsoring ? "Sponsoring..." : "Sponsor"}
         </button>
@@ -462,12 +467,12 @@ function DraftRow({
       <p className="text-xs text-gray-500">Sponsors: {sponsorCount} (draft — not yet formalized)</p>
       {sponsorError && <p className="text-xs text-red-400">{sponsorError}</p>}
       {authorizeState === "authorized" &&
-        (community?.pollDeployConfig ? (
+        (community?.pollDeployConfig && community.contractAddress ? (
           <DeployPollPrompt
             communityId={communityId}
             community={community}
             action={action}
-            maciAddress={communityId}
+            maciAddress={community.contractAddress}
             pollDeployConfig={community.pollDeployConfig}
             onDeployed={onFormalized}
           />
@@ -513,13 +518,21 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
     return <p className="text-sm text-gray-500">Connect your wallet to view governance actions.</p>;
   }
 
+  if (community && !community.governanceConfigured) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+        Governance not yet configured for this community — no governance actions available.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Governance Actions</h2>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+          className="flex items-center gap-2 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1]"
         >
           <Plus className="w-4 h-4" />
           {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}

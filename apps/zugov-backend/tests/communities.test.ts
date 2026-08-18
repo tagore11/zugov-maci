@@ -4,7 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { encodeFunctionResult } from "viem";
 import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
-import { communities } from "../src/db/schema.js";
+import { communities, maciGovernanceConfigs } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -70,27 +70,24 @@ async function authCookieFor(account: typeof REGISTRANT): Promise<string> {
   return verifyRes.headers.get("set-cookie")!.split(";")[0]!;
 }
 
-const TEST_COMMUNITY = {
-  id: "0xaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaA",
-  chainId: 534351,
+const IDENTITY_BODY = {
   displayName: "Test Community",
   description: "A test community",
-  creatorAddress: "0xbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbB",
+  membershipPolicy: "open",
+  tierChangesRequireVote: false,
+  tiers: [{ label: "Member", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }],
+  defaultTierLabel: "Member",
+};
+
+const GOVERNANCE_BODY = {
+  contractAddress: "0xaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaA",
+  chainId: 534351,
   allowedPolicies: [0, 1],
   supportedModes: [0],
   signUpPolicyType: "FreeForAll",
   signUpPolicyAddress: "0xcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcC",
   maciDeploymentBlock: 100,
   stateTreeDepth: 6,
-  source: "wizard",
-};
-
-const FULL_COMMUNITY = {
-  ...TEST_COMMUNITY,
-  membershipPolicy: "open",
-  tierChangesRequireVote: false,
-  tiers: [{ label: "Member", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }],
-  defaultTierLabel: "Member",
 };
 
 const POLL_DEPLOY_CONFIG = {
@@ -106,6 +103,59 @@ const POLL_DEPLOY_CONFIG = {
   constantVoiceCreditProxyFactory: "0xF49949D519f0A321bb08b0ca94dEF40E98b663eF",
   initialVoiceCreditAmount: 100,
 };
+
+async function registerIdentity(
+  cookie: string,
+  overrides: Record<string, unknown> = {},
+): Promise<{ res: Response; community: { id: string; governanceConfigured: boolean } }> {
+  const res = await app.request("/api/communities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ ...IDENTITY_BODY, source: "wizard", ...overrides }),
+  });
+  const { community } = (await res.json()) as { community: { id: string; governanceConfigured: boolean } };
+  return { res, community };
+}
+
+async function attachGovernance(
+  cookie: string,
+  id: string,
+  overrides: Record<string, unknown> = {},
+): Promise<Response> {
+  return app.request(`/api/communities/${id}/governance`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ ...GOVERNANCE_BODY, ...overrides }),
+  });
+}
+
+// Full two-step wizard registration in one call — the common case for tests that don't care
+// about the identity/governance split itself, just need a fully-configured community to exist.
+async function registerFullCommunity(
+  cookie: string,
+  identityOverrides: Record<string, unknown> = {},
+  governanceOverrides: Record<string, unknown> = {},
+): Promise<{ id: string }> {
+  const { community } = await registerIdentity(cookie, identityOverrides);
+  const govRes = await attachGovernance(cookie, community.id, governanceOverrides);
+  expect(govRes.status).toBe(201);
+  return { id: community.id };
+}
+
+async function registerManualCommunity(cookie: string, id: string, overrides: Record<string, unknown> = {}) {
+  return app.request("/api/communities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({
+      ...IDENTITY_BODY,
+      ...GOVERNANCE_BODY,
+      id,
+      contractAddress: id,
+      source: "manual",
+      ...overrides,
+    }),
+  });
+}
 
 beforeEach(async () => {
   verifyContractOwnerMock.mockReset();
@@ -144,40 +194,66 @@ describe("GET /api/communities", () => {
     const res = await app.request("/api/communities?limit=999");
     expect(res.status).toBe(200);
   });
+
+  it("includes ungoverned communities with governanceConfigured:false", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request("/api/communities");
+    const body = (await res.json()) as { communities: { id: string; governanceConfigured: boolean }[] };
+    const found = body.communities.find((c) => c.id === community.id);
+    expect(found?.governanceConfigured).toBe(false);
+  });
 });
 
 describe("GET /api/communities/:id", () => {
-  it("returns 404 for unknown address", async () => {
+  it("returns 404 for unknown id", async () => {
     const res = await app.request("/api/communities/0x0000000000000000000000000000000000000000");
     expect(res.status).toBe(404);
     const body = (await res.json()) as { error: string };
     expect(body.error).toBe("Community not found");
   });
 
+  it("returns governanceConfigured:false and null governance fields for an identity-only community", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request(`/api/communities/${community.id}`);
+    const body = (await res.json()) as {
+      community: { governanceConfigured: boolean; chainId: number | null; signUpPolicyType: string | null };
+    };
+    expect(body.community.governanceConfigured).toBe(false);
+    expect(body.community.chainId).toBeNull();
+    expect(body.community.signUpPolicyType).toBeNull();
+  });
+
+  it("returns governanceConfigured:true with governance fields once attached", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { id } = await registerFullCommunity(cookie);
+    const res = await app.request(`/api/communities/${id}`);
+    const body = (await res.json()) as {
+      community: { governanceConfigured: boolean; chainId: number | null; contractAddress: string | null };
+    };
+    expect(body.community.governanceConfigured).toBe(true);
+    expect(body.community.chainId).toBe(GOVERNANCE_BODY.chainId);
+    expect(body.community.contractAddress).toBe(GOVERNANCE_BODY.contractAddress);
+  });
+
   describe("creatorAddress reconciliation against the subgraph's owner", () => {
     const STALE_OWNER = "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB";
     const NEW_OWNER = "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC";
 
-    async function registerReadyCommunity(id: string): Promise<void> {
+    async function registerReadyCommunity(): Promise<string> {
       const cookie = await authCookieFor(REGISTRANT);
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id, source: "wizard" }),
-      });
-      expect(res.status).toBe(201);
+      const { id } = await registerFullCommunity(cookie);
       // POST always sets creatorAddress from the session wallet (REGISTRANT), never the client
       // body — simulate a stale row (contract ownership transferred after registration) plus a
       // ready subgraph directly, rather than waiting on the real fire-and-forget subgraph deploy
       // (which fails in this test env — no graph-node running).
+      await testDb.update(communities).set({ creatorAddress: STALE_OWNER }).where(eq(communities.id, id));
       await testDb
-        .update(communities)
-        .set({
-          creatorAddress: STALE_OWNER,
-          subgraphName: `community-${id.toLowerCase()}`,
-          subgraphStatus: "ready",
-        })
-        .where(eq(communities.id, id));
+        .update(maciGovernanceConfigs)
+        .set({ subgraphName: `community-${GOVERNANCE_BODY.contractAddress.toLowerCase()}`, subgraphStatus: "ready" })
+        .where(eq(maciGovernanceConfigs.communityId, id));
+      return id;
     }
 
     afterEach(() => {
@@ -185,8 +261,7 @@ describe("GET /api/communities/:id", () => {
     });
 
     it("updates creatorAddress when the subgraph reports a new on-chain owner", async () => {
-      const id = "0x7777777777777777777777777777777777777771";
-      await registerReadyCommunity(id);
+      const id = await registerReadyCommunity();
 
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ data: { maci: { owner: NEW_OWNER.toLowerCase() } } }), {
@@ -206,8 +281,7 @@ describe("GET /api/communities/:id", () => {
     });
 
     it("leaves creatorAddress untouched when the subgraph reports the same owner", async () => {
-      const id = "0x7777777777777777777777777777777777777772";
-      await registerReadyCommunity(id);
+      const id = await registerReadyCommunity();
 
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ data: { maci: { owner: STALE_OWNER.toLowerCase() } } }), {
@@ -224,12 +298,7 @@ describe("GET /api/communities/:id", () => {
 
     it("does not query the subgraph when it isn't ready yet", async () => {
       const cookie = await authCookieFor(REGISTRANT);
-      const id = "0x7777777777777777777777777777777777777773";
-      await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id, creatorAddress: STALE_OWNER, source: "wizard" }),
-      });
+      const { id } = await registerFullCommunity(cookie);
 
       const fetchMock = vi.fn();
       vi.stubGlobal("fetch", fetchMock);
@@ -240,9 +309,20 @@ describe("GET /api/communities/:id", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it("does not query the subgraph for an identity-only (ungoverned) community", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community } = await registerIdentity(cookie);
+
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+
+      const res = await app.request(`/api/communities/${community.id}`);
+      expect(res.status).toBe(200);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
     it("falls back to the stored creatorAddress when the subgraph is unreachable", async () => {
-      const id = "0x7777777777777777777777777777777777777774";
-      await registerReadyCommunity(id);
+      const id = await registerReadyCommunity();
 
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network error")));
 
@@ -262,23 +342,17 @@ describe("GET /api/communities/:id", () => {
     ] as const;
     const POLICY_ADDRESS = "0xDDdDddDdDdddDDddDDddDDDDdDdDDdDDdDDDDDDd";
 
-    async function registerCommunityMissingPolicy(id: string): Promise<void> {
-      const now = Math.floor(Date.now() / 1000);
-      await testDb.insert(communities).values({
-        id,
-        chainId: 534351,
-        displayName: "Legacy Community",
-        creatorAddress: REGISTRANT.address,
-        governanceType: "maci",
-        allowedPolicies: JSON.stringify([0, 1]),
-        supportedModes: JSON.stringify([0]),
-        signUpPolicyType: null,
-        signUpPolicyAddress: null,
-        stateTreeDepth: 6,
-        subgraphStatus: "pending",
-        createdAt: now,
-        registeredAt: now,
-      });
+    async function registerCommunityMissingPolicy(contractAddress: string): Promise<string> {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { id } = await registerFullCommunity(cookie, {}, { contractAddress });
+      // The Zod schema requires signUpPolicyType/Address, so simulate a legacy row (registered
+      // before those fields were always known) by nulling them directly, same as the pre-split
+      // test did against the old single-table schema.
+      await testDb
+        .update(maciGovernanceConfigs)
+        .set({ signUpPolicyType: null, signUpPolicyAddress: null })
+        .where(eq(maciGovernanceConfigs.communityId, id));
+      return id;
     }
 
     function rpcResponder(result: `0x${string}`) {
@@ -296,8 +370,7 @@ describe("GET /api/communities/:id", () => {
     });
 
     it("backfills signUpPolicyType/Address by reading the contract when null", async () => {
-      const id = "0x7777777777777777777777777777777777777776";
-      await registerCommunityMissingPolicy(id);
+      const id = await registerCommunityMissingPolicy("0x7777777777777777777777777777777777777776");
       getRpcUrlMock.mockReturnValue("http://localhost:8545");
 
       const fetchMock = vi
@@ -324,13 +397,16 @@ describe("GET /api/communities/:id", () => {
       expect(community.signUpPolicyType).toBe("FreeForAll");
       expect(community.signUpPolicyAddress).toBe(POLICY_ADDRESS);
 
-      const [row] = await testDb.select().from(communities).where(eq(communities.id, id)).limit(1);
+      const [row] = await testDb
+        .select()
+        .from(maciGovernanceConfigs)
+        .where(eq(maciGovernanceConfigs.communityId, id))
+        .limit(1);
       expect(row!.signUpPolicyType).toBe("FreeForAll");
     });
 
     it("leaves signUpPolicyType null when no RPC is configured for the chain", async () => {
-      const id = "0x7777777777777777777777777777777777777777";
-      await registerCommunityMissingPolicy(id);
+      const id = await registerCommunityMissingPolicy("0x7777777777777777777777777777777777777777");
       getRpcUrlMock.mockReturnValue(null);
 
       const res = await app.request(`/api/communities/${id}`);
@@ -341,12 +417,11 @@ describe("GET /api/communities/:id", () => {
 
     it("does not call the RPC when signUpPolicyType is already set", async () => {
       const cookie = await authCookieFor(REGISTRANT);
-      const id = "0x7777777777777777777777777777777777777778";
-      await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id, source: "wizard" }),
-      });
+      const { id } = await registerFullCommunity(
+        cookie,
+        {},
+        { contractAddress: "0x7777777777777777777777777777777777777778" },
+      );
       getRpcUrlMock.mockReturnValue("http://localhost:8545");
 
       const fetchMock = vi.fn();
@@ -365,7 +440,7 @@ describe("POST /api/communities", () => {
     const res = await app.request("/api/communities", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(TEST_COMMUNITY),
+      body: JSON.stringify({ ...IDENTITY_BODY, source: "wizard" }),
     });
     expect(res.status).toBe(401);
   });
@@ -382,121 +457,45 @@ describe("POST /api/communities", () => {
 
   it("uses the session wallet as creatorAddress, ignoring any client-supplied value", async () => {
     const cookie = await authCookieFor(REGISTRANT);
-    const id = "0xbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBbBb2";
-    const res = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      // Deliberately spoofing a different creatorAddress in the body.
-      body: JSON.stringify({ ...FULL_COMMUNITY, id, creatorAddress: "0x9999999999999999999999999999999999999999" }),
-    });
-    expect(res.status).toBe(201);
-    const { community } = (await res.json()) as { community: { creatorAddress: string } };
+    const { res, community: identity } = await registerIdentity(cookie);
+    void res;
+    const res2 = await app.request(`/api/communities/${identity.id}`);
+    const { community } = (await res2.json()) as { community: { creatorAddress: string } };
     expect(community.creatorAddress.toLowerCase()).toBe(REGISTRANT.address.toLowerCase());
   });
 
-  it("round-trips pollDeployConfig with full fidelity", async () => {
+  it("generates a server-side id for wizard-sourced communities, not client-supplied", async () => {
     const cookie = await authCookieFor(REGISTRANT);
-    const id = "0xcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcCcC";
-    const registerRes = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id, pollDeployConfig: POLL_DEPLOY_CONFIG }),
-    });
-    expect(registerRes.status).toBe(201);
-    const { community: registered } = (await registerRes.json()) as { community: { pollDeployConfig: unknown } };
-    expect(registered.pollDeployConfig).toEqual(POLL_DEPLOY_CONFIG);
-
-    const getRes = await app.request(`/api/communities/${id}`);
-    const { community: fetched } = (await getRes.json()) as { community: { pollDeployConfig: unknown } };
-    expect(fetched.pollDeployConfig).toEqual(POLL_DEPLOY_CONFIG);
-  });
-
-  it("returns 422 when pollDeployConfig is missing a field", async () => {
-    const cookie = await authCookieFor(REGISTRANT);
-    const { messageBatchSize: _messageBatchSize, ...partialConfig } = POLL_DEPLOY_CONFIG;
-    const res = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({
-        ...FULL_COMMUNITY,
-        id: "0xdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdDdD",
-        pollDeployConfig: partialConfig,
-      }),
-    });
-    expect(res.status).toBe(422);
-  });
-
-  it("omits pollDeployConfig when not provided at registration", async () => {
-    const cookie = await authCookieFor(REGISTRANT);
-    const id = "0xeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeE";
-    const registerRes = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
-    });
-    expect(registerRes.status).toBe(201);
-    const { community } = (await registerRes.json()) as { community: { pollDeployConfig?: unknown } };
-    expect(community.pollDeployConfig).toBeFalsy();
-  });
-
-  it("does not alter a persisted pollDeployConfig on a duplicate registration", async () => {
-    const cookie = await authCookieFor(REGISTRANT);
-    const id = "0xfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfFfF";
-    const first = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id, pollDeployConfig: POLL_DEPLOY_CONFIG }),
-    });
-    expect(first.status).toBe(201);
-
-    // Second registration for the same id, with no pollDeployConfig at all — must not clear it.
-    const second = await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
-    });
-    expect(second.status).toBe(200);
-    const { community } = (await second.json()) as { community: { pollDeployConfig: unknown } };
-    expect(community.pollDeployConfig).toEqual(POLL_DEPLOY_CONFIG);
+    const { res, community } = await registerIdentity(cookie);
+    expect(res.status).toBe(201);
+    expect(community.id).toBeTruthy();
+    expect(community.governanceConfigured).toBe(false);
   });
 
   describe("source: manual (specs/002 FR-013 ownership verification)", () => {
     it("does not call verifyContractOwner for a wizard-sourced registration", async () => {
       const cookie = await authCookieFor(REGISTRANT);
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x111111111111111111111111111111111111111a", source: "wizard" }),
-      });
+      const { res } = await registerIdentity(cookie);
       expect(res.status).toBe(201);
       expect(verifyContractOwnerMock).not.toHaveBeenCalled();
     });
 
-    it("registers when the session wallet is verified as the contract owner", async () => {
+    it("registers with governance already attached when the session wallet is verified as owner", async () => {
       const cookie = await authCookieFor(REGISTRANT);
       verifyContractOwnerMock.mockResolvedValue(undefined);
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x222222222222222222222222222222222222222b", source: "manual" }),
-      });
+      const id = "0x222222222222222222222222222222222222222b";
+      const res = await registerManualCommunity(cookie, id);
       expect(res.status).toBe(201);
-      expect(verifyContractOwnerMock).toHaveBeenCalledWith(
-        FULL_COMMUNITY.chainId,
-        "0x222222222222222222222222222222222222222b",
-        REGISTRANT.address,
-      );
+      const { community } = (await res.json()) as { community: { governanceConfigured: boolean } };
+      expect(community.governanceConfigured).toBe(true);
+      expect(verifyContractOwnerMock).toHaveBeenCalledWith(GOVERNANCE_BODY.chainId, id, REGISTRANT.address);
     });
 
     it("returns 403 when the session wallet does not match the contract owner", async () => {
       const { OwnershipMismatchError } = await import("../src/services/contractOwnership.js");
       const cookie = await authCookieFor(REGISTRANT);
       verifyContractOwnerMock.mockRejectedValue(new OwnershipMismatchError(REGISTRANT.address, "0xSomeoneElse"));
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x333333333333333333333333333333333333333c", source: "manual" }),
-      });
+      const res = await registerManualCommunity(cookie, "0x333333333333333333333333333333333333333c");
       expect(res.status).toBe(403);
     });
 
@@ -504,11 +503,7 @@ describe("POST /api/communities", () => {
       const { ContractNotFoundError } = await import("../src/services/contractOwnership.js");
       const cookie = await authCookieFor(REGISTRANT);
       verifyContractOwnerMock.mockRejectedValue(new ContractNotFoundError("0xdead", 11155111));
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x4444444444444444444444444444444444444d", source: "manual" }),
-      });
+      const res = await registerManualCommunity(cookie, "0x4444444444444444444444444444444444444d");
       expect(res.status).toBe(422);
     });
 
@@ -516,11 +511,7 @@ describe("POST /api/communities", () => {
       const { NotOwnableError } = await import("../src/services/contractOwnership.js");
       const cookie = await authCookieFor(REGISTRANT);
       verifyContractOwnerMock.mockRejectedValue(new NotOwnableError("0xnotownable"));
-      const res = await app.request("/api/communities", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x5555555555555555555555555555555555555e", source: "manual" }),
-      });
+      const res = await registerManualCommunity(cookie, "0x5555555555555555555555555555555555555e");
       expect(res.status).toBe(422);
     });
 
@@ -528,13 +519,178 @@ describe("POST /api/communities", () => {
       const { RpcUnavailableError } = await import("../src/services/contractOwnership.js");
       const cookie = await authCookieFor(REGISTRANT);
       verifyContractOwnerMock.mockRejectedValue(new RpcUnavailableError(11155111));
+      const res = await registerManualCommunity(cookie, "0x666666666666666666666666666666666666666f");
+      expect(res.status).toBe(503);
+    });
+  });
+
+  describe("parentCommunityId (communities/sub-communities)", () => {
+    async function registerParentIdentity(cookie: string): Promise<string> {
+      const { res, community } = await registerIdentity(cookie);
+      expect(res.status).toBe(201);
+      return community.id;
+    }
+
+    it("registers a child with parentCommunityId and returns it on GET", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const parentId = await registerParentIdentity(cookie);
+
+      const { res, community } = await registerIdentity(cookie, { parentCommunityId: parentId });
+      expect(res.status).toBe(201);
+      expect(community).toHaveProperty("id");
+      const childId = community.id;
+
+      const getRes = await app.request(`/api/communities/${childId}`);
+      const { community: fetched } = (await getRes.json()) as { community: { parentCommunityId: string | null } };
+      expect(fetched.parentCommunityId).toBe(parentId);
+    });
+
+    it("defaults parentCommunityId to null when not provided", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const parentId = await registerParentIdentity(cookie);
+      const { community } = (await app.request(`/api/communities/${parentId}`).then((r) => r.json())) as {
+        community: { parentCommunityId: string | null };
+      };
+      expect(community.parentCommunityId).toBeNull();
+    });
+
+    it("returns 422 when parentCommunityId equals the community's own id (manual source)", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const id = "0x7777777777777777777777777777777777777779";
+      const res = await registerManualCommunity(cookie, id, { parentCommunityId: id });
+      expect(res.status).toBe(422);
+    });
+
+    it("returns 422 when parentCommunityId does not reference an existing community", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
       const res = await app.request("/api/communities", {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ ...FULL_COMMUNITY, id: "0x666666666666666666666666666666666666666f", source: "manual" }),
+        body: JSON.stringify({
+          ...IDENTITY_BODY,
+          source: "wizard",
+          parentCommunityId: "0x9999999999999999999999999999999999999999",
+        }),
       });
-      expect(res.status).toBe(503);
+      expect(res.status).toBe(422);
     });
+  });
+});
+
+describe("POST /api/communities/:id/governance", () => {
+  it("returns 401 without authentication", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request(`/api/communities/${community.id}/governance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(GOVERNANCE_BODY),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when the caller is not authorized on the community", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+
+    const OTHER = privateKeyToAccount(`0x${"77".repeat(32)}`);
+    const otherCookie = await authCookieFor(OTHER);
+    const res = await attachGovernance(otherCookie, community.id);
+    expect(res.status).toBe(403);
+  });
+
+  // Matches PATCH /:id's existing precedent: isAuthorized() runs before existence is checked,
+  // so a nonexistent community reads as "not authorized" (there's no creatorAddress to match
+  // against) rather than "not found" at the HTTP layer. attachGovernance()'s own
+  // CommunityNotFoundError guard still exists as defense-in-depth below this route check.
+  it("returns 403 for a nonexistent community (isAuthorized runs before the existence check)", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const res = await attachGovernance(cookie, "0x0000000000000000000000000000000000000000");
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 422 when contractAddress is missing", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const { contractAddress: _contractAddress, ...withoutAddress } = GOVERNANCE_BODY;
+    const res = await attachGovernance(cookie, community.id, { ...withoutAddress, contractAddress: undefined });
+    expect(res.status).toBe(422);
+  });
+
+  it("attaches governance and flips governanceConfigured to true", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(201);
+    const { community: attached } = (await res.json()) as { community: { governanceConfigured: boolean } };
+    expect(attached.governanceConfigured).toBe(true);
+  });
+
+  it("returns 409 on double-attach (race between two tabs finishing setup)", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const first = await attachGovernance(cookie, community.id);
+    expect(first.status).toBe(201);
+    const second = await attachGovernance(cookie, community.id);
+    expect(second.status).toBe(409);
+  });
+
+  it("round-trips pollDeployConfig with full fidelity", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id, { pollDeployConfig: POLL_DEPLOY_CONFIG });
+    expect(res.status).toBe(201);
+    const { community: attached } = (await res.json()) as { community: { pollDeployConfig: unknown } };
+    expect(attached.pollDeployConfig).toEqual(POLL_DEPLOY_CONFIG);
+
+    const getRes = await app.request(`/api/communities/${community.id}`);
+    const { community: fetched } = (await getRes.json()) as { community: { pollDeployConfig: unknown } };
+    expect(fetched.pollDeployConfig).toEqual(POLL_DEPLOY_CONFIG);
+  });
+
+  it("returns 422 when pollDeployConfig is missing a field", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const { messageBatchSize: _messageBatchSize, ...partialConfig } = POLL_DEPLOY_CONFIG;
+    const res = await attachGovernance(cookie, community.id, { pollDeployConfig: partialConfig });
+    expect(res.status).toBe(422);
+  });
+
+  it("omits pollDeployConfig when not provided", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(201);
+    const { community: attached } = (await res.json()) as { community: { pollDeployConfig?: unknown } };
+    expect(attached.pollDeployConfig).toBeFalsy();
+  });
+});
+
+describe("GET /api/communities/:id/children", () => {
+  it("returns 404 for a nonexistent parent", async () => {
+    const res = await app.request("/api/communities/0x0000000000000000000000000000000000000000/children");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns an empty list for a community with no children", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community: parent } = await registerIdentity(cookie);
+    const res = await app.request(`/api/communities/${parent.id}/children`);
+    expect(res.status).toBe(200);
+    const { communities: children } = (await res.json()) as { communities: unknown[] };
+    expect(children).toEqual([]);
+  });
+
+  it("lists a registered child", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community: parent } = await registerIdentity(cookie);
+    const { community: child } = await registerIdentity(cookie, { parentCommunityId: parent.id });
+
+    const res = await app.request(`/api/communities/${parent.id}/children`);
+    expect(res.status).toBe(200);
+    const { communities: children } = (await res.json()) as { communities: { id: string }[] };
+    expect(children).toHaveLength(1);
+    expect(children[0]!.id).toBe(child.id);
   });
 });
 
@@ -543,18 +699,13 @@ describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1,
 
   it("defaults to false and round-trips true then false", async () => {
     const cookie = await authCookieFor(REGISTRANT);
-    const id = "0x8888888888888888888888888888888888888801";
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
-    });
+    const { community } = await registerIdentity(cookie);
 
-    const initialRes = await app.request(`/api/communities/${id}`);
+    const initialRes = await app.request(`/api/communities/${community.id}`);
     const { community: initial } = (await initialRes.json()) as { community: { directDeploymentEnabled: boolean } };
     expect(initial.directDeploymentEnabled).toBe(false);
 
-    const enableRes = await app.request(`/api/communities/${id}`, {
+    const enableRes = await app.request(`/api/communities/${community.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ directDeploymentEnabled: true }),
@@ -563,7 +714,7 @@ describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1,
     const { community: enabled } = (await enableRes.json()) as { community: { directDeploymentEnabled: boolean } };
     expect(enabled.directDeploymentEnabled).toBe(true);
 
-    const disableRes = await app.request(`/api/communities/${id}`, {
+    const disableRes = await app.request(`/api/communities/${community.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ directDeploymentEnabled: false }),
@@ -574,15 +725,10 @@ describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1,
 
   it("returns 403 when a non-admin attempts to change it", async () => {
     const cookie = await authCookieFor(REGISTRANT);
-    const id = "0x8888888888888888888888888888888888888802";
-    await app.request("/api/communities", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify({ ...FULL_COMMUNITY, id }),
-    });
+    const { community } = await registerIdentity(cookie);
 
     const nonAdminCookie = await authCookieFor(NON_ADMIN);
-    const res = await app.request(`/api/communities/${id}`, {
+    const res = await app.request(`/api/communities/${community.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", Cookie: nonAdminCookie },
       body: JSON.stringify({ directDeploymentEnabled: true }),

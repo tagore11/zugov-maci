@@ -1,3 +1,5 @@
+import { useChainId } from "wagmi";
+import { appConstants } from "@/src/config";
 import type { WizardState, DeployPhase, UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 
 const PHASE_LABELS: Record<DeployPhase, string> = {
@@ -9,9 +11,21 @@ const PHASE_LABELS: Record<DeployPhase, string> = {
 
 const ALL_PHASES: DeployPhase[] = ["deploy_sign_up_policy", "deploy_maci", "set_target", "save_community"];
 
-function getBlockExplorerTxUrl(txHash: string, chainId?: number): string {
-  if (chainId === 534351) return `https://sepolia.scrollscan.com/tx/${txHash}`;
-  return `https://scrollscan.com/tx/${txHash}`;
+// Reads the block explorer straight off the wagmi Chain object for the connected network
+// (appConstants[chainId].chain.blockExplorers) instead of hardcoding a single chain's URL —
+// covers every chain in the supportedChains list (providers.tsx) automatically, including
+// Ethereum Sepolia, without needing its own case here.
+export function getBlockExplorerTxUrl(txHash: string, chainId: number | undefined): string {
+  const chainConstants = chainId !== undefined ? appConstants[chainId as keyof typeof appConstants] : undefined;
+  const explorerUrl = chainConstants?.chain.blockExplorers?.default.url;
+  if (explorerUrl) return `${explorerUrl}/tx/${txHash}`;
+  // No known explorer for this chain. In practice this branch shouldn't be reachable for a
+  // real deployment tx — StepNetworkCheck already gates community creation to chains present
+  // in appConstants (currently sepolia/scrollSepolia) — but if it is hit, link to Etherscan
+  // as a last-resort guess rather than producing a dead href. Each chain has its own separate
+  // explorer site (etherscan.io does NOT show non-Ethereum-chain transactions), so this will
+  // be wrong for e.g. a Polygon tx — it's a fallback, not a real answer.
+  return `https://etherscan.io/tx/${txHash}`;
 }
 
 interface Props {
@@ -22,6 +36,7 @@ interface Props {
 
 export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) {
   const { completedPhases, currentPhase, currentTxHash, retryFromPhase } = state;
+  const chainId = useChainId();
 
   const isError = state.step === "error";
   const isBackendFailure = isError && retryFromPhase === "save_community";
@@ -45,12 +60,12 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <div
               key={phase}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm
-                ${isActive ? "bg-purple-900/30 border border-purple-700/50" : ""}
+                ${isActive ? "bg-[#648DAF]/10 border border-[#648DAF]/40" : ""}
                 ${isDone ? "opacity-70" : ""}`}
             >
               {isDone && <span className="text-green-400 w-5 text-center">✓</span>}
               {isActive && (
-                <div className="w-5 h-5 border-2 border-purple-500 border-t-transparent rounded-full animate-spin shrink-0" />
+                <div className="w-5 h-5 border-2 border-[#648DAF] border-t-transparent rounded-full animate-spin shrink-0" />
               )}
               {isPending && <span className="text-gray-600 w-5 text-center">○</span>}
 
@@ -64,10 +79,10 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
 
       {currentTxHash && (
         <a
-          href={getBlockExplorerTxUrl(currentTxHash)}
+          href={getBlockExplorerTxUrl(currentTxHash, chainId)}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-xs text-purple-400 hover:text-purple-300 font-mono truncate"
+          className="block text-xs text-[#86A6C1] hover:text-[#648DAF] font-mono truncate"
         >
           {currentTxHash}
         </a>
@@ -80,8 +95,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <button
               type="button"
               onClick={() => void saveCommunity()}
-              className="w-full py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-                hover:bg-purple-700 transition-colors text-sm"
+              className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+                hover:bg-[#86A6C1] transition-colors text-sm"
             >
               Save Community
             </button>
@@ -89,8 +104,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <button
               type="button"
               onClick={() => void retryDeployment()}
-              className="w-full py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-                hover:bg-purple-700 transition-colors text-sm"
+              className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+                hover:bg-[#86A6C1] transition-colors text-sm"
             >
               Try again
             </button>
@@ -107,8 +122,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
           <button
             type="button"
             onClick={() => void retryDeployment()}
-            className="w-full py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-              hover:bg-purple-700 transition-colors text-sm"
+            className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+              hover:bg-[#86A6C1] transition-colors text-sm"
           >
             Continue deployment
           </button>

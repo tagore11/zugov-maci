@@ -22,6 +22,7 @@ import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/plac
 import { appConstants, type GovernanceType } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
+import { UnionsSection } from "./UnionsSection";
 import { GovernanceActionsList } from "../../components/GovernanceActionsList";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
@@ -104,6 +105,25 @@ export default function CommunityPage() {
     queryKey: ["polls", params.id],
     queryFn: () => fetchPolls(activeSubgraphUrl!, activeGovernanceType!),
     enabled: !!activeSubgraphUrl && !!activeGovernanceType,
+  });
+
+  // Local chapters, event teams, and contributor circles nested under this community
+  // (Lightpaper's "communities and sub-communities" building block). Backend-registered
+  // communities only — the static/mock community lookup has its own affiliatedCommunities field.
+  const { data: subCommunities } = useQuery({
+    queryKey: ["subCommunities", backendCommunity?.id],
+    queryFn: () => communityApi.listChildren(backendCommunity!.id),
+    enabled: !!backendCommunity,
+  });
+
+  // The other half of the parent/child relationship: subCommunities above shows this
+  // community's children looking down; this looks up, so a sub-community's own page can link
+  // back to the community it belongs to (previously only reachable in the parent -> child
+  // direction, never child -> parent).
+  const { data: parentCommunity } = useQuery({
+    queryKey: ["community", backendCommunity?.parentCommunityId],
+    queryFn: () => communityApi.get(backendCommunity!.parentCommunityId!),
+    enabled: !!backendCommunity?.parentCommunityId,
   });
 
   const { data: messageCounts = {} } = useQuery({
@@ -191,6 +211,8 @@ export default function CommunityPage() {
             Back to Communities
           </Link>
 
+          {/* Info: identity fields only — who/what this community is, independent of whether
+              its governance tooling is configured (Design Issue 1's card order). */}
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
             <div className="flex items-center gap-3">
               <span className="text-4xl">{dc.logo || "🏛️"}</span>
@@ -200,66 +222,118 @@ export default function CommunityPage() {
               </div>
             </div>
 
+            {parentCommunity && (
+              <Link
+                to={`/community/${parentCommunity.id}`}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#86A6C1] transition-colors"
+              >
+                <span aria-hidden="true">↳</span>
+                Sub-community of <span className="text-white font-medium">{parentCommunity.displayName}</span>
+              </Link>
+            )}
+
             {dc.description && <p className="text-gray-400 text-sm">{dc.description}</p>}
 
             <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
-              <InfoRow label="Voting mechanism" value="MACI" />
-              <InfoRow label="Sign-up policy" value={dc.signUpPolicyType ?? "—"} />
-              <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
-              <InfoRow label="Voting modes" value={modeNames || "—"} />
               <InfoRow label="Created" value={formatRelativeTime(dc.createdAt)} />
               <InfoRow label="Creator" value={`${dc.creatorAddress.slice(0, 6)}…${dc.creatorAddress.slice(-4)}`} mono />
             </div>
+          </div>
 
-            {dc.subgraphStatus === "failed" ? (
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
-                This community's data failed to index. Member count and poll history are unavailable.
-              </div>
-            ) : dc.subgraphStatus !== "ready" ? (
+          {/* Governance status: "not yet configured" empty state (mirrors the existing
+              subgraphStatus 'pending' tone), or the real config + join/vote panels once set up. */}
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-white">Governance</h2>
+
+            {!dc.governanceConfigured ? (
               <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
-                This community's data is still being indexed. Member count and poll history will appear here once
-                indexing finishes.
-              </div>
-            ) : isMembersError || isPollsError ? (
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
-                Couldn't load this community's data right now. Please try again later.
-              </div>
-            ) : isMembersLoading || isPollsLoading ? (
-              <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500 animate-pulse">
-                Loading member count and poll history…
+                Governance isn't configured for this community yet.
               </div>
             ) : (
-              <div className="rounded-lg border border-gray-700 p-3 space-y-3">
-                <div className="flex items-center gap-4 text-sm text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    <span>{memberCount} members</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <FileText className="w-4 h-4" />
-                    <span>{mappedPolls?.length ?? 0} polls</span>
-                  </div>
+              <>
+                <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
+                  <InfoRow label="Voting mechanism" value="MACI" />
+                  <InfoRow label="Sign-up policy" value={dc.signUpPolicyType ?? "—"} />
+                  <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
+                  <InfoRow label="Voting modes" value={modeNames || "—"} />
                 </div>
-                {!!mappedPolls?.length && (
-                  <ul className="space-y-2">
-                    {mappedPolls.map((poll) => (
-                      <li key={poll.id} className="flex items-center justify-between text-sm">
-                        <div>
-                          <span className="text-gray-200">{poll.title}</span>
-                          <p className="text-xs text-gray-500">
-                            {new Date(poll.startDate).toLocaleDateString()} – {poll.endDate}
-                          </p>
-                        </div>
-                        <span className={pollStatusClass(poll.status)}>{pollStatusLabel(poll.status)}</span>
-                      </li>
-                    ))}
-                  </ul>
+                {dc.subgraphStatus === "failed" ? (
+                  <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                    This community's data failed to index. Member count and poll history are unavailable.
+                  </div>
+                ) : dc.subgraphStatus !== "ready" ? (
+                  <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+                    This community's data is still being indexed. Member count and poll history will appear here once
+                    indexing finishes.
+                  </div>
+                ) : isMembersError || isPollsError ? (
+                  <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                    Couldn't load this community's data right now. Please try again later.
+                  </div>
+                ) : isMembersLoading || isPollsLoading ? (
+                  <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500 animate-pulse">
+                    Loading member count and poll history…
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-gray-700 p-3 space-y-3">
+                    <div className="flex items-center gap-4 text-sm text-gray-400">
+                      <div className="flex items-center gap-1">
+                        <Users className="w-4 h-4" />
+                        <span>{memberCount} members</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <FileText className="w-4 h-4" />
+                        <span>{mappedPolls?.length ?? 0} polls</span>
+                      </div>
+                    </div>
+                    {!!mappedPolls?.length && (
+                      <ul className="space-y-2">
+                        {mappedPolls.map((poll) => (
+                          <li key={poll.id} className="flex items-center justify-between text-sm">
+                            <div>
+                              <span className="text-gray-200">{poll.title}</span>
+                              <p className="text-xs text-gray-500">
+                                {new Date(poll.startDate).toLocaleDateString()} – {poll.endDate}
+                              </p>
+                            </div>
+                            <span className={pollStatusClass(poll.status)}>{pollStatusLabel(poll.status)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
             )}
 
-            <JoinSection communityId={dc.id} connected={!!address} rpcUrl={rpcUrl} />
+            <JoinSection
+              communityId={dc.id}
+              contractAddress={dc.contractAddress}
+              connected={!!address}
+              rpcUrl={rpcUrl}
+            />
           </div>
+
+          {!!subCommunities?.length && (
+            <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+              <h2 className="text-lg font-semibold text-white mb-3">Sub-communities</h2>
+              <div className="flex flex-wrap gap-3">
+                {subCommunities.map((child) => (
+                  <Link
+                    key={child.id}
+                    to={`/community/${child.id}`}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-700
+                      hover:border-[#648DAF] hover:bg-gray-800 transition-colors"
+                  >
+                    <span className="text-xl">{child.logo || "🏛️"}</span>
+                    <span className="font-medium text-white">{child.displayName}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <UnionsSection communityId={dc.id} />
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
             <GovernanceActionsList communityId={dc.id} connected={!!address} />
@@ -288,33 +362,30 @@ export default function CommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-950 text-white">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-        >
+        <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm font-medium">Back to Communities</span>
         </Link>
 
         {/* Community Header */}
-        <div className="bg-white rounded-xl border border-gray-200 p-8 mb-6">
+        <div className="bg-gray-900 rounded-xl border border-gray-700 p-8 mb-6">
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-start gap-4">
               <div className="text-5xl">{community.logo}</div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{community.name}</h1>
-                <span className="inline-block px-3 py-1 text-sm font-medium bg-indigo-100 text-indigo-700 rounded">
+                <h1 className="text-3xl font-bold text-white mb-2">{community.name}</h1>
+                <span className="inline-block px-3 py-1 text-sm font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                   {community.category}
                 </span>
               </div>
             </div>
             <button
               onClick={() => setShowCreateProposal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+              className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors"
             >
               <Plus className="w-5 h-5" />
               Create Proposal
@@ -323,44 +394,44 @@ export default function CommunityPage() {
 
           {/* Summary & Description */}
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Summary</h2>
-            <p className="text-gray-700 mb-4">{community.summary}</p>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Description</h2>
-            <p className="text-gray-600">{community.description}</p>
+            <h2 className="text-lg font-semibold text-white mb-2">Summary</h2>
+            <p className="text-gray-300 mb-4">{community.summary}</p>
+            <h2 className="text-lg font-semibold text-white mb-2">Description</h2>
+            <p className="text-gray-400">{community.description}</p>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <Users className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{memberCount.toLocaleString()}</p>
-              <p className="text-sm text-gray-600">Members</p>
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
+              <Users className="w-6 h-6 text-[#648DAF] mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{memberCount.toLocaleString()}</p>
+              <p className="text-sm text-gray-400">Members</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
               <FileText className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{displayProposals.length}</p>
-              <p className="text-sm text-gray-600">Proposals</p>
+              <p className="text-2xl font-bold text-white">{displayProposals.length}</p>
+              <p className="text-sm text-gray-400">Proposals</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <MessageSquare className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{FORUM_POSTS.length}</p>
-              <p className="text-sm text-gray-600">Forum Posts</p>
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
+              <MessageSquare className="w-6 h-6 text-[#86A6C1] mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{FORUM_POSTS.length}</p>
+              <p className="text-sm text-gray-400">Forum Posts</p>
             </div>
           </div>
 
           {/* Affiliated Communities */}
           {community.affiliatedCommunities && community.affiliatedCommunities.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Affiliated Communities</h2>
+              <h2 className="text-lg font-semibold text-white mb-3">Affiliated Communities</h2>
               <div className="flex flex-wrap gap-3">
                 {community.affiliatedCommunities.map((affiliated) => (
                   <Link
                     key={affiliated.id}
                     to={`/community/${affiliated.id}`}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-xl">{affiliated.logo}</span>
-                    <span className="font-medium text-gray-900">{affiliated.name}</span>
+                    <span className="font-medium text-white">{affiliated.name}</span>
                   </Link>
                 ))}
               </div>
@@ -369,14 +440,14 @@ export default function CommunityPage() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="border-b border-gray-200 flex">
+        <div className="bg-gray-900 rounded-xl border border-gray-700 overflow-hidden">
+          <div className="border-b border-gray-700 flex">
             <button
               onClick={() => setActiveTab("proposals")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "proposals"
-                  ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
               Proposals
@@ -385,8 +456,8 @@ export default function CommunityPage() {
               onClick={() => setActiveTab("forum")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "forum"
-                  ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
               Forum
@@ -411,15 +482,15 @@ export default function CommunityPage() {
                         : storedVote.rankedOptions.join(" > ")
                       : null;
                   return (
-                    <div key={proposal.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div key={proposal.id} className="border border-gray-700 rounded-lg overflow-hidden">
                       <div
-                        className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                        className="p-4 hover:bg-gray-800/60 transition-colors cursor-pointer"
                         onClick={() => setExpandedProposal(expandedProposal === proposal.id ? null : proposal.id)}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-lg text-gray-900">{proposal.title}</h3>
+                              <h3 className="font-semibold text-lg text-white">{proposal.title}</h3>
                               {expandedProposal === proposal.id ? (
                                 <ChevronUp className="w-5 h-5 text-gray-400" />
                               ) : (
@@ -432,35 +503,35 @@ export default function CommunityPage() {
                               >
                                 {pollStatusLabel(proposal.status).toUpperCase()}
                               </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                              <span className="px-2 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded">
                                 {proposal.type.toUpperCase()}
                               </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">
+                              <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                                 {proposal.privacy.toUpperCase()}
                               </span>
                               {proposal.eligible ? (
-                                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-green-900/30 text-green-300 rounded flex items-center gap-1">
                                   <CheckCircle className="w-3 h-3" />
                                   ELIGIBLE
                                 </span>
                               ) : (
-                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-red-900/30 text-red-300 rounded flex items-center gap-1">
                                   <XCircle className="w-3 h-3" />
                                   NOT ELIGIBLE
                                 </span>
                               )}
                               {proposal.votingMechanism && (
-                                <span className="px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                                <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                                   {proposal.votingMechanism.toUpperCase()}
                                 </span>
                               )}
                               {proposal.weighted && (
-                                <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">
+                                <span className="px-2 py-1 text-xs font-medium bg-yellow-900/30 text-yellow-300 rounded">
                                   WEIGHTED
                                 </span>
                               )}
                               {storedVote && (
-                                <span className="px-2 py-1 text-xs font-medium bg-emerald-100 text-emerald-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-emerald-900/30 text-emerald-300 rounded flex items-center gap-1">
                                   <CheckCircle className="w-3 h-3" />
                                   VOTED
                                 </span>
@@ -468,7 +539,7 @@ export default function CommunityPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between text-sm text-gray-600">
+                        <div className="flex items-center justify-between text-sm text-gray-400">
                           <div className="flex items-center gap-4">
                             <span className="flex items-center gap-1">
                               <Users className="w-4 h-4" />
@@ -488,47 +559,47 @@ export default function CommunityPage() {
 
                       {/* Expanded Details */}
                       {expandedProposal === proposal.id && (
-                        <div className="px-4 pb-4 border-t border-gray-200 bg-gray-50">
+                        <div className="px-4 pb-4 border-t border-gray-700 bg-gray-800/40">
                           <div className="pt-4 space-y-4">
                             {voteLabel && (
-                              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                              <div className="flex items-center gap-2 p-3 bg-emerald-900/20 border border-emerald-700/40 rounded-lg">
+                                <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                                 <div>
-                                  <span className="text-xs font-medium text-emerald-700 uppercase tracking-wide">
+                                  <span className="text-xs font-medium text-emerald-300 uppercase tracking-wide">
                                     Your vote
                                   </span>
-                                  <p className="text-sm font-semibold text-emerald-900">{voteLabel}</p>
+                                  <p className="text-sm font-semibold text-emerald-200">{voteLabel}</p>
                                 </div>
                               </div>
                             )}
 
                             {proposal.description && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
-                                <p className="text-gray-700">{proposal.description}</p>
+                                <h4 className="font-semibold text-white mb-2">Description</h4>
+                                <p className="text-gray-300">{proposal.description}</p>
                               </div>
                             )}
 
                             {proposal.eligibility && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Eligibility Criteria</h4>
-                                <p className="text-gray-700">{proposal.eligibility}</p>
+                                <h4 className="font-semibold text-white mb-2">Eligibility Criteria</h4>
+                                <p className="text-gray-300">{proposal.eligibility}</p>
                               </div>
                             )}
 
                             {proposal.options && proposal.options.length > 0 && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Voting Options</h4>
+                                <h4 className="font-semibold text-white mb-2">Voting Options</h4>
                                 <div className="space-y-2">
                                   {proposal.options.map((option: string, idx: number) => (
                                     <div
                                       key={idx}
-                                      className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
+                                      className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-700 rounded-lg"
                                     >
-                                      <div className="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full font-semibold text-sm">
+                                      <div className="w-8 h-8 flex items-center justify-center bg-[#648DAF]/20 text-[#86A6C1] rounded-full font-semibold text-sm">
                                         {idx + 1}
                                       </div>
-                                      <span className="text-gray-900">{option}</span>
+                                      <span className="text-white">{option}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -538,12 +609,12 @@ export default function CommunityPage() {
                             {proposal.startDate && proposal.endDate && (
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <h4 className="font-semibold text-gray-900 mb-1">Start Date</h4>
-                                  <p className="text-gray-700">{new Date(proposal.startDate).toLocaleString()}</p>
+                                  <h4 className="font-semibold text-white mb-1">Start Date</h4>
+                                  <p className="text-gray-300">{new Date(proposal.startDate).toLocaleString()}</p>
                                 </div>
                                 <div>
-                                  <h4 className="font-semibold text-gray-900 mb-1">End Date</h4>
-                                  <p className="text-gray-700">{new Date(proposal.endDate).toLocaleString()}</p>
+                                  <h4 className="font-semibold text-white mb-1">End Date</h4>
+                                  <p className="text-gray-300">{new Date(proposal.endDate).toLocaleString()}</p>
                                 </div>
                               </div>
                             )}
@@ -561,10 +632,10 @@ export default function CommunityPage() {
                 {FORUM_POSTS.map((post) => (
                   <div
                     key={post.id}
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="p-4 border border-gray-700 rounded-lg hover:bg-gray-800/60 transition-colors cursor-pointer"
                   >
-                    <h3 className="font-semibold text-lg text-gray-900 mb-2">{post.title}</h3>
-                    <div className="flex items-center justify-between text-sm text-gray-600">
+                    <h3 className="font-semibold text-lg text-white mb-2">{post.title}</h3>
+                    <div className="flex items-center justify-between text-sm text-gray-400">
                       <span>{post.author}</span>
                       <div className="flex items-center gap-4">
                         <span className="flex items-center gap-1">

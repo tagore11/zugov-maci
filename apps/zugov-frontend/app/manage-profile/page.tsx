@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Header } from "../components/Header";
-import { Shield, Users, Award } from "lucide-react";
+import { Shield, Users, Award, Check } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
@@ -10,6 +10,8 @@ import * as communityApi from "@/src/services/communityApi";
 import { useMaci } from "@/src/context/MaciContext";
 import * as credentialApi from "@/src/services/credentialApi";
 import { useCredentialScan } from "@/src/hooks/useCredentialScan";
+import { CustodialWalletCard } from "./CustodialWalletCard";
+import { AwaitingActions } from "./AwaitingActions";
 
 /** Fetches every registered community across all pages, not just the first. */
 async function fetchAllCommunities(): Promise<communityApi.Community[]> {
@@ -30,17 +32,17 @@ const PROTOCOL_LABELS: Record<credentialApi.Protocol, { name: string; icon: stri
 };
 
 const STATUS_STYLES: Record<credentialApi.CredentialStatus, { border: string; text: string; label: string }> = {
-  verified: { border: "border-green-200 bg-green-50", text: "text-green-600", label: "Verified" },
-  unverified: { border: "border-gray-200 bg-gray-50", text: "text-gray-500", label: "Not Verified" },
-  expired: { border: "border-amber-200 bg-amber-50", text: "text-amber-600", label: "Expired" },
+  verified: { border: "border-[#64AF8C]/40 bg-[#64AF8C]/10", text: "text-[#64AF8C]", label: "Verified" },
+  unverified: { border: "border-gray-700 bg-gray-800/40", text: "text-gray-500", label: "Not Verified" },
+  expired: { border: "border-amber-700/40 bg-amber-900/20", text: "text-amber-400", label: "Expired" },
 };
 
 // A check that failed to complete is distinct from a genuine "unverified" result (spec.md edge
 // case: "not a silent failure and not a false 'unverified'") — its own style, not folded into
 // STATUS_STYLES's three real credential states.
 const CHECK_FAILED_STYLE = {
-  border: "border-orange-200 bg-orange-50",
-  text: "text-orange-600",
+  border: "border-orange-700/40 bg-orange-900/20",
+  text: "text-orange-400",
   label: "Check Unavailable",
 };
 
@@ -87,20 +89,24 @@ export default function ManageProfilePage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-950 text-white">
       <Header />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Manage Profile</h1>
-          <p className="text-gray-600">View your identity badges and community affiliations</p>
+      <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white mb-1">Manage Profile</h1>
+          <p className="text-sm text-gray-400">Your identity, wallet, and community affiliations</p>
         </div>
 
+        <AwaitingActions address={address} />
+
+        <CustodialWalletCard />
+
         {/* Identity Badges Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Shield className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Identity Badges</h2>
+        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Shield className="w-5 h-5 text-[#86A6C1]" />
+            <h2 className="text-lg font-semibold text-white">Identity Badges</h2>
           </div>
 
           {!address ? (
@@ -119,26 +125,20 @@ export default function ManageProfilePage() {
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{label.icon}</span>
                         <div>
-                          <h3 className="font-semibold text-gray-900">{label.name}</h3>
+                          <h3 className="font-semibold text-white">{label.name}</h3>
                           <span className={`text-xs font-medium ${style.text}`}>{style.label}</span>
                         </div>
                       </div>
                       {status === "verified" && (
-                        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                          <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                              fillRule="evenodd"
-                              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
+                        <div className="w-6 h-6 bg-[#64AF8C] rounded-full flex items-center justify-center">
+                          <Check className="w-4 h-4 text-white" />
                         </div>
                       )}
                     </div>
                     <button
                       onClick={() => void handleRecheck(protocol)}
                       disabled={isRechecking}
-                      className="w-full mt-2 px-4 py-2 text-sm font-medium text-indigo-600 border border-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors disabled:opacity-50"
+                      className="w-full mt-2 px-4 py-2 text-sm font-medium text-[#86A6C1] border border-[#648DAF] rounded-[6px] hover:bg-[#648DAF]/10 transition-colors disabled:opacity-50"
                     >
                       {isRechecking ? "Checking…" : "Re-check"}
                     </button>
@@ -150,10 +150,10 @@ export default function ManageProfilePage() {
         </div>
 
         {/* Community Affiliations Section */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <Users className="w-6 h-6 text-indigo-600" />
-            <h2 className="text-xl font-semibold text-gray-900">Community Affiliations</h2>
+        <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <Users className="w-5 h-5 text-[#86A6C1]" />
+            <h2 className="text-lg font-semibold text-white">Community Affiliations</h2>
           </div>
 
           {!maciUserId ? (
@@ -161,35 +161,30 @@ export default function ManageProfilePage() {
           ) : memberCommunities.length === 0 ? (
             <p className="text-sm text-gray-500">You are not registered in any communities yet.</p>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3">
               {memberCommunities.map((community) => (
                 <Link
                   key={community.id}
                   to={`/community/${community.id}`}
-                  className="block p-4 border border-gray-200 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all cursor-pointer"
+                  className="block p-4 rounded-lg border border-gray-700 hover:border-[#648DAF] hover:bg-gray-800/60 transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-4">
                       <div className="text-3xl">{community.logo ?? ""}</div>
                       <div>
-                        <h3 className="font-semibold text-lg text-gray-900 hover:text-indigo-600 transition-colors">
-                          {community.displayName}
-                        </h3>
-                        <p className="text-sm text-gray-600">Member</p>
+                        <h3 className="font-semibold text-white">{community.displayName ?? community.id}</h3>
+                        <p className="text-sm text-gray-400">Member</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Award className="w-5 h-5 text-yellow-500" />
-                      <span className="text-sm font-medium text-gray-700">— / —</span>
+                      <span className="text-sm font-medium text-gray-300">— / —</span>
                     </div>
                   </div>
 
                   {/* Reputation Bar */}
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-indigo-500 to-purple-600 h-2 rounded-full"
-                      style={{ width: "0%" }}
-                    />
+                  <div className="w-full bg-gray-800 rounded-full h-2">
+                    <div className="bg-[#648DAF] h-2 rounded-full" style={{ width: "0%" }} />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Reputation Score: —</p>
                 </Link>

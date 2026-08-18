@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useAccount, useWalletClient } from "wagmi";
-import { BrowserProvider, JsonRpcSigner, type Eip1193Provider } from "ethers";
+import type { BrowserProvider } from "ethers";
+import { getSignerFromWalletClient } from "../services/wagmiSigner";
 import { joinPoll } from "@maci-protocol/sdk/browser";
 import { Poll__factory } from "../poll-factory-shim";
 import { useMaci } from "../context/MaciContext";
@@ -85,9 +86,7 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
       setJoiningPollId(pollAddress);
       setJoinPollError(null);
 
-      if (!walletClient) throw new Error("Wallet client not available");
-      const provider = new BrowserProvider(walletClient.transport as unknown as Eip1193Provider);
-      const signer = new JsonRpcSigner(provider, walletClient.account.address);
+      const signer = getSignerFromWalletClient(walletClient);
 
       try {
         const startBlock = await fetchStartBlock(subgraphUrl, governanceType);
@@ -113,7 +112,7 @@ export function useJoinPoll(governanceType: GovernanceType | undefined) {
         // attempt to recover by querying the event directly from the receipt block.
         if (isEthGetLogsError(err)) {
           try {
-            const currentBlock = await provider.getBlockNumber();
+            const currentBlock = await signer.provider.getBlockNumber();
             const [pubKeyX, pubKeyY] = maciKeypair.publicKey.raw;
             const fallbackData = await getPollJoinedDataFromReceipt(
               pollAddress,

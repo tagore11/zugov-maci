@@ -1,6 +1,6 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { communities, governanceActions, type GovernanceAction } from "../db/schema.js";
+import { maciGovernanceConfigs, governanceActions, type GovernanceAction } from "../db/schema.js";
 import { runTallyPipeline } from "./coordinatorClient.js";
 import { isAuthorized } from "./membershipService.js";
 import { GovernanceActionNotFoundError } from "./governanceActionService.js";
@@ -92,13 +92,13 @@ export async function triggerTally(communityId: string, actionId: string, wallet
     throw new PollNotClosedError();
   }
 
-  const [community] = await db
-    .select({ id: communities.id, chainId: communities.chainId })
-    .from(communities)
-    .where(eq(communities.id, communityId))
+  const [governanceConfig] = await db
+    .select({ contractAddress: maciGovernanceConfigs.contractAddress, chainId: maciGovernanceConfigs.chainId })
+    .from(maciGovernanceConfigs)
+    .where(eq(maciGovernanceConfigs.communityId, communityId))
     .limit(1);
-  if (!community) throw new GovernanceActionNotFoundError();
-  if (community.chainId !== SEPOLIA_CHAIN_ID) throw new UnsupportedChainForTallyError();
+  if (!governanceConfig || !governanceConfig.contractAddress) throw new GovernanceActionNotFoundError();
+  if (governanceConfig.chainId !== SEPOLIA_CHAIN_ID) throw new UnsupportedChainForTallyError();
 
   const now = Math.floor(Date.now() / 1000);
   await db
@@ -106,7 +106,7 @@ export async function triggerTally(communityId: string, actionId: string, wallet
     .set({ tallyStatus: "pending", tallyRequestedAt: now, tallyError: null, tallyResult: null })
     .where(eq(governanceActions.id, actionId));
 
-  void runTallyInBackground(actionId, community.id, action.pollId, action.tallyMechanism);
+  void runTallyInBackground(actionId, governanceConfig.contractAddress, action.pollId, action.tallyMechanism);
 }
 
 async function runTallyInBackground(

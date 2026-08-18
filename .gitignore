@@ -189,3 +189,4 @@ packages/circuits/rapidsnark/
 
 # Coordinator secret key material — never commit
 KEYS.md
+.gstack/
