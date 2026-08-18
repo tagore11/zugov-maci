@@ -1,9 +1,8 @@
 import { useAccount } from "wagmi";
 import { useCreateCommunity } from "@/src/hooks/useCreateCommunity";
 import type { WizardStep } from "@/src/hooks/useCreateCommunity";
-import { StepMechanism } from "./StepMechanism";
 import { StepCommunityInfo } from "./StepCommunityInfo";
-import { StepMaciConfig } from "./StepMaciConfig";
+import { StepCommunitySetup } from "./StepCommunitySetup";
 import { StepReview } from "./StepReview";
 import { StepNetworkCheck } from "./StepNetworkCheck";
 import { StepDeploying } from "./StepDeploying";
@@ -13,9 +12,8 @@ import { SiweGate } from "@/app/components/SiweGate";
 import type { Hex } from "viem";
 
 const STEP_LABELS: Record<WizardStep, string> = {
-  mechanism: "Mechanism",
   community_info: "Community Info",
-  maci_config: "MACI Config",
+  community_setup: "Community Setup",
   network_check: "Network Check",
   review: "Review",
   deploying: "Deploying",
@@ -24,9 +22,8 @@ const STEP_LABELS: Record<WizardStep, string> = {
 };
 
 const VISIBLE_STEPS: WizardStep[] = [
-  "mechanism",
   "community_info",
-  "maci_config",
+  "community_setup",
   "network_check",
   "review",
   "deploying",
@@ -39,9 +36,8 @@ export function CreateCommunityWizard() {
     state,
     goToStep,
     goBack,
-    setMechanism,
     setCommunityInfo,
-    setMaciConfig,
+    setCommunitySetup,
     startNetworkCheck,
     startDeployment,
     retryDeployment,
@@ -64,7 +60,7 @@ export function CreateCommunityWizard() {
     <SiweGate message="Sign in to register your community globally">
       <div className="space-y-5">
         {/* Recovery banner */}
-        {state.step === "mechanism" && checkpoint && (
+        {state.step === "community_info" && checkpoint && (
           <div className="rounded-lg border border-yellow-600/50 bg-yellow-900/20 p-3 text-sm text-yellow-300 flex items-center justify-between gap-3">
             <span>You have an unfinished community creation.</span>
             <div className="flex gap-2 shrink-0">
@@ -95,7 +91,7 @@ export function CreateCommunityWizard() {
                       isDone ? "bg-purple-500" : isActive ? "bg-purple-400" : "bg-gray-700"
                     }`}
                   />
-                  {idx < 4 && <div className="w-0.5" />}
+                  {idx < 3 && <div className="w-0.5" />}
                 </div>
               );
             })}
@@ -110,8 +106,6 @@ export function CreateCommunityWizard() {
         )}
 
         {/* Step content */}
-        {state.step === "mechanism" && <StepMechanism setMechanism={setMechanism} />}
-
         {state.step === "community_info" && (
           <StepCommunityInfo
             initialName={state.config.displayName}
@@ -121,12 +115,13 @@ export function CreateCommunityWizard() {
           />
         )}
 
-        {state.step === "maci_config" && (
-          <StepMaciConfig
+        {state.step === "community_setup" && (
+          <StepCommunitySetup
+            initialMembershipPolicy={state.config.membershipPolicy}
+            initialSignUpPolicy={state.config.signUpPolicy}
             initialPolicies={state.config.allowedPolicies}
             initialModes={state.config.supportedModes}
-            initialSignUpPolicy={state.config.signUpPolicy}
-            setMaciConfig={setMaciConfig}
+            setCommunitySetup={setCommunitySetup}
             goBack={goBack}
           />
         )}

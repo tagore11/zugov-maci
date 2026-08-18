@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import type { UseCreateCommunityResult, WizardState } from "@/src/hooks/useCreateCommunity";
@@ -22,6 +23,7 @@ const POLICY_TYPE_LABELS: Record<string, string> = {
 
 export function StepReview({ state, startDeployment, goBack }: Props) {
   const { address } = useAccount();
+  const [showTechnical, setShowTechnical] = useState(false);
   const config = state.config;
 
   const policyNames = (config.allowedPolicies ?? [])
@@ -38,28 +40,58 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
 
   const signUpPolicyDetail = config.signUpPolicy ? getPolicyDetail(config.signUpPolicy) : undefined;
 
+  const joinDescription =
+    config.membershipPolicy === "approval"
+      ? "Organizers approve new residents before they can join."
+      : "Anyone can join instantly.";
+
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-semibold text-white">Review & Deploy</h2>
-      <p className="text-sm text-gray-400">Confirm your community settings before signing the transactions.</p>
+      <p className="text-sm text-gray-400">
+        Creating <span className="text-white font-medium">{config.displayName ?? "your community"}</span> —{" "}
+        {joinDescription}
+      </p>
 
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 divide-y divide-gray-700 text-sm">
         <Row label="Community name" value={config.displayName ?? "–"} />
         {config.description && <Row label="Description" value={config.description} />}
-        <Row label="Voting mechanism" value="MACI" />
-        <Row label="Sign-up policy" value={signUpPolicyLabel} />
-        {signUpPolicyDetail && <Row label="Policy details" value={signUpPolicyDetail} mono />}
-        <Row label="Allowed poll policies" value={policyNames || "–"} />
-        <Row label="Voting modes" value={modeNames || "–"} />
-        <Row label="Community admin" value={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "–"} mono />
-        <Row label="Transactions required" value="3 (deploy policy, deploy MACI, set target)" />
+        <Row label="Who can join" value={joinDescription} />
+        <Row label="Roles" value={(config.tiers ?? []).map((t) => t.label).join(", ") || "–"} />
+        <Row label="You are" value="Organizer" />
+      </div>
+
+      <div className="rounded-lg border border-gray-700">
+        <button
+          type="button"
+          onClick={() => setShowTechnical((v) => !v)}
+          aria-expanded={showTechnical}
+          className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-sm text-gray-300
+            hover:text-white transition-colors"
+        >
+          <span>Technical details</span>
+          <span className="text-gray-500" aria-hidden="true">
+            {showTechnical ? "−" : "+"}
+          </span>
+        </button>
+        {showTechnical && (
+          <div className="border-t border-gray-700 divide-y divide-gray-700 text-sm">
+            <Row label="Voting mechanism" value="MACI" />
+            <Row label="Sign-up policy" value={signUpPolicyLabel} />
+            {signUpPolicyDetail && <Row label="Policy details" value={signUpPolicyDetail} mono />}
+            <Row label="Allowed poll policies" value={policyNames || "–"} />
+            <Row label="Voting modes" value={modeNames || "–"} />
+            <Row label="Community admin" value={address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "–"} mono />
+            <Row label="Transactions required" value="3 (deploy policy, deploy MACI, set target)" />
+          </div>
+        )}
       </div>
 
       <div className="flex gap-3 pt-2">
         <button
           type="button"
           onClick={goBack}
-          className="flex-1 py-2 px-4 rounded-lg border border-gray-600 text-gray-300
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg border border-gray-600 text-gray-300
             hover:bg-gray-700 transition-colors text-sm"
         >
           Back
@@ -67,7 +99,7 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
         <button
           type="button"
           onClick={() => void startDeployment()}
-          className="flex-1 py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
             hover:bg-purple-700 transition-colors text-sm"
         >
           Deploy

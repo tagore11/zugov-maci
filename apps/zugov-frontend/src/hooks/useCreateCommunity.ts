@@ -1,22 +1,49 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount, useChainId } from "wagmi";
-import { BrowserProvider, Contract, ContractFactory, type Signer } from "ethers";
+import { Contract, ContractFactory, type Signer } from "ethers";
 import type { Hex } from "viem";
 import { MACI__factory } from "@maci-protocol/contracts/typechain-types";
 import { generateEmptyBallotRoots } from "@maci-protocol/sdk";
 import { PublicKey } from "@maci-protocol/domainobjs";
 import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type PollDeployConfig } from "@/src/config";
 import { STATE_TREE_DEPTH } from "@/src/constants";
-import { DEFAULT_MEMBERSHIP_TIERS } from "@/app/lib/placeholder-data";
 import { deployPolicyContract, SET_TARGET_ABI } from "@/src/services/policyDeploy";
+import { getSignerFromWagmiConfig } from "@/src/services/wagmiSigner";
+import { wagmiConfig } from "@/src/services/wagmiConfig";
 import {
   savePendingCheckpoint,
   getPendingCheckpoint,
   clearPendingCheckpoint,
   type DeployPhase,
   type MACIDeploymentConfig,
+  type MembershipPolicy,
   type PendingDeploymentCheckpoint,
+  type TierDraft,
 } from "@/src/services/checkpointStore";
+
+// Default role set for the communities-first wizard (design review Pass 7): "Resident" and
+// "Organizer" are plain-language presets over the existing tier permission flags, not a new
+// permission model. Organizer can manage membership so they can approve join requests under
+// the "approval-required" membership policy below.
+// Frozen: this is a shared module-level default, not a per-call fresh object. Every community
+// creation reads the same reference — mutating it (e.g. accidentally in a future edit) would
+// silently corrupt the default tiers for every subsequent wizard run in the same session.
+export const RESIDENT_ORGANIZER_TIERS: TierDraft[] = Object.freeze([
+  Object.freeze({ label: "Resident", canCreateGovernanceActions: false, canVote: true, canManageMembership: false }),
+  Object.freeze({ label: "Organizer", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }),
+]) as TierDraft[];
+
+// Sensible zero-config defaults for the collapsed Advanced section — FreeForAll is the only
+// sign-up policy actually deployed on Sepolia today (see TODOS.md: MerkleProof factory isn't
+// deployed yet), and NON_QV is the simplest, most broadly understandable voting style. Frozen
+// for the same reason as RESIDENT_ORGANIZER_TIERS above — this is a shared reference, not a
+// fresh object per call.
+const DEFAULT_ADVANCED_CONFIG: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes"> =
+  Object.freeze({
+    signUpPolicy: Object.freeze({ type: "FreeForAll" }),
+    allowedPolicies: Object.freeze([1]),
+    supportedModes: Object.freeze([1]),
+  }) as Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
 
 export type { DeployPhase };
 import * as communityApi from "@/src/services/communityApi";
@@ -24,9 +51,8 @@ import { useSiwe } from "@/src/hooks/useSiwe";
 import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZuGovRegistry";
 
 export type WizardStep =
-  | "mechanism"
   | "community_info"
-  | "maci_config"
+  | "community_setup"
   | "network_check"
   | "review"
   | "deploying"
@@ -61,9 +87,11 @@ export interface UseCreateCommunityResult {
   state: WizardState;
   goToStep: (step: WizardStep) => void;
   goBack: () => void;
-  setMechanism: (mechanism: "maci") => void;
   setCommunityInfo: (name: string, description: string) => void;
-  setMaciConfig: (config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">) => void;
+  setCommunitySetup: (config: {
+    membershipPolicy: MembershipPolicy;
+    advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
+  }) => void;
   startNetworkCheck: () => Promise<void>;
   startDeployment: () => Promise<void>;
   retryDeployment: () => Promise<void>;
@@ -74,9 +102,8 @@ export interface UseCreateCommunityResult {
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const STEP_ORDER: WizardStep[] = [
-  "mechanism",
   "community_info",
-  "maci_config",
+  "community_setup",
   "network_check",
   "review",
   "deploying",
@@ -86,7 +113,7 @@ const STEP_ORDER: WizardStep[] = [
 const ALL_PHASES: DeployPhase[] = ["deploy_sign_up_policy", "deploy_maci", "set_target", "save_community"];
 
 const INITIAL_STATE: WizardState = {
-  step: "mechanism",
+  step: "community_info",
   config: {},
   registryStatus: undefined,
   summary: undefined,
@@ -101,10 +128,7 @@ const INITIAL_STATE: WizardState = {
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 async function getEthersSigner(): Promise<Signer> {
-  if (!window.ethereum) throw new Error("No wallet found");
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const provider = new BrowserProvider(window.ethereum as any);
-  return provider.getSigner();
+  return getSignerFromWagmiConfig(wagmiConfig);
 }
 
 /**
@@ -210,31 +234,31 @@ export function useCreateCommunity(): UseCreateCommunityResult {
     });
   }, []);
 
-  const setMechanism = useCallback((_mechanism: "maci") => {
-    setState((prev) => ({ ...prev, step: "community_info" }));
-  }, []);
-
   const setCommunityInfo = useCallback((displayName: string, description: string) => {
     setState((prev) => ({
       ...prev,
-      config: {
-        ...prev.config,
-        displayName,
-        description,
-        membershipPolicy: "open",
-        tierChangesRequireVote: false,
-        tiers: DEFAULT_MEMBERSHIP_TIERS,
-        defaultTierLabel: "Regular",
-      },
-      step: "maci_config",
+      config: { ...prev.config, displayName, description },
+      step: "community_setup",
     }));
   }, []);
 
-  const setMaciConfig = useCallback(
-    (config: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">) => {
+  const setCommunitySetup = useCallback(
+    (config: {
+      membershipPolicy: MembershipPolicy;
+      advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
+    }) => {
+      const advanced = config.advanced ?? DEFAULT_ADVANCED_CONFIG;
       setState((prev) => ({
         ...prev,
-        config: { ...prev.config, ...config, stateTreeDepth: STATE_TREE_DEPTH },
+        config: {
+          ...prev.config,
+          ...advanced,
+          membershipPolicy: config.membershipPolicy,
+          tierChangesRequireVote: false,
+          tiers: RESIDENT_ORGANIZER_TIERS,
+          defaultTierLabel: "Resident",
+          stateTreeDepth: STATE_TREE_DEPTH,
+        },
         step: "network_check",
       }));
     },
@@ -460,9 +484,8 @@ export function useCreateCommunity(): UseCreateCommunityResult {
     state: { ...state, registryStatus: registryForState },
     goToStep,
     goBack,
-    setMechanism,
     setCommunityInfo,
-    setMaciConfig,
+    setCommunitySetup,
     startNetworkCheck,
     startDeployment,
     retryDeployment,
