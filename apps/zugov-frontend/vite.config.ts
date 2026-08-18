@@ -15,6 +15,10 @@ export default defineConfig({
         __dirname,
         "node_modules/vite-plugin-node-polyfills/shims/buffer",
       ),
+      "vite-plugin-node-polyfills/shims/process": resolve(
+        __dirname,
+        "node_modules/vite-plugin-node-polyfills/shims/process",
+      ),
       // @maci-protocol/contracts/typechain-types is used by the SDK browser bundle.
       // Redirect to a local shim that provides the factories actually used at runtime.
       "@maci-protocol/contracts/typechain-types": resolve(__dirname, "src/poll-factory-shim.ts"),
