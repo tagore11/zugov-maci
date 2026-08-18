@@ -13,3 +13,9 @@ authorization patterns) and the current data model are defined there.
 Do not deviate without explicit user approval.
 When a plan or review establishes a new durable architectural decision, add it to
 ENGINEERING.md's Decisions Log, not just the feature's own planning doc.
+
+## Local Development
+
+See LOCAL_DEV.md for verified install, build, and test steps for apps/zugov-backend and
+apps/zugov-frontend (scoped install, the workspace-package build step zugov-frontend needs,
+env vars, database setup, and common gotchas). Keep it in sync if any of those steps change.
