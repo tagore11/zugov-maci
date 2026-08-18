@@ -2,6 +2,11 @@
 # workspace:* dependencies, but the install step still needs the root
 # lockfile/workspace manifest to resolve via pnpm).
 FROM node:22-alpine AS build
+# The root package.json pins packageManager to pnpm@9.15.9 (for local dev/CI), which
+# Corepack honors over the `prepare --activate` version below unless project-spec
+# resolution is disabled — otherwise this build silently runs pnpm 9, which doesn't
+# have the --legacy deploy flag used further down (see run 32140065143).
+ENV COREPACK_ENABLE_PROJECT_SPEC=0
 RUN corepack enable && corepack prepare pnpm@10.30.2 --activate
 # The workspace root pins engines.node=20 for its Hardhat/circuits tooling, which this
 # app (engines.node>=22) doesn't use — bypass pnpm's engine check rather than lowering
