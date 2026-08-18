@@ -34,12 +34,14 @@ export function Providers({ children }: { children: ReactNode }) {
         },
         defaultChain: sepolia,
         supportedChains: [...CHAINS],
-        // DESIGN.md: dark base + steel-blue accent — the login modal is Privy-hosted (not our
-        // own Tailwind classes), so this appearance config is the only lever we have to keep it
-        // from reading as a generic default-purple auth widget bolted onto a civic-tooling app.
+        // DESIGN.md: dark base + terracotta "Adobe" accent — the login modal is Privy-hosted
+        // (not our own Tailwind classes), so this appearance config is the only lever we have to
+        // keep it from reading as a generic default-purple auth widget bolted onto a civic-tooling
+        // app. Matches globals.css's dark-mode --accent (light-mode CSS vars don't reach a
+        // Privy-hosted modal, so this fixed value assumes the modal itself renders dark).
         appearance: {
           theme: "dark",
-          accentColor: "#648DAF",
+          accentColor: "#C1633B",
           logo: "/logo.svg",
         },
       }}

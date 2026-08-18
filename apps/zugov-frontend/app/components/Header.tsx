@@ -21,8 +21,8 @@ export function Header() {
           <div className="flex items-center gap-8">
             <Link to="/" className="flex items-center gap-2.5">
               <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-                <rect width="32" height="32" rx="7" fill="#16161a" />
-                <path d="M6,6 L26,6 L26,11 L14,21 L26,21 L26,26 L6,26 L6,21 L18,11 L6,11 Z" fill="#648DAF" />
+                <rect width="32" height="32" rx="7" fill="var(--gray-900)" />
+                <path d="M6,6 L26,6 L26,11 L14,21 L26,21 L26,26 L6,26 L6,21 L18,11 L6,11 Z" fill="var(--accent)" />
               </svg>
               <span
                 className="font-[600] text-xl text-foreground"
