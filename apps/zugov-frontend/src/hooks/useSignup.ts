@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
-import { useAccount } from "wagmi";
-import { BrowserProvider } from "ethers";
+import { useAccount, useWalletClient } from "wagmi";
 import { signup } from "@maci-protocol/sdk/browser";
 import { useMaci } from "../context/MaciContext";
 import { GovernanceTypes, type GovernanceType } from "../config";
+import { getSignerFromWalletClient } from "../services/wagmiSigner";
 
 interface UseSignupResult {
   isSigningUp: boolean;
@@ -11,14 +11,9 @@ interface UseSignupResult {
   signupToMaci: (maciAddress: string) => Promise<void>;
 }
 
-async function getEthersSigner() {
-  if (!window.ethereum) throw new Error("No wallet found");
-  const provider = new BrowserProvider(window.ethereum);
-  return provider.getSigner();
-}
-
 export function useSignup(governanceType: GovernanceType | undefined): UseSignupResult {
   const { isConnected } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const { maciKeypair } = useMaci();
   const [isSigningUp, setIsSigningUp] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
@@ -35,7 +30,7 @@ export function useSignup(governanceType: GovernanceType | undefined): UseSignup
       setSignupError(null);
 
       try {
-        const signer = await getEthersSigner();
+        const signer = getSignerFromWalletClient(walletClient);
         await signup({
           maciPublicKey: maciKeypair.publicKey.serialize(),
           maciAddress,
@@ -50,7 +45,7 @@ export function useSignup(governanceType: GovernanceType | undefined): UseSignup
         setIsSigningUp(false);
       }
     },
-    [isConnected, maciKeypair, governanceType],
+    [isConnected, maciKeypair, governanceType, walletClient],
   );
 
   return { isSigningUp, signupError, signupToMaci };

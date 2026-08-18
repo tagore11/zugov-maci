@@ -1,13 +1,15 @@
 import { useState, useCallback } from "react";
-import { useAccount } from "wagmi";
-import { BrowserProvider, JsonRpcProvider } from "ethers";
+import { useAccount, useWalletClient } from "wagmi";
+import { JsonRpcProvider } from "ethers";
 import { generateVote, submitVote, getCoordinatorPublicKey } from "@maci-protocol/sdk/browser";
 import { useMaci } from "../context/MaciContext";
 import { GovernanceTypes, type GovernanceType } from "../config";
 import { MACI__factory } from "../poll-factory-shim";
+import { getSignerFromWalletClient } from "../services/wagmiSigner";
 
 export function useVote(governanceType: GovernanceType | undefined) {
   const { isConnected, address } = useAccount();
+  const { data: walletClient } = useWalletClient();
   const { maciKeypair } = useMaci();
   const [isVoting, setIsVoting] = useState(false);
   const [voteError, setVoteError] = useState<string | null>(null);
@@ -45,8 +47,7 @@ export function useVote(governanceType: GovernanceType | undefined) {
       setVoteError(null);
 
       try {
-        const provider = new BrowserProvider(window.ethereum!);
-        const signer = await provider.getSigner();
+        const signer = getSignerFromWalletClient(walletClient);
 
         // Fetch the MACI state index (1-based) for this user's public key
         const readProvider = new JsonRpcProvider(rpcUrl);
@@ -80,7 +81,7 @@ export function useVote(governanceType: GovernanceType | undefined) {
         setIsVoting(false);
       }
     },
-    [isConnected, maciKeypair, address, governanceType],
+    [isConnected, maciKeypair, address, governanceType, walletClient],
   );
 
   return { isVoting, voteError, castVote };

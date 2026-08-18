@@ -1,10 +1,12 @@
 import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
-import { BrowserProvider, Contract, ZeroAddress, toUtf8Bytes, getAddress, type Log, type Interface } from "ethers";
+import { Contract, ZeroAddress, toUtf8Bytes, getAddress, type Log, type Interface } from "ethers";
 import { PublicKey } from "@maci-protocol/domainobjs";
 import { MACI__factory, Poll__factory, ConstantVoiceCreditProxyFactory__factory } from "../poll-factory-shim";
 import { GovernanceTypes, PolicyType, type GovernanceType, type PollDeployConfig } from "../config";
 import { SET_TARGET_ABI } from "../services/policyDeploy";
+import { getSignerFromWagmiConfig } from "../services/wagmiSigner";
+import { wagmiConfig } from "../services/wagmiConfig";
 
 /** EMode enum values matching DomainObjs.Mode on-chain */
 const EMode = { QV: 0, NON_QV: 1, FULL: 2, RANKED: 3 } as const;
@@ -43,9 +45,7 @@ export interface UseDeployPollResult {
 }
 
 export async function getEthersSigner() {
-  if (!window.ethereum) throw new Error("No wallet found");
-  const provider = new BrowserProvider(window.ethereum);
-  return provider.getSigner();
+  return getSignerFromWagmiConfig(wagmiConfig);
 }
 
 async function resolveInitialVoiceCreditProxy(
