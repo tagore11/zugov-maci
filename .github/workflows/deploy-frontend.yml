@@ -44,7 +44,14 @@ jobs:
       - name: Build
         env:
           VITE_API_URL: https://api.zugov.xyz
-        run: sh scripts/build-frontend.sh
+          VITE_PRIVY_APP_ID: ${{ secrets.VITE_PRIVY_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$VITE_PRIVY_APP_ID" ]; then
+            echo "::error::VITE_PRIVY_APP_ID secret is not set — the deployed app would break at runtime for every visitor. Set it with: gh secret set VITE_PRIVY_APP_ID"
+            exit 1
+          fi
+          sh scripts/build-frontend.sh
 
       - name: Deploy to server
         env:
