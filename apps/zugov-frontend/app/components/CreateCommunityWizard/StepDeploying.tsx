@@ -1,3 +1,5 @@
+import { useChainId } from "wagmi";
+import { appConstants } from "@/src/config";
 import type { WizardState, DeployPhase, UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 
 const PHASE_LABELS: Record<DeployPhase, string> = {
@@ -9,9 +11,21 @@ const PHASE_LABELS: Record<DeployPhase, string> = {
 
 const ALL_PHASES: DeployPhase[] = ["deploy_sign_up_policy", "deploy_maci", "set_target", "save_community"];
 
-function getBlockExplorerTxUrl(txHash: string, chainId?: number): string {
-  if (chainId === 534351) return `https://sepolia.scrollscan.com/tx/${txHash}`;
-  return `https://scrollscan.com/tx/${txHash}`;
+// Reads the block explorer straight off the wagmi Chain object for the connected network
+// (appConstants[chainId].chain.blockExplorers) instead of hardcoding a single chain's URL —
+// covers every chain in the supportedChains list (providers.tsx) automatically, including
+// Ethereum Sepolia, without needing its own case here.
+export function getBlockExplorerTxUrl(txHash: string, chainId: number | undefined): string {
+  const chainConstants = chainId !== undefined ? appConstants[chainId as keyof typeof appConstants] : undefined;
+  const explorerUrl = chainConstants?.chain.blockExplorers?.default.url;
+  if (explorerUrl) return `${explorerUrl}/tx/${txHash}`;
+  // No known explorer for this chain. In practice this branch shouldn't be reachable for a
+  // real deployment tx — StepNetworkCheck already gates community creation to chains present
+  // in appConstants (currently sepolia/scrollSepolia) — but if it is hit, link to Etherscan
+  // as a last-resort guess rather than producing a dead href. Each chain has its own separate
+  // explorer site (etherscan.io does NOT show non-Ethereum-chain transactions), so this will
+  // be wrong for e.g. a Polygon tx — it's a fallback, not a real answer.
+  return `https://etherscan.io/tx/${txHash}`;
 }
 
 interface Props {
@@ -22,6 +36,7 @@ interface Props {
 
 export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) {
   const { completedPhases, currentPhase, currentTxHash, retryFromPhase } = state;
+  const chainId = useChainId();
 
   const isError = state.step === "error";
   const isBackendFailure = isError && retryFromPhase === "save_community";
@@ -64,7 +79,7 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
 
       {currentTxHash && (
         <a
-          href={getBlockExplorerTxUrl(currentTxHash)}
+          href={getBlockExplorerTxUrl(currentTxHash, chainId)}
           target="_blank"
           rel="noopener noreferrer"
           className="block text-xs text-purple-400 hover:text-purple-300 font-mono truncate"
