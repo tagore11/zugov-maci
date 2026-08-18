@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount, useChainId } from "wagmi";
-import type { Keypair } from "@maci-protocol/domainobjs";
 import { Header } from "../../components/Header";
 import {
   Users,
@@ -19,67 +18,14 @@ import {
 import { getStoredVote } from "@/src/lib/voteStorage";
 import { computePollStatus, pollStatusLabel, pollStatusClass, pollStatusBadgeClass } from "@/src/lib/pollStatus";
 import { CreateProposalModal } from "../../components/CreateProposalModal";
-import { VoteModal } from "../../components/VoteModal";
 import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/placeholder-data";
-import { appConstants, maciArtifacts, type GovernanceType, type PollDeployConfig } from "@/src/config";
+import { appConstants, type GovernanceType } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
 import { GovernanceActionsList } from "../../components/GovernanceActionsList";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
-import {
-  fetchIsRegistered,
-  fetchMembers,
-  fetchPolls,
-  fetchIsJoinedPoll,
-  formatMaciUserId,
-  type SubgraphPoll,
-} from "@/src/services/subgraph";
+import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
-import { useMaci } from "@/src/context/MaciContext";
-import { useSignup } from "@/src/hooks/useSignup";
-import { useJoinPoll } from "@/src/hooks/useJoinPoll";
-
-const DAO_CONFIG_LOOKUP: Record<
-  string,
-  {
-    subgraphUrl: string;
-    governanceType: GovernanceType;
-    governanceContract: string;
-    pollDeployConfig?: PollDeployConfig;
-  }
-> = Object.fromEntries(
-  Object.values(appConstants).flatMap(({ daos }) =>
-    Object.values(daos)
-      .filter((dao) => dao.id)
-      .map((dao) => [
-        dao.id!,
-        {
-          subgraphUrl: dao.subgraphUrl,
-          governanceType: dao.governanceType,
-          governanceContract: dao.governanceContract,
-          pollDeployConfig: dao.pollDeployConfig,
-        },
-      ]),
-  ),
-);
-
-const realCommunityEntries = Object.values(appConstants).flatMap(({ daos }) =>
-  Object.values(daos).map(
-    (dao) =>
-      [
-        dao.id ?? "",
-        {
-          name: dao.displayName ?? dao.id ?? "",
-          description: dao.description ?? "",
-          summary: dao.summary ?? "",
-          logo: dao.logo ?? dao.logoUrl ?? "",
-          members: dao.members ?? 0,
-          category: dao.category ?? "", //TODO
-          affiliatedCommunities: [], //TODO
-        },
-      ] as const,
-  ),
-);
 
 const COMMUNITY_LOOKUP: Record<
   string,
@@ -92,96 +38,7 @@ const COMMUNITY_LOOKUP: Record<
     category: string;
     affiliatedCommunities: Array<{ id: string; name: string; logo: string }>;
   }
-> = {
-  ...Object.fromEntries(realCommunityEntries),
-  ...COMMUNITY_DATA,
-};
-
-function PollActionButton({
-  poll,
-  daoConfig,
-  maciKeypair,
-  isJoiningPoll,
-  getPollStateIndex,
-  joinThePoll,
-  onJoined,
-  onVote,
-  subgraphUrl,
-  governanceType,
-}: {
-  poll: SubgraphPoll | null;
-  daoConfig: { governanceContract: string };
-  maciKeypair: Keypair | null;
-  isJoiningPoll: (pollAddress: string) => boolean;
-  getPollStateIndex: (pollAddress: string) => string | null;
-  joinThePoll: (args: {
-    maciAddress: string;
-    pollId: bigint;
-    pollAddress: string;
-    pollJoiningZkeyUrl: string;
-    pollJoiningWasmUrl: string;
-    subgraphUrl: string;
-  }) => Promise<unknown>;
-  onJoined: () => void;
-  onVote: (poll: SubgraphPoll) => void;
-  subgraphUrl: string;
-  governanceType: GovernanceType;
-}) {
-  const { address } = useAccount();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [pubKeyX, pubKeyY] = maciKeypair ? (maciKeypair as any).publicKey.raw : [0n, 0n];
-
-  const { data: isJoinedOnChain = false } = useQuery({
-    queryKey: ["isJoinedPoll", poll?.id, String(pubKeyX)],
-    queryFn: () => fetchIsJoinedPoll(subgraphUrl, governanceType, poll!.id, pubKeyX, pubKeyY),
-    enabled: !!poll && !!maciKeypair,
-  });
-
-  if (!poll) return null;
-
-  const isJoined = isJoinedOnChain || getPollStateIndex(poll.id) !== null;
-  const hasVoted = !!address && !!getStoredVote(poll.id, address);
-  const joining = isJoiningPoll(poll.id);
-
-  if (!isJoined) {
-    return (
-      <div className="flex flex-col items-end gap-1">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            joinThePoll({
-              maciAddress: daoConfig.governanceContract,
-              pollId: BigInt(poll.pollId),
-              pollAddress: poll.id,
-              pollJoiningZkeyUrl: maciArtifacts.pollJoiningZkeyUrl,
-              pollJoiningWasmUrl: maciArtifacts.pollJoiningWasmUrl,
-              subgraphUrl,
-            })
-              .then(onJoined)
-              .catch(() => {});
-          }}
-          disabled={joining}
-          className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-        >
-          {joining ? "Generating proof..." : "Join Poll"}
-        </button>
-        {joining && <p className="text-xs text-gray-500">This may take 1–3 minutes. Please keep this tab open.</p>}
-      </div>
-    );
-  }
-
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onVote(poll);
-      }}
-      className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
-    >
-      {hasVoted ? "Recast Vote" : "Vote Now"}
-    </button>
-  );
-}
+> = COMMUNITY_DATA;
 
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -206,9 +63,7 @@ export default function CommunityPage() {
   const [activeTab, setActiveTab] = useState<"proposals" | "forum">("proposals");
   const [proposals, setProposals] = useState(COMMUNITY_PROPOSALS);
   const [expandedProposal, setExpandedProposal] = useState<string | null>(null);
-  const [voteModalPoll, setVoteModalPoll] = useState<SubgraphPoll | null>(null);
 
-  const { maciKeypair } = useMaci();
   const { address } = useAccount();
   const chainId = useChainId();
 
@@ -220,46 +75,16 @@ export default function CommunityPage() {
     enabled: !staticCommunity && !!params.id,
   });
   const community = staticCommunity;
-  const daoConfig = DAO_CONFIG_LOOKUP[params.id ?? ""];
   const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
 
-  // Static communities read their subgraph directly; backend-registered communities go through
-  // the backend's transparent proxy once their subgraph has finished indexing (subgraphStatus
-  // "ready") — the frontend never talks to graph-node directly for those.
+  // Backend-registered communities go through the backend's transparent proxy once their
+  // subgraph has finished indexing (subgraphStatus "ready") — the frontend never talks to
+  // graph-node directly.
   const backendSubgraphReady = backendCommunity?.subgraphStatus === "ready";
-  const activeSubgraphUrl =
-    daoConfig?.subgraphUrl ?? (backendSubgraphReady ? communityApi.subgraphQueryUrl(backendCommunity!.id) : undefined);
-  const activeGovernanceType =
-    daoConfig?.governanceType ?? (backendCommunity?.governanceType as GovernanceType | undefined);
+  const activeSubgraphUrl = backendSubgraphReady ? communityApi.subgraphQueryUrl(backendCommunity!.id) : undefined;
+  const activeGovernanceType = backendCommunity?.governanceType as GovernanceType | undefined;
 
   const queryClient = useQueryClient();
-  const { isSigningUp, signupToMaci } = useSignup(daoConfig?.governanceType);
-  const { isJoiningPoll, joinPollError, joinThePoll, getPollStateIndex } = useJoinPoll(daoConfig?.governanceType);
-
-  const [isConfirmingRegistration, setIsConfirmingRegistration] = useState(false);
-
-  const handleRegister = async () => {
-    if (!daoConfig || !maciUserId) return;
-    await signupToMaci(daoConfig.governanceContract);
-
-    setIsConfirmingRegistration(true);
-    try {
-      const POLL_INTERVAL_MS = 2000;
-      const TIMEOUT_MS = 30000;
-      const deadline = Date.now() + TIMEOUT_MS;
-
-      while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-        const confirmed = await fetchIsRegistered(daoConfig.subgraphUrl, daoConfig.governanceType, maciUserId);
-        if (confirmed) {
-          queryClient.invalidateQueries({ queryKey: ["isRegistered", params.id, maciUserId] });
-          break;
-        }
-      }
-    } finally {
-      setIsConfirmingRegistration(false);
-    }
-  };
 
   const {
     data: membersData,
@@ -301,14 +126,6 @@ export default function CommunityPage() {
         ),
       ).then(Object.fromEntries<boolean>),
     enabled: !!pollsData?.length && !!activeGovernanceType && !!address,
-  });
-
-  const maciUserId = maciKeypair ? formatMaciUserId(maciKeypair) : null;
-
-  const { data: isRegistered = false } = useQuery({
-    queryKey: ["isRegistered", params.id, maciUserId],
-    queryFn: () => fetchIsRegistered(daoConfig.subgraphUrl, daoConfig.governanceType, maciUserId!),
-    enabled: !!daoConfig && !!maciUserId,
   });
 
   const memberCount = membersData ?? community?.members ?? 0;
@@ -495,38 +312,13 @@ export default function CommunityPage() {
                 </span>
               </div>
             </div>
-            {daoConfig ? (
-              isRegistered ? (
-                <button
-                  onClick={() => setShowCreateProposal(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-                >
-                  <Plus className="w-5 h-5" />
-                  Create Proposal
-                </button>
-              ) : (
-                <button
-                  onClick={handleRegister}
-                  disabled={isSigningUp || isConfirmingRegistration}
-                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <Plus className="w-5 h-5" />
-                  {isSigningUp
-                    ? "Registering..."
-                    : isConfirmingRegistration
-                      ? "Confirming registration..."
-                      : "Register"}
-                </button>
-              )
-            ) : (
-              <button
-                onClick={() => setShowCreateProposal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
-              >
-                <Plus className="w-5 h-5" />
-                Create Proposal
-              </button>
-            )}
+            <button
+              onClick={() => setShowCreateProposal(true)}
+              className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Create Proposal
+            </button>
           </div>
 
           {/* Summary & Description */}
@@ -691,20 +483,6 @@ export default function CommunityPage() {
                                   : `Ends ${proposal.endDate}`}
                             </span>
                           </div>
-                          {proposal.eligible && proposal.status === "active" && daoConfig && (
-                            <PollActionButton
-                              poll={pollsData?.find((p) => p.id === proposal.id) ?? null}
-                              daoConfig={daoConfig}
-                              maciKeypair={maciKeypair}
-                              isJoiningPoll={isJoiningPoll}
-                              getPollStateIndex={getPollStateIndex}
-                              joinThePoll={joinThePoll}
-                              onJoined={() => queryClient.invalidateQueries({ queryKey: ["isJoinedPoll", params.id] })}
-                              onVote={(poll) => setVoteModalPoll(poll)}
-                              subgraphUrl={daoConfig.subgraphUrl}
-                              governanceType={daoConfig.governanceType}
-                            />
-                          )}
                         </div>
                       </div>
 
@@ -809,29 +587,8 @@ export default function CommunityPage() {
         onClose={() => setShowCreateProposal(false)}
         onSuccess={() => queryClient.invalidateQueries({ queryKey: ["polls", params.id] })}
         communityId={params.id as string}
-        governanceType={daoConfig?.governanceType}
-        maciAddress={daoConfig?.governanceContract}
-        pollDeployConfig={daoConfig?.pollDeployConfig}
         existingPollAddress={pollsData?.[0]?.id ?? null}
       />
-
-      {voteModalPoll && (
-        <VoteModal
-          poll={voteModalPoll}
-          maciAddress={daoConfig!.governanceContract}
-          rpcUrl={rpcUrl}
-          governanceType={daoConfig!.governanceType}
-          onClose={() => setVoteModalPoll(null)}
-          onSuccess={() => setVoteModalPoll(null)}
-        />
-      )}
-
-      {joinPollError && (
-        <div className="fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm z-50">
-          <p className="text-sm font-medium">Failed to join poll</p>
-          <p className="text-xs mt-1 opacity-90">{joinPollError}</p>
-        </div>
-      )}
     </div>
   );
 }

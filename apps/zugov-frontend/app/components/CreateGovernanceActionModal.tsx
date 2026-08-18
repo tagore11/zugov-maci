@@ -22,7 +22,7 @@ import {
   type PolicyInputState,
 } from "./PolicyArgsFields";
 
-function policyIdToType(id: number): SignUpPolicyType | undefined {
+export function policyIdToType(id: number): SignUpPolicyType | undefined {
   const entry = Object.entries(PolicyType).find(([, value]) => Number(value) === id);
   return entry?.[0] as SignUpPolicyType | undefined;
 }

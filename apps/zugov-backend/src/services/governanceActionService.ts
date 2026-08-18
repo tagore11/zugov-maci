@@ -144,9 +144,9 @@ async function getMemberTier(
 }
 
 /** Once a poll is formalized, the real access gate is whatever eligibility policy was deployed
- * on-chain for it — mirrors confirmDirect's directEligibleTierIds, so the backend's coarse
- * vote-eligibility check doesn't keep enforcing the draft-time tier restriction against a poll
- * that may now be open to a different (e.g. broader) set of voters on-chain. */
+ * on-chain for it — mirrors confirmDirect's directEligibleTierIds (research.md #2), so the
+ * backend's coarse vote-eligibility check doesn't keep enforcing the draft-time tier restriction
+ * against a poll that may now be open to a different (e.g. broader) set of voters on-chain. */
 async function getVotingTierIds(communityId: string): Promise<string[]> {
   const tiers = await db
     .select({ id: membershipTiers.id, canVote: membershipTiers.canVote })

@@ -4,13 +4,25 @@ import { Shield, Users, Award } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
-import { appConstants } from "@/src/config";
+import type { GovernanceType } from "@/src/config";
 import { fetchIsRegistered, formatMaciUserId } from "@/src/services/subgraph";
+import * as communityApi from "@/src/services/communityApi";
 import { useMaci } from "@/src/context/MaciContext";
 import * as credentialApi from "@/src/services/credentialApi";
 import { useCredentialScan } from "@/src/hooks/useCredentialScan";
 
-const REAL_DAOS = Object.values(appConstants).flatMap(({ daos }) => Object.values(daos).filter((dao) => dao.id));
+/** Fetches every registered community across all pages, not just the first. */
+async function fetchAllCommunities(): Promise<communityApi.Community[]> {
+  const communities: communityApi.Community[] = [];
+  let page = 1;
+  for (;;) {
+    const result = await communityApi.list(page);
+    communities.push(...result.communities);
+    if (!result.hasMore) break;
+    page += 1;
+  }
+  return communities;
+}
 
 const PROTOCOL_LABELS: Record<credentialApi.Protocol, { name: string; icon: string }> = {
   zupass: { name: "Zupass", icon: "🎫" },
@@ -56,14 +68,21 @@ export default function ManageProfilePage() {
 
   const { data: memberCommunities = [] } = useQuery({
     queryKey: ["userMemberships", maciUserId],
-    queryFn: () =>
-      Promise.all(
-        REAL_DAOS.map((dao) =>
-          fetchIsRegistered(dao.subgraphUrl, dao.governanceType, maciUserId!).then((isMember) =>
-            isMember ? dao : null,
+    queryFn: async () => {
+      const communities = await fetchAllCommunities();
+      const results = await Promise.all(
+        communities
+          .filter((community) => community.subgraphStatus === "ready")
+          .map((community) =>
+            fetchIsRegistered(
+              communityApi.subgraphQueryUrl(community.id),
+              community.governanceType as GovernanceType,
+              maciUserId!,
+            ).then((isMember) => (isMember ? community : null)),
           ),
-        ),
-      ).then((results) => results.filter((dao) => dao !== null)),
+      );
+      return results.filter((community) => community !== null);
+    },
     enabled: !!maciUserId,
   });
 
@@ -143,18 +162,18 @@ export default function ManageProfilePage() {
             <p className="text-sm text-gray-500">You are not registered in any communities yet.</p>
           ) : (
             <div className="space-y-4">
-              {memberCommunities.map((dao) => (
+              {memberCommunities.map((community) => (
                 <Link
-                  key={dao.id}
-                  to={`/community/${dao.id}`}
+                  key={community.id}
+                  to={`/community/${community.id}`}
                   className="block p-4 border border-gray-200 rounded-lg hover:bg-gray-50 hover:shadow-md transition-all cursor-pointer"
                 >
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-4">
-                      <div className="text-3xl">{dao.logo ?? dao.logoUrl ?? ""}</div>
+                      <div className="text-3xl">{community.logo ?? ""}</div>
                       <div>
                         <h3 className="font-semibold text-lg text-gray-900 hover:text-indigo-600 transition-colors">
-                          {dao.displayName ?? dao.id}
+                          {community.displayName}
                         </h3>
                         <p className="text-sm text-gray-600">Member</p>
                       </div>
