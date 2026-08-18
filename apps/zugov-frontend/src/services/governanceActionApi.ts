@@ -178,7 +178,11 @@ export async function getTallyStatus(
   return parseErrorOr(res, `Failed to fetch tally status: ${res.status}`);
 }
 
-export type VoteEligibilityReason = "tier_lacks_voting_rights" | "tier_not_eligible_for_action" | "not_formalized";
+export type VoteEligibilityReason =
+  | "tier_lacks_voting_rights"
+  | "tier_not_eligible_for_action"
+  | "not_formalized"
+  | "poll_closed";
 
 export async function checkVoteEligibility(
   communityId: string,

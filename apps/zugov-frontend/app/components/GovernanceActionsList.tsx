@@ -29,6 +29,7 @@ const VOTE_REASON_LABELS: Record<VoteEligibilityReason, string> = {
   tier_lacks_voting_rights: "Your current tier doesn't grant voting rights.",
   tier_not_eligible_for_action: "Your tier isn't eligible for this governance action.",
   not_formalized: "This governance action hasn't formalized yet.",
+  poll_closed: "Voting has closed for this poll.",
 };
 
 function VoteEligibilityBadge({ communityId, actionId }: { communityId: string; actionId: string }) {

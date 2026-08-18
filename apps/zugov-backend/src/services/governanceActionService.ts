@@ -143,6 +143,18 @@ async function getMemberTier(
   return row ?? null;
 }
 
+/** Once a poll is formalized, the real access gate is whatever eligibility policy was deployed
+ * on-chain for it — mirrors confirmDirect's directEligibleTierIds, so the backend's coarse
+ * vote-eligibility check doesn't keep enforcing the draft-time tier restriction against a poll
+ * that may now be open to a different (e.g. broader) set of voters on-chain. */
+async function getVotingTierIds(communityId: string): Promise<string[]> {
+  const tiers = await db
+    .select({ id: membershipTiers.id, canVote: membershipTiers.canVote })
+    .from(membershipTiers)
+    .where(eq(membershipTiers.communityId, communityId));
+  return tiers.filter((t) => t.canVote).map((t) => t.id);
+}
+
 async function canView(action: ViewableGovernanceAction, viewerAddress: string): Promise<boolean> {
   if (action.creatorAddress.toLowerCase() === viewerAddress.toLowerCase()) return true;
   const tier = await getMemberTier(action.communityId, viewerAddress);
@@ -296,6 +308,7 @@ export async function confirmFormalize(
   await assertReadyToFormalize(communityId, actionId);
 
   const now = Math.floor(Date.now() / 1000);
+  const eligibleTierIds = await getVotingTierIds(communityId);
   const [updated] = await db
     .update(governanceActions)
     .set({
@@ -304,6 +317,7 @@ export async function confirmFormalize(
       pollId: result.pollId,
       pollStartDate: result.pollStartDate,
       pollEndDate: result.pollEndDate,
+      eligibleTierIds: JSON.stringify(eligibleTierIds),
       formalizedAt: now,
     })
     .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
@@ -370,7 +384,11 @@ export async function confirmDirect(
   return deserialize(inserted!);
 }
 
-export type VoteEligibilityReason = "tier_lacks_voting_rights" | "tier_not_eligible_for_action" | "not_formalized";
+export type VoteEligibilityReason =
+  | "tier_lacks_voting_rights"
+  | "tier_not_eligible_for_action"
+  | "not_formalized"
+  | "poll_closed";
 
 export async function checkVoteEligibility(
   communityId: string,
@@ -379,6 +397,11 @@ export async function checkVoteEligibility(
 ): Promise<{ eligible: boolean; reason?: VoteEligibilityReason }> {
   const action = await getActionOrThrow(communityId, actionId);
   if (action.status !== "formalized") return { eligible: false, reason: "not_formalized" };
+
+  const now = Math.floor(Date.now() / 1000);
+  if (action.pollEndDate !== null && now >= action.pollEndDate) {
+    return { eligible: false, reason: "poll_closed" };
+  }
 
   const hasVotingRights = await membershipService.hasTierPermission(communityId, walletAddress, "canVote");
   if (!hasVotingRights) return { eligible: false, reason: "tier_lacks_voting_rights" };
