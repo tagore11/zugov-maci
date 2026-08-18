@@ -126,6 +126,34 @@ pnpm exec vitest run
 
 Both suites run fully green against a freshly-migrated (not necessarily seeded) database.
 
+## 7. Clean up
+
+```bash
+# Stop the dev servers: Ctrl+C in each terminal (or, if backgrounded, find and kill them)
+lsof -tiTCP:3001 -sTCP:LISTEN | xargs kill    # backend
+lsof -tiTCP:5173 -sTCP:LISTEN | xargs kill    # frontend
+
+# Stop and remove the Postgres container — no volume was mounted in step 4, so this also
+# permanently deletes all local data (seeded communities, test rows, everything). That's
+# the intended default for local dev; if you want data to survive a container restart,
+# add `-v zugov-pg-data:/var/lib/postgresql/data` to the `docker run` command in step 4.
+docker stop zugov-pg && docker rm zugov-pg
+```
+
+There's nothing else to tear down — `.env.local` files are yours to keep (gitignored, and
+reusable across future `docker run`s as long as you reuse the same container name/port), and
+`node_modules`/the workspace packages' `build/` output are safe to leave in place for next time.
+If you do want a fully clean slate (e.g. to re-verify the install steps from scratch):
+
+```bash
+git clean -xdf apps/zugov-backend apps/zugov-frontend packages   # removes node_modules, build/, dist/
+# then repeat from step 1
+```
+
+`git clean -xdf` is destructive and repo-wide within the paths given — it also removes untracked
+files you haven't gitignored, so double-check `git status` in those paths first if you have any
+uncommitted scratch files there.
+
 ## Troubleshooting
 
 - **`tsc`/`vitest` complaining a `@maci-protocol/*` module can't be found** → you skipped or need
