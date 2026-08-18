@@ -9,10 +9,16 @@ import { MACI__factory } from "@/src/poll-factory-shim";
 
 export function JoinSection({
   communityId,
+  contractAddress,
   connected,
   rpcUrl,
 }: {
   communityId: string;
+  // The deployed MACI contract's address — distinct from communityId (Architecture 1C).
+  // communityId is no longer guaranteed to be a callable on-chain address once a community's
+  // identity can predate governance being configured; contractAddress is the one MACI__factory
+  // and signupToMaci must use. Null when governance isn't configured yet.
+  contractAddress: string | null;
   connected: boolean;
   rpcUrl: string;
 }) {
@@ -37,17 +43,18 @@ export function JoinSection({
     queryKey: ["maciStateIndex", communityId, pubKeyHash?.toString()],
     queryFn: async () => {
       const provider = new JsonRpcProvider(rpcUrl);
-      const maciContract = MACI__factory.connect(communityId, provider);
+      const maciContract = MACI__factory.connect(contractAddress!, provider);
       const stateIndex = (await maciContract.getStateIndex(pubKeyHash)) as bigint;
       return stateIndex >= 1n;
     },
-    enabled: connected && !!maciKeypair,
+    enabled: connected && !!maciKeypair && !!contractAddress,
   });
 
   async function handleJoin() {
+    if (!contractAddress) return;
     setError(null);
     try {
-      await signupToMaci(communityId);
+      await signupToMaci(contractAddress);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to sign up on-chain");
       return;
@@ -68,6 +75,14 @@ export function JoinSection({
   }
 
   if (!connected) return null;
+
+  if (!contractAddress) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+        Governance not yet configured for this community — voting isn&apos;t available yet.
+      </div>
+    );
+  }
 
   // justJoined is a local optimistic flag that covers the gap between the signup tx landing and
   // the maciStateIndex query refetch; isRegisteredOnChain is the persisted source of truth that

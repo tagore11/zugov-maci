@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildPollDeployConfig, saveWithRetry } from "./useCreateCommunity";
+import { buildPollDeployConfig, saveWithRetry, saveIdentityWithRetry } from "./useCreateCommunity";
 import { appConstants, FIXED_POLL_DEPLOY_CONSTANTS } from "@/src/config";
 import { STATE_TREE_DEPTH } from "@/src/constants";
 import type { RegistryData } from "./useZuGovRegistry";
@@ -8,7 +8,7 @@ import * as communityApi from "@/src/services/communityApi";
 
 vi.mock("@/src/services/communityApi", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/communityApi")>("@/src/services/communityApi");
-  return { ...actual, register: vi.fn() };
+  return { ...actual, attachGovernance: vi.fn(), registerIdentity: vi.fn() };
 });
 
 const REGISTRY_DATA: RegistryData = {
@@ -44,46 +44,49 @@ describe("buildPollDeployConfig", () => {
   });
 });
 
-const PAYLOAD = { id: "0xabc", displayName: "Test" } as unknown as communityApi.RegistrationPayload;
-const registerMock = communityApi.register as unknown as ReturnType<typeof vi.fn>;
+const GOVERNANCE_PAYLOAD = { contractAddress: "0xabc" } as unknown as communityApi.GovernancePayload;
+const attachGovernanceMock = communityApi.attachGovernance as unknown as ReturnType<typeof vi.fn>;
 
 describe("saveWithRetry", () => {
   beforeEach(() => {
-    registerMock.mockReset();
+    attachGovernanceMock.mockReset();
   });
 
   it("returns immediately on first success", async () => {
-    registerMock.mockResolvedValue({ id: "0xabc" });
-    const result = await saveWithRetry(PAYLOAD, vi.fn());
-    expect(result).toEqual({ id: "0xabc" });
-    expect(registerMock).toHaveBeenCalledTimes(1);
+    attachGovernanceMock.mockResolvedValue({ id: "identity-1" });
+    const result = await saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, vi.fn());
+    expect(result).toEqual({ id: "identity-1" });
+    expect(attachGovernanceMock).toHaveBeenCalledTimes(1);
+    expect(attachGovernanceMock).toHaveBeenCalledWith("identity-1", GOVERNANCE_PAYLOAD);
   });
 
   it("retries once after a fresh sign-in on AuthError", async () => {
     const signIn = vi.fn().mockResolvedValue(undefined);
-    registerMock.mockRejectedValueOnce(new communityApi.AuthError()).mockResolvedValueOnce({ id: "0xabc" });
+    attachGovernanceMock.mockRejectedValueOnce(new communityApi.AuthError()).mockResolvedValueOnce({
+      id: "identity-1",
+    });
 
-    const result = await saveWithRetry(PAYLOAD, signIn);
-    expect(result).toEqual({ id: "0xabc" });
+    const result = await saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn);
+    expect(result).toEqual({ id: "identity-1" });
     expect(signIn).toHaveBeenCalledTimes(1);
-    expect(registerMock).toHaveBeenCalledTimes(2);
+    expect(attachGovernanceMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps retrying with backoff when the post-sign-in retry also fails, instead of throwing immediately", async () => {
     vi.useFakeTimers();
     try {
       const signIn = vi.fn().mockResolvedValue(undefined);
-      registerMock
+      attachGovernanceMock
         .mockRejectedValueOnce(new communityApi.AuthError()) // attempt 0: initial call
         .mockRejectedValueOnce(new Error("transient")) // attempt 0: retry-after-signin also fails
-        .mockResolvedValueOnce({ id: "0xabc" }); // attempt 1: succeeds
+        .mockResolvedValueOnce({ id: "identity-1" }); // attempt 1: succeeds
 
-      const promise = saveWithRetry(PAYLOAD, signIn);
+      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn);
       await vi.advanceTimersByTimeAsync(1000);
       const result = await promise;
 
-      expect(result).toEqual({ id: "0xabc" });
-      expect(registerMock).toHaveBeenCalledTimes(3);
+      expect(result).toEqual({ id: "identity-1" });
+      expect(attachGovernanceMock).toHaveBeenCalledTimes(3);
     } finally {
       vi.useRealTimers();
     }
@@ -93,9 +96,9 @@ describe("saveWithRetry", () => {
     vi.useFakeTimers();
     try {
       const signIn = vi.fn().mockResolvedValue(undefined);
-      registerMock.mockRejectedValue(new communityApi.AuthError());
+      attachGovernanceMock.mockRejectedValue(new communityApi.AuthError());
 
-      const promise = saveWithRetry(PAYLOAD, signIn).catch((err: unknown) => err);
+      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn).catch((err: unknown) => err);
       await vi.advanceTimersByTimeAsync(10000);
       const result = await promise;
 
@@ -104,5 +107,33 @@ describe("saveWithRetry", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+const IDENTITY_PAYLOAD = { displayName: "Test" } as unknown as communityApi.IdentityPayload;
+const registerIdentityMock = communityApi.registerIdentity as unknown as ReturnType<typeof vi.fn>;
+
+describe("saveIdentityWithRetry", () => {
+  beforeEach(() => {
+    registerIdentityMock.mockReset();
+  });
+
+  it("returns immediately on first success", async () => {
+    registerIdentityMock.mockResolvedValue({ id: "identity-1" });
+    const result = await saveIdentityWithRetry(IDENTITY_PAYLOAD, vi.fn());
+    expect(result).toEqual({ id: "identity-1" });
+    expect(registerIdentityMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries once after a fresh sign-in on AuthError", async () => {
+    const signIn = vi.fn().mockResolvedValue(undefined);
+    registerIdentityMock.mockRejectedValueOnce(new communityApi.AuthError()).mockResolvedValueOnce({
+      id: "identity-1",
+    });
+
+    const result = await saveIdentityWithRetry(IDENTITY_PAYLOAD, signIn);
+    expect(result).toEqual({ id: "identity-1" });
+    expect(signIn).toHaveBeenCalledTimes(1);
+    expect(registerIdentityMock).toHaveBeenCalledTimes(2);
   });
 });

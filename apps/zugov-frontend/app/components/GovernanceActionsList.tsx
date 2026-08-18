@@ -198,7 +198,10 @@ function FormalizedActionRow({
   const [votingPoll, setVotingPoll] = useState<SubgraphPoll | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const rpcUrl = community ? appConstants[community.chainId as keyof typeof appConstants]?.rpcUrl : undefined;
+  const rpcUrl =
+    community?.governanceConfigured && community.chainId !== null
+      ? appConstants[community.chainId as keyof typeof appConstants]?.rpcUrl
+      : undefined;
 
   const handleVoteClick = async () => {
     setLoadError(null);
@@ -234,10 +237,10 @@ function FormalizedActionRow({
       </div>
       <p className="text-xs text-gray-500">Formalized{action.pollAddress ? ` — poll ${action.pollAddress}` : ""}</p>
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
-      {votingPoll && rpcUrl && (
+      {votingPoll && rpcUrl && community?.contractAddress && (
         <VoteModal
           poll={votingPoll}
-          maciAddress={communityId}
+          maciAddress={community.contractAddress}
           rpcUrl={rpcUrl}
           governanceType={GovernanceTypes.MACI}
           onClose={() => setVotingPoll(null)}
@@ -323,11 +326,11 @@ function DraftRow({
       <p className="text-xs text-gray-500">Sponsors: {sponsorCount} (draft — not yet formalized)</p>
       {sponsorError && <p className="text-xs text-red-400">{sponsorError}</p>}
       {authorizeState === "authorized" &&
-        (community?.pollDeployConfig ? (
+        (community?.pollDeployConfig && community.contractAddress ? (
           <DeployPollPrompt
             communityId={communityId}
             action={action}
-            maciAddress={communityId}
+            maciAddress={community.contractAddress}
             pollDeployConfig={community.pollDeployConfig}
             onDeployed={onFormalized}
           />
@@ -371,6 +374,14 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
 
   if (!connected) {
     return <p className="text-sm text-gray-500">Connect your wallet to view governance actions.</p>;
+  }
+
+  if (community && !community.governanceConfigured) {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+        Governance not yet configured for this community — no governance actions available.
+      </div>
+    );
   }
 
   return (

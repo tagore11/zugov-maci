@@ -121,6 +121,18 @@ describe("GovernanceActionsList", () => {
     expect(listMock).not.toHaveBeenCalled();
   });
 
+  it("shows a not-configured message instead of the actions list when governance isn't set up yet", async () => {
+    listMock.mockResolvedValue({ governanceActions: [] });
+    communityGetMock.mockResolvedValue({ id: "0xabc", governanceConfigured: false, contractAddress: null });
+
+    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+
+    await waitFor(() =>
+      expect(screen.getByText(/Governance not yet configured for this community/)).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Governance Actions")).not.toBeInTheDocument();
+  });
+
   it("updates the sponsor count after a successful sponsor click, without double-counting a repeat", async () => {
     listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: false });
@@ -139,7 +151,7 @@ describe("GovernanceActionsList", () => {
     listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
-    communityGetMock.mockResolvedValue({ id: "0xabc" }); // no pollDeployConfig field
+    communityGetMock.mockResolvedValue({ id: "0xabc", governanceConfigured: true, contractAddress: "0xabc" }); // no pollDeployConfig field
 
     renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
 
@@ -156,7 +168,12 @@ describe("GovernanceActionsList", () => {
     listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
-    communityGetMock.mockResolvedValue({ id: "0xabc", pollDeployConfig: POLL_DEPLOY_CONFIG });
+    communityGetMock.mockResolvedValue({
+      id: "0xabc",
+      governanceConfigured: true,
+      contractAddress: "0xabc",
+      pollDeployConfig: POLL_DEPLOY_CONFIG,
+    });
 
     renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
 
@@ -184,7 +201,12 @@ describe("GovernanceActionsList", () => {
     listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
-    communityGetMock.mockResolvedValue({ id: "0xabc", pollDeployConfig: POLL_DEPLOY_CONFIG });
+    communityGetMock.mockResolvedValue({
+      id: "0xabc",
+      governanceConfigured: true,
+      contractAddress: "0xabc",
+      pollDeployConfig: POLL_DEPLOY_CONFIG,
+    });
     deployPollMock.mockResolvedValue({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" });
     confirmFormalizeMock.mockResolvedValue({ governanceAction: { ...DRAFT_ACTION, status: "formalized" } });
 
@@ -243,7 +265,12 @@ describe("GovernanceActionsList", () => {
       governanceActions: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll", pollId: "3" }],
     });
     checkVoteEligibilityMock.mockResolvedValue({ eligible: true });
-    communityGetMock.mockResolvedValue({ id: "0xabc", chainId: 11155111 });
+    communityGetMock.mockResolvedValue({
+      id: "0xabc",
+      governanceConfigured: true,
+      contractAddress: "0xabc",
+      chainId: 11155111,
+    });
     voteOptionsMock.mockResolvedValue(2n);
 
     renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);

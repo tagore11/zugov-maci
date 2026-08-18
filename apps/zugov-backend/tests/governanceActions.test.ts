@@ -39,18 +39,13 @@ const NO_RIGHTS_TIER = {
   canManageMembership: false,
 };
 
-function communityBody(overrides: Record<string, unknown> = {}) {
+// Governance actions (drafts, sponsorship, formalize, vote-eligibility) are purely tier/
+// membership bookkeeping — governanceActionService never touches MACI/governance-config fields
+// (formalize just records a caller-supplied pollAddress/pollId; the actual on-chain deploy
+// happens elsewhere). Every community in this file is identity-only, no governance attached.
+function identityBody(overrides: Record<string, unknown> = {}) {
   return {
-    id: "0xAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAaAa",
-    chainId: 534351,
     displayName: "Test Governance Community",
-    creatorAddress: CREATOR.address,
-    allowedPolicies: [0],
-    supportedModes: [0],
-    signUpPolicyType: "FreeForAll",
-    signUpPolicyAddress: "0xeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeEeE",
-    maciDeploymentBlock: 100,
-    stateTreeDepth: 6,
     source: "wizard",
     membershipPolicy: "open",
     tierChangesRequireVote: false,
@@ -97,19 +92,25 @@ const DRAFT_BODY = {
 
 async function createCommunityWithTiers(
   cookie: string,
-  communityId: string,
   tiers: (typeof CREATE_TIER)[] = [CREATE_TIER, VOTER_TIER],
-) {
-  await app.request("/api/communities", {
+): Promise<{ communityId: string; tierIds: Record<string, string> }> {
+  const res = await app.request("/api/communities", {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify(communityBody({ id: communityId, tiers, defaultTierLabel: tiers[0]!.label })),
+    body: JSON.stringify(identityBody({ tiers, defaultTierLabel: tiers[0]!.label })),
   });
-  const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
-  const { tiers: created } = (await tiersRes.json()) as {
-    tiers: { id: string; label: string }[];
-  };
-  return Object.fromEntries(created.map((t) => [t.label, t.id]));
+  const { community } = (await res.json()) as { community: { id: string } };
+  const tiersRes = await app.request(`/api/communities/${community.id}/tiers`);
+  const { tiers: created } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+  return { communityId: community.id, tierIds: Object.fromEntries(created.map((t) => [t.label, t.id])) };
+}
+
+async function enableDirectDeployment(cookie: string, communityId: string): Promise<void> {
+  await app.request(`/api/communities/${communityId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ directDeploymentEnabled: true }),
+  });
 }
 
 beforeEach(async () => {
@@ -139,9 +140,8 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
   });
 
   it("creates a draft with auto-sponsorship when the creator's tier grants the right", async () => {
-    const communityId = "0xB000000000000000000000000000000000000001";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -155,9 +155,8 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
   });
 
   it("returns 403 when the creator's tier lacks canCreateGovernanceActions", async () => {
-    const communityId = "0xB000000000000000000000000000000000000002";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     // Manually add SPONSOR as a member on the no-rights tier via a join-request style flow isn't
     // available for a specific tier assignment in this API surface, so we assert directly against
@@ -172,7 +171,6 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
   });
 
   it("enrolls the creator in a full-permission tier, not the default tier meant for new joiners", async () => {
-    const communityId = "0xB000000000000000000000000000000000000099";
     const cookie = await authCookieFor(CREATOR);
 
     // Mirrors the real wizard's default tier set: "Regular" (the default tier assigned to new
@@ -187,19 +185,18 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
     };
     const ADMIN_TIER = { label: "Admin", canCreateGovernanceActions: true, canVote: true, canManageMembership: true };
 
-    await app.request("/api/communities", {
+    const res0 = await app.request("/api/communities", {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
-      body: JSON.stringify(
-        communityBody({ id: communityId, tiers: [REGULAR_TIER, ADMIN_TIER], defaultTierLabel: "Regular" }),
-      ),
+      body: JSON.stringify(identityBody({ tiers: [REGULAR_TIER, ADMIN_TIER], defaultTierLabel: "Regular" })),
     });
+    const { community } = (await res0.json()) as { community: { id: string } };
 
-    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const tiersRes = await app.request(`/api/communities/${community.id}/tiers`);
     const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
     const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
 
-    const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
+    const res = await app.request(`/api/communities/${community.id}/governance-actions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: cookie },
       body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [adminTierId] }),
@@ -208,9 +205,8 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
   });
 
   it("returns 422 for a non-executable axis combination", async () => {
-    const communityId = "0xB000000000000000000000000000000000000003";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -225,9 +221,8 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
   });
 
   it("returns 422 when an eligible tier lacks canVote", async () => {
-    const communityId = "0xB000000000000000000000000000000000000004";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId, [CREATE_TIER, NO_RIGHTS_TIER]);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie, [CREATE_TIER, NO_RIGHTS_TIER]);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -240,9 +235,8 @@ describe("POST /api/communities/:id/governance-actions (US1, FR-001/FR-002/FR-00
 
 describe("POST /api/communities/:id/governance-actions/:actionId/sponsor (US2, FR-004)", () => {
   it("dedupes a repeat sponsor without double-counting", async () => {
-    const communityId = "0xB000000000000000000000000000000000000005";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     // Includes the Creator tier as eligible (not just Voter) so the creator's own re-sponsor call
     // below is a legitimate sponsorship attempt, not one rejected for tier ineligibility — there's
@@ -272,9 +266,8 @@ describe("POST /api/communities/:id/governance-actions/:actionId/sponsor (US2, F
   });
 
   it("returns 403 when the sponsor's tier isn't eligible", async () => {
-    const communityId = "0xB000000000000000000000000000000000000006";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -294,9 +287,8 @@ describe("POST /api/communities/:id/governance-actions/:actionId/sponsor (US2, F
 
 describe("POST /api/communities/:id/governance-actions/:actionId/formalize/authorize (US2, FR-007)", () => {
   it("returns 409 when the co-sponsorship threshold isn't met", async () => {
-    const communityId = "0xB000000000000000000000000000000000000007";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     // Set a threshold of 2 (creator alone won't meet it) via PATCH
     await app.request(`/api/communities/${communityId}`, {
@@ -320,9 +312,8 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/autho
   });
 
   it("returns 200 authorized when threshold is 0 (default)", async () => {
-    const communityId = "0xB000000000000000000000000000000000000008";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -343,9 +334,8 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/autho
 
 describe("POST /api/communities/:id/governance-actions/:actionId/formalize/confirm (US2, FR-008/FR-009)", () => {
   it("formalizes and locks the action when checks pass", async () => {
-    const communityId = "0xB000000000000000000000000000000000000009";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -371,9 +361,8 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/confi
 
 describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility (US3, FR-010/FR-011)", () => {
   it("returns not_formalized for a still-draft action", async () => {
-    const communityId = "0xB00000000000000000000000000000000000000a";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -393,9 +382,8 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
   });
 
   it("returns eligible: true for a qualifying member on a formalized action", async () => {
-    const communityId = "0xB00000000000000000000000000000000000000b";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -425,19 +413,10 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
   });
 });
 
-async function enableDirectDeployment(cookie: string, communityId: string): Promise<void> {
-  await app.request(`/api/communities/${communityId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ directDeploymentEnabled: true }),
-  });
-}
-
 describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/007 US2, FR-004/FR-005/FR-006)", () => {
   it("returns 200 authorized for an eligible member", async () => {
-    const communityId = "0xC000000000000000000000000000000000000001";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
     await enableDirectDeployment(creatorCookie, communityId);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
@@ -451,9 +430,8 @@ describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/0
   });
 
   it("returns 403 when the community's directDeploymentEnabled is false", async () => {
-    const communityId = "0xC000000000000000000000000000000000000002";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
       method: "POST",
@@ -464,9 +442,8 @@ describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/0
   });
 
   it("returns 403 when the caller's tier lacks canCreateGovernanceActions", async () => {
-    const communityId = "0xC000000000000000000000000000000000000003";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
     await enableDirectDeployment(creatorCookie, communityId);
 
     const outsiderCookie = await authCookieFor(OUTSIDER);
@@ -479,9 +456,8 @@ describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/0
   });
 
   it("returns 422 for a non-executable axis combination", async () => {
-    const communityId = "0xC000000000000000000000000000000000000004";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
     await enableDirectDeployment(creatorCookie, communityId);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
@@ -493,9 +469,8 @@ describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/0
   });
 
   it("returns 422 when an eligible tier lacks canVote", async () => {
-    const communityId = "0xC000000000000000000000000000000000000005";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId, [CREATE_TIER, NO_RIGHTS_TIER]);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie, [CREATE_TIER, NO_RIGHTS_TIER]);
     await enableDirectDeployment(creatorCookie, communityId);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
@@ -509,9 +484,8 @@ describe("POST /api/communities/:id/governance-actions/direct/authorize (specs/0
 
 describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007 US2, FR-004/FR-007/FR-010)", () => {
   it("inserts a formalized, direct-path governance action with no sponsor row", async () => {
-    const communityId = "0xC000000000000000000000000000000000000006";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
     await enableDirectDeployment(creatorCookie, communityId);
 
     const confirmRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
@@ -541,9 +515,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
   });
 
   it("returns 403 and leaves no record when directDeploymentEnabled is false", async () => {
-    const communityId = "0xC000000000000000000000000000000000000007";
     const creatorCookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(creatorCookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
       method: "POST",
@@ -568,9 +541,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
 
 describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", () => {
   it("still creates a draft normally when directDeploymentEnabled is false (regression)", async () => {
-    const communityId = "0xC000000000000000000000000000000000000008";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",
@@ -584,9 +556,8 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
   });
 
   it("returns 403 for draft creation once directDeploymentEnabled is true", async () => {
-    const communityId = "0xC000000000000000000000000000000000000009";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
     await enableDirectDeployment(cookie, communityId);
 
     const res = await app.request(`/api/communities/${communityId}/governance-actions`, {
@@ -598,9 +569,8 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
   });
 
   it("returns 403 for direct/authorize and direct/confirm when directDeploymentEnabled is false", async () => {
-    const communityId = "0xC00000000000000000000000000000000000000a";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
 
     const authRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/authorize`, {
       method: "POST",
@@ -624,9 +594,8 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
   });
 
   it("lets a draft created before the toggle still formalize normally after it's flipped", async () => {
-    const communityId = "0xC00000000000000000000000000000000000000b";
     const cookie = await authCookieFor(CREATOR);
-    const tierIds = await createCommunityWithTiers(cookie, communityId);
+    const { communityId, tierIds } = await createCommunityWithTiers(cookie);
 
     const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
       method: "POST",

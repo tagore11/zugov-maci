@@ -80,13 +80,13 @@ export default function RegisterCommunityPage() {
 
     setIsSubmitting(true);
     try {
-      const community = await communityApi.register({
+      const community = await communityApi.registerManual({
         id: contractAddress,
+        contractAddress,
         chainId,
         displayName: details.displayName.trim(),
         description: details.description.trim() || undefined,
         logo: details.logo.trim() || undefined,
-        creatorAddress: contractAddress,
         allowedPolicies: contractConfig.allowedPolicies,
         supportedModes: contractConfig.supportedModes,
         signUpPolicyType: contractConfig.signUpPolicyType,

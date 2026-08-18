@@ -34,9 +34,14 @@ export const credentials = pgTable(
 export type Credential = typeof credentials.$inferSelect;
 export type NewCredential = typeof credentials.$inferInsert;
 
+// Identity + structure only — deliberately NOT a governance object. A community's identity
+// can exist before any governance tool is configured (see maciGovernanceConfigs below); this
+// table holds only what's true regardless of which governance backend (if any) a community
+// runs. Membership/role structure (membershipPolicy, tierChangesRequireVote, defaultTierId)
+// lives here too, not in the governance table — "who belongs and what they can do" is a
+// structural fact about a community, not a property of its voting mechanism.
 export const communities = pgTable("communities", {
   id: text("id").primaryKey(),
-  chainId: integer("chain_id").notNull(),
   displayName: text("display_name").notNull(),
   description: text("description"),
   logo: text("logo"),
@@ -50,18 +55,39 @@ export const communities = pgTable("communities", {
   parentCommunityId: text("parent_community_id").references((): AnyPgColumn => communities.id, {
     onDelete: "set null",
   }),
-  governanceType: text("governance_type").notNull().default("maci"),
-  allowedPolicies: text("allowed_policies").notNull(),
-  supportedModes: text("supported_modes").notNull(),
-  // Nullable: communities registered before this column existed have no recorded value.
-  signUpPolicyType: text("sign_up_policy_type"),
-  signUpPolicyAddress: text("sign_up_policy_address"),
-  stateTreeDepth: integer("state_tree_depth").notNull(),
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
   tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
   defaultTierId: text("default_tier_id"),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
   directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
+  createdAt: integer("created_at").notNull(),
+  registeredAt: integer("registered_at").notNull(),
+});
+
+export type Community = typeof communities.$inferSelect;
+export type NewCommunity = typeof communities.$inferInsert;
+
+// Governance layer — MACI-specific today, but deliberately its own table (not columns bolted
+// onto communities) so a community's identity doesn't imply a governance tool. 1:1 with
+// communities via PK=communityId; a row here existing at all means "this community has
+// governance configured" (see communityService.parseRecord's governanceConfigured flag).
+// ON DELETE CASCADE: a governance config with no identity behind it is meaningless, unlike
+// parentCommunityId's SET NULL (a child community remains meaningful without its parent).
+export const maciGovernanceConfigs = pgTable("maci_governance_configs", {
+  communityId: text("community_id")
+    .primaryKey()
+    .references(() => communities.id, { onDelete: "cascade" }),
+  // The deployed MACI contract's address. Nullable at the DB level for flexibility, but the
+  // POST /communities/:id/governance request validator requires it — attaching governance
+  // without a known deployed contract is not a state this app's flows ever produce today.
+  contractAddress: text("contract_address"),
+  chainId: integer("chain_id").notNull(),
+  governanceType: text("governance_type").notNull().default("maci"),
+  allowedPolicies: text("allowed_policies").notNull(),
+  supportedModes: text("supported_modes").notNull(),
+  signUpPolicyType: text("sign_up_policy_type"),
+  signUpPolicyAddress: text("sign_up_policy_address"),
+  stateTreeDepth: integer("state_tree_depth").notNull(),
   coordinatorPublicKey: text("coordinator_public_key"),
   tallyProcessingStateTreeDepth: integer("tally_processing_state_tree_depth"),
   voteOptionTreeDepth: integer("vote_option_tree_depth"),
@@ -71,16 +97,52 @@ export const communities = pgTable("communities", {
   constantVoiceCreditProxyFactory: text("constant_voice_credit_proxy_factory"),
   initialVoiceCreditAmount: integer("initial_voice_credit_amount"),
   // Block the MACI contract was deployed at — the subgraph's indexing start block.
-  // Nullable: communities registered before this column existed have no recorded value.
   maciDeploymentBlock: integer("maci_deployment_block"),
   subgraphName: text("subgraph_name"),
   subgraphStatus: text("subgraph_status").$type<"pending" | "ready" | "failed">().notNull().default("pending"),
-  createdAt: integer("created_at").notNull(),
-  registeredAt: integer("registered_at").notNull(),
 });
 
-export type Community = typeof communities.$inferSelect;
-export type NewCommunity = typeof communities.$inferInsert;
+export type MaciGovernanceConfig = typeof maciGovernanceConfigs.$inferSelect;
+export type NewMaciGovernanceConfig = typeof maciGovernanceConfigs.$inferInsert;
+
+// Peer/federation relationship between fully independent communities — distinct from
+// parentCommunityId's hierarchy. A union has no governance of its own; it's a structural
+// grouping, same layer as communities themselves. id is always a server-generated UUID, never
+// an address — unions are never on-chain deployed objects.
+export const unions = pgTable("unions", {
+  id: text("id").primaryKey(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  logo: text("logo"),
+  creatorAddress: text("creator_address").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type Union = typeof unions.$inferSelect;
+export type NewUnion = typeof unions.$inferInsert;
+
+// Many-to-many, consent-gated: invite() creates a "pending" row, respond() (by the INVITED
+// community's own admin, never the inviter) flips it to "active" or "declined". A later
+// invite() on a "declined" row resets it to "pending" — declining once isn't permanent.
+export const unionMemberships = pgTable(
+  "union_memberships",
+  {
+    unionId: text("union_id")
+      .notNull()
+      .references(() => unions.id, { onDelete: "cascade" }),
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    status: text("status").$type<"pending" | "active" | "declined">().notNull(),
+    invitedByAddress: text("invited_by_address").notNull(),
+    requestedAt: integer("requested_at").notNull(),
+    respondedAt: integer("responded_at"),
+  },
+  (table) => [primaryKey({ columns: [table.unionId, table.communityId] })],
+);
+
+export type UnionMembership = typeof unionMemberships.$inferSelect;
+export type NewUnionMembership = typeof unionMemberships.$inferInsert;
 
 export const membershipTiers = pgTable("membership_tiers", {
   id: text("id").primaryKey(),

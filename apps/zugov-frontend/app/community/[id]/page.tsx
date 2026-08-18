@@ -23,6 +23,7 @@ import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/plac
 import { appConstants, maciArtifacts, type GovernanceType, type PollDeployConfig } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
+import { UnionsSection } from "./UnionsSection";
 import { GovernanceActionsList } from "../../components/GovernanceActionsList";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import {
@@ -289,6 +290,16 @@ export default function CommunityPage() {
     enabled: !!backendCommunity,
   });
 
+  // The other half of the parent/child relationship: subCommunities above shows this
+  // community's children looking down; this looks up, so a sub-community's own page can link
+  // back to the community it belongs to (previously only reachable in the parent -> child
+  // direction, never child -> parent).
+  const { data: parentCommunity } = useQuery({
+    queryKey: ["community", backendCommunity?.parentCommunityId],
+    queryFn: () => communityApi.get(backendCommunity!.parentCommunityId!),
+    enabled: !!backendCommunity?.parentCommunityId,
+  });
+
   const { data: messageCounts = {} } = useQuery({
     queryKey: ["pollMessageCounts", pollsData?.map((p) => p.id)],
     queryFn: () =>
@@ -382,6 +393,8 @@ export default function CommunityPage() {
             Back to Communities
           </Link>
 
+          {/* Info: identity fields only — who/what this community is, independent of whether
+              its governance tooling is configured (Design Issue 1's card order). */}
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
             <div className="flex items-center gap-3">
               <span className="text-4xl">{dc.logo || "🏛️"}</span>
@@ -391,62 +404,94 @@ export default function CommunityPage() {
               </div>
             </div>
 
+            {parentCommunity && (
+              <Link
+                to={`/community/${parentCommunity.id}`}
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#86A6C1] transition-colors"
+              >
+                <span aria-hidden="true">↳</span>
+                Sub-community of <span className="text-white font-medium">{parentCommunity.displayName}</span>
+              </Link>
+            )}
+
             {dc.description && <p className="text-gray-400 text-sm">{dc.description}</p>}
 
             <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
-              <InfoRow label="Voting mechanism" value="MACI" />
-              <InfoRow label="Sign-up policy" value={dc.signUpPolicyType ?? "—"} />
-              <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
-              <InfoRow label="Voting modes" value={modeNames || "—"} />
               <InfoRow label="Created" value={formatRelativeTime(dc.createdAt)} />
               <InfoRow label="Creator" value={`${dc.creatorAddress.slice(0, 6)}…${dc.creatorAddress.slice(-4)}`} mono />
             </div>
+          </div>
 
-            {dc.subgraphStatus === "failed" ? (
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
-                This community's data failed to index. Member count and poll history are unavailable.
-              </div>
-            ) : dc.subgraphStatus !== "ready" ? (
+          {/* Governance status: "not yet configured" empty state (mirrors the existing
+              subgraphStatus 'pending' tone), or the real config + join/vote panels once set up. */}
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-white">Governance</h2>
+
+            {!dc.governanceConfigured ? (
               <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
-                This community's data is still being indexed. Member count and poll history will appear here once
-                indexing finishes.
-              </div>
-            ) : isMembersError || isPollsError ? (
-              <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
-                Couldn't load this community's data right now. Please try again later.
-              </div>
-            ) : isMembersLoading || isPollsLoading ? (
-              <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500 animate-pulse">
-                Loading member count and poll history…
+                Governance isn't configured for this community yet.
               </div>
             ) : (
-              <div className="rounded-lg border border-gray-700 p-3 space-y-3">
-                <div className="flex items-center gap-4 text-sm text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Users className="w-4 h-4" />
-                    <span>{memberCount} members</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <FileText className="w-4 h-4" />
-                    <span>{mappedPolls?.length ?? 0} polls</span>
-                  </div>
+              <>
+                <div className="rounded-lg border border-gray-700 divide-y divide-gray-700 text-sm">
+                  <InfoRow label="Voting mechanism" value="MACI" />
+                  <InfoRow label="Sign-up policy" value={dc.signUpPolicyType ?? "—"} />
+                  <InfoRow label="Allowed poll policies" value={policyNames || "—"} />
+                  <InfoRow label="Voting modes" value={modeNames || "—"} />
                 </div>
-                {!!mappedPolls?.length && (
-                  <ul className="space-y-2">
-                    {mappedPolls.map((poll) => (
-                      <li key={poll.id} className="flex items-center justify-between text-sm">
-                        <span className="text-gray-200">{poll.title}</span>
-                        <span className={poll.status === "active" ? "text-green-400" : "text-gray-500"}>
-                          {poll.status}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+
+                {dc.subgraphStatus === "failed" ? (
+                  <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                    This community's data failed to index. Member count and poll history are unavailable.
+                  </div>
+                ) : dc.subgraphStatus !== "ready" ? (
+                  <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+                    This community's data is still being indexed. Member count and poll history will appear here once
+                    indexing finishes.
+                  </div>
+                ) : isMembersError || isPollsError ? (
+                  <div className="rounded-lg border border-red-900/50 bg-red-950/20 p-3 text-sm text-red-400">
+                    Couldn't load this community's data right now. Please try again later.
+                  </div>
+                ) : isMembersLoading || isPollsLoading ? (
+                  <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500 animate-pulse">
+                    Loading member count and poll history…
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-gray-700 p-3 space-y-3">
+                    <div className="flex items-center gap-4 text-sm text-gray-400">
+                      <div className="flex items-center gap-1">
+                        <Users className="w-4 h-4" />
+                        <span>{memberCount} members</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <FileText className="w-4 h-4" />
+                        <span>{mappedPolls?.length ?? 0} polls</span>
+                      </div>
+                    </div>
+                    {!!mappedPolls?.length && (
+                      <ul className="space-y-2">
+                        {mappedPolls.map((poll) => (
+                          <li key={poll.id} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-200">{poll.title}</span>
+                            <span className={poll.status === "active" ? "text-green-400" : "text-gray-500"}>
+                              {poll.status}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
                 )}
-              </div>
+              </>
             )}
 
-            <JoinSection communityId={dc.id} connected={!!address} rpcUrl={rpcUrl} />
+            <JoinSection
+              communityId={dc.id}
+              contractAddress={dc.contractAddress}
+              connected={!!address}
+              rpcUrl={rpcUrl}
+            />
           </div>
 
           {!!subCommunities?.length && (
@@ -458,7 +503,7 @@ export default function CommunityPage() {
                     key={child.id}
                     to={`/community/${child.id}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-700
-                      hover:border-purple-500 hover:bg-gray-800 transition-colors"
+                      hover:border-[#648DAF] hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-xl">{child.logo || "🏛️"}</span>
                     <span className="font-medium text-white">{child.displayName}</span>
@@ -467,6 +512,8 @@ export default function CommunityPage() {
               </div>
             </div>
           )}
+
+          <UnionsSection communityId={dc.id} />
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
             <GovernanceActionsList communityId={dc.id} connected={!!address} />

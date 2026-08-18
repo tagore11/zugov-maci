@@ -81,6 +81,10 @@ export interface WizardState {
   errorMessage: string | undefined;
   retryFromPhase: DeployPhase | undefined;
   deployedCommunityId: string | undefined;
+  // The community's identity id (server-generated UUID), created at the community_setup step
+  // — before any on-chain deployment starts (Architecture 1A/1B). Known immediately, unlike
+  // deployedCommunityId above (kept for the success screen's on-chain-address display).
+  identityCommunityId: string | undefined;
 }
 
 export interface UseCreateCommunityResult {
@@ -91,7 +95,7 @@ export interface UseCreateCommunityResult {
   setCommunitySetup: (config: {
     membershipPolicy: MembershipPolicy;
     advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
-  }) => void;
+  }) => Promise<void>;
   startNetworkCheck: () => Promise<void>;
   startDeployment: () => Promise<void>;
   retryDeployment: () => Promise<void>;
@@ -123,6 +127,7 @@ const INITIAL_STATE: WizardState = {
   errorMessage: undefined,
   retryFromPhase: undefined,
   deployedCommunityId: undefined,
+  identityCommunityId: undefined,
 };
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -166,18 +171,15 @@ function linkPoseidon(bytecode: string, registry: RegistryData): string {
     .replace(new RegExp("__\\$20527677031d76601747626a9845039fe4\\$__", "g"), strip(registry.poseidonT6));
 }
 
-export async function saveWithRetry(
-  payload: communityApi.RegistrationPayload,
-  signIn: () => Promise<void>,
-): Promise<communityApi.Community> {
+async function withAuthRetry<T>(action: () => Promise<T>, signIn: () => Promise<void>): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      return await communityApi.register(payload);
+      return await action();
     } catch (err) {
       if (err instanceof communityApi.AuthError) {
         try {
           await signIn();
-          return await communityApi.register(payload);
+          return await action();
         } catch (retryErr) {
           if (attempt === 2) throw retryErr;
           await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
@@ -189,6 +191,21 @@ export async function saveWithRetry(
     }
   }
   throw new Error("Unreachable");
+}
+
+export async function saveIdentityWithRetry(
+  payload: communityApi.IdentityPayload,
+  signIn: () => Promise<void>,
+): Promise<communityApi.Community> {
+  return withAuthRetry(() => communityApi.registerIdentity(payload), signIn);
+}
+
+export async function saveWithRetry(
+  identityCommunityId: string,
+  payload: communityApi.GovernancePayload,
+  signIn: () => Promise<void>,
+): Promise<communityApi.Community> {
+  return withAuthRetry(() => communityApi.attachGovernance(identityCommunityId, payload), signIn);
 }
 
 function getCompletedPhasesFromCheckpoint(lastPhase: DeployPhase | undefined): DeployPhase[] {
@@ -217,6 +234,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
       ...prev,
       step: "deploying",
       config: checkpoint.config,
+      identityCommunityId: checkpoint.identityCommunityId,
       completedPhases: getCompletedPhasesFromCheckpoint(checkpoint.lastPhase),
       retryFromPhase: checkpoint.lastPhase,
     }));
@@ -243,11 +261,46 @@ export function useCreateCommunity(): UseCreateCommunityResult {
   }, []);
 
   const setCommunitySetup = useCallback(
-    (config: {
+    async (config: {
       membershipPolicy: MembershipPolicy;
       advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
     }) => {
+      if (!state.config.displayName) throw new Error("Community name is required");
       const advanced = config.advanced ?? DEFAULT_ADVANCED_CONFIG;
+
+      // Architecture 1A/1B: the identity is created here, before any on-chain deployment starts
+      // — communityId is a server-generated UUID at this point, not yet a contract address. If
+      // the user hit Back from network_check and re-submits this step (e.g. changed the
+      // membership policy), reuse the already-created identity via update() instead of calling
+      // registerIdentity() again, which would silently orphan the first one.
+      const identityId = state.identityCommunityId
+        ? (
+            await withAuthRetry(
+              () =>
+                communityApi.update(state.identityCommunityId as string, {
+                  membershipPolicy: config.membershipPolicy,
+                  tierChangesRequireVote: false,
+                  defaultTierLabel: "Resident",
+                }),
+              signIn,
+            )
+          ).id
+        : (
+            await saveIdentityWithRetry(
+              {
+                displayName: state.config.displayName,
+                description: state.config.description,
+                parentCommunityId: state.config.parentCommunityId,
+                membershipPolicy: config.membershipPolicy,
+                tierChangesRequireVote: false,
+                tiers: RESIDENT_ORGANIZER_TIERS,
+                defaultTierLabel: "Resident",
+                source: "wizard",
+              },
+              signIn,
+            )
+          ).id;
+
       setState((prev) => ({
         ...prev,
         config: {
@@ -259,10 +312,11 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           defaultTierLabel: "Resident",
           stateTreeDepth: STATE_TREE_DEPTH,
         },
+        identityCommunityId: identityId,
         step: "network_check",
       }));
     },
-    [],
+    [state.config, state.identityCommunityId, signIn],
   );
 
   const startNetworkCheck = useCallback(async () => {
@@ -278,6 +332,11 @@ export function useCreateCommunity(): UseCreateCommunityResult {
 
       const config = state.config as MACIDeploymentConfig;
       if (!config.displayName) throw new Error("Community name is required");
+
+      const identityCommunityId = existingCheckpoint?.identityCommunityId ?? state.identityCommunityId;
+      if (!identityCommunityId) {
+        throw new Error("Community identity was not created — go back and complete the community setup step");
+      }
 
       const registryData = registry.data;
       const chainConstants = appConstants[chainId as keyof typeof appConstants];
@@ -295,6 +354,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
       const checkpoint: PendingDeploymentCheckpoint = existingCheckpoint ?? {
         config,
         lastPhase: "deploy_sign_up_policy",
+        identityCommunityId,
         chainId,
         startedAt: Date.now(),
       };
@@ -385,31 +445,22 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           addCompleted(setState, "set_target");
         }
 
-        // Phase 4: Register with backend
+        // Phase 4: attach governance config now that MACI has been deployed on-chain — identity
+        // (displayName/description/membership/tiers) was already saved in setCommunitySetup.
         setPhase(setState, "save_community");
-        const payload: communityApi.RegistrationPayload = {
-          id: maciAddress,
-          displayName: config.displayName,
-          description: config.description,
-          parentCommunityId: config.parentCommunityId,
-          logo: "🏛️",
+        const payload: communityApi.GovernancePayload = {
+          contractAddress: maciAddress,
           chainId,
-          creatorAddress: address as Hex,
           allowedPolicies: config.allowedPolicies,
           supportedModes: config.supportedModes,
           signUpPolicyType: config.signUpPolicy.type,
           signUpPolicyAddress: signUpPolicyAddress,
           maciDeploymentBlock: maciBlockNumber,
           stateTreeDepth: STATE_TREE_DEPTH,
-          source: "wizard",
-          membershipPolicy: config.membershipPolicy,
-          tierChangesRequireVote: config.tierChangesRequireVote,
-          tiers: config.tiers,
-          defaultTierLabel: config.defaultTierLabel,
           pollDeployConfig: chainConstants ? buildPollDeployConfig(registryData, chainConstants) : undefined,
         };
 
-        const registered = await saveWithRetry(payload, signIn);
+        const registered = await saveWithRetry(identityCommunityId, payload, signIn);
         addCompleted(setState, "save_community");
 
         clearPendingCheckpoint(address as Hex);
@@ -427,7 +478,9 @@ export function useCreateCommunity(): UseCreateCommunityResult {
         setState((prev) => ({
           ...prev,
           step: "success",
-          deployedCommunityId: maciAddress,
+          // registered.id is the identity id (route param for /community/[id]) — distinct from
+          // maciAddress, the on-chain contract address (Architecture 1C).
+          deployedCommunityId: registered.id,
           currentPhase: undefined,
           summary: {
             displayName: config.displayName,

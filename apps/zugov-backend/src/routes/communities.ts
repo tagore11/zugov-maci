@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { communityBodySchema } from "../validators/communitySchema.js";
+import { communityRegistrationBodySchema, attachGovernanceBodySchema } from "../validators/communitySchema.js";
 import * as communityService from "../services/communityService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
@@ -13,6 +13,7 @@ import {
   RpcUnavailableError,
 } from "../services/contractOwnership.js";
 import { deployCommunitySubgraph, subgraphQueryUrlFor } from "../services/subgraphDeployService.js";
+import * as unionService from "../services/unionService.js";
 
 const communityUpdateSchema = z.object({
   displayName: z.string().min(1).max(80).optional(),
@@ -62,14 +63,33 @@ communitiesRouter.get("/:id/children", async (c) => {
   return c.json({ communities: children });
 });
 
+// Unions this community belongs to or has a pending invite for — powers the community detail
+// page's "Unions" section, including the "Invited — awaiting response" state.
+communitiesRouter.get("/:id/unions", async (c) => {
+  const id = c.req.param("id");
+  const community = await communityService.get(id);
+  if (!community) {
+    return c.json({ error: "Community not found" }, 404);
+  }
+  const unions = await unionService.listForCommunity(id);
+  return c.json({ unions });
+});
+
 // specs/002 FR-002/FR-013: the registering wallet MUST have an active SIWE session, and for the
 // "manual" (register-existing-contract) source specifically, that session wallet MUST match the
 // contract's on-chain owner() before the registration is accepted. The wizard source is exempt
 // from the owner() check (the deploying wallet is provably the owner by construction) but still
 // requires a session, per FR-002.
+//
+// Identity-only for wizard (Architecture 1A/1B): the server generates the id and the caller
+// attaches governance separately via POST /:id/governance once MACI is deployed. Manual
+// registration provides identity + governance together in one call — the contract already
+// exists, so both are known simultaneously; createIdentity() and attachGovernance() are simply
+// composed here rather than requiring two round trips for a flow that has no "before deployment"
+// phase to begin with.
 communitiesRouter.post("/", requireAuth, async (c) => {
   const body = await c.req.json();
-  const parsed = communityBodySchema.safeParse(body);
+  const parsed = communityRegistrationBodySchema.safeParse(body);
 
   if (!parsed.success) {
     return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
@@ -101,14 +121,53 @@ communitiesRouter.post("/", requireAuth, async (c) => {
   }
 
   try {
-    const { community, created } = await communityService.create(data);
-    return c.json({ community }, created ? 201 : 200);
+    const { community: identity, created } = await communityService.createIdentity(data);
+    if (data.source === "manual") {
+      if (created) {
+        const community = await communityService.attachGovernance(identity.id, data);
+        return c.json({ community }, 201);
+      }
+      // Duplicate manual registration (retry) — governance is already attached from the
+      // first successful call, return the existing full record as-is.
+      return c.json({ community: identity }, 200);
+    }
+    return c.json({ community: identity }, created ? 201 : 200);
   } catch (err) {
     if (
       err instanceof communityService.SelfParentError ||
-      err instanceof communityService.ParentCommunityNotFoundError
+      err instanceof communityService.ParentCommunityNotFoundError ||
+      err instanceof communityService.GovernanceAlreadyConfiguredError
     ) {
       return c.json({ error: err.message }, 422);
+    }
+    throw err;
+  }
+});
+
+// Attaches governance config to an already-created identity — the wizard's own two-step flow
+// (create identity, deploy MACI, attach governance once the contract address is known).
+communitiesRouter.post("/:id/governance", requireAuth, async (c) => {
+  const id = c.req.param("id");
+  const session = await getSession(c);
+  if (!(await isAuthorized(id, session.address!))) {
+    return c.json({ error: "Not authorized to manage this community" }, 403);
+  }
+
+  const body = await c.req.json();
+  const parsed = attachGovernanceBodySchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
+  }
+
+  try {
+    const community = await communityService.attachGovernance(id, parsed.data);
+    return c.json({ community }, 201);
+  } catch (err) {
+    if (err instanceof communityService.CommunityNotFoundError) {
+      return c.json({ error: err.message }, 404);
+    }
+    if (err instanceof communityService.GovernanceAlreadyConfiguredError) {
+      return c.json({ error: err.message }, 409);
     }
     throw err;
   }
@@ -170,11 +229,16 @@ communitiesRouter.post("/:id/subgraph/retry", requireAuth, async (c) => {
 
   const community = await communityService.get(id);
   if (!community) return c.json({ error: "Community not found" }, 404);
-  if (community.maciDeploymentBlock === null) {
-    return c.json({ error: "No recorded MACI deployment block for this community" }, 422);
+  if (!community.governanceConfigured || community.maciDeploymentBlock === null) {
+    return c.json({ error: "No governance configured for this community" }, 422);
   }
 
-  void deployCommunitySubgraph(community.id, community.chainId, community.maciDeploymentBlock).catch((err: unknown) => {
+  void deployCommunitySubgraph(
+    community.id,
+    community.contractAddress!,
+    community.chainId!,
+    community.maciDeploymentBlock,
+  ).catch((err: unknown) => {
     console.error(`[communities route] Unexpected error retrying subgraph deploy for ${id}:`, err);
   });
 

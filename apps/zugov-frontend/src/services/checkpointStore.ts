@@ -31,6 +31,11 @@ export interface MACIDeploymentConfig {
 export interface PendingDeploymentCheckpoint {
   config: MACIDeploymentConfig;
   lastPhase: DeployPhase;
+  // The community's identity id (server-generated UUID), created before any on-chain deployment
+  // starts (Architecture 1A/1B). Persisted immediately so a resumed wizard run reuses the same
+  // identity instead of calling createIdentity() again — wizard-path identity creation has no
+  // natural retry key the way a client-supplied contract address would.
+  identityCommunityId?: string;
   deployedSignUpPolicyAddress?: Hex;
   deployedMaciAddress?: Hex;
   deployedMaciBlockNumber?: number;

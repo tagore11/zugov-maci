@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Header } from "../components/Header";
 import { Plus, Edit, Users, FileText } from "lucide-react";
 import { CreateCommunityModal } from "../components/CreateCommunityModal";
+import { UnionsPanel } from "./UnionsPanel";
 import { Link, useNavigate } from "react-router-dom";
 import * as communityApi from "@/src/services/communityApi";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
@@ -29,7 +30,9 @@ function apiToItem(c: communityApi.Community): UserCommunityItem {
     members: 0,
     proposals: 0,
     subgraphStatus: c.subgraphStatus,
-    governanceType: c.governanceType,
+    // Only read when subgraphStatus === "ready" (see readyCommunities below), which implies
+    // governance is configured — the "" fallback here is unreachable in practice.
+    governanceType: c.governanceType ?? "",
   };
 }
 
@@ -167,6 +170,8 @@ export default function ManageCommunitiesPage() {
             </div>
           )}
         </div>
+
+        <UnionsPanel communities={userCommunities.map((c) => ({ id: c.id, name: c.name, logo: c.logo }))} />
       </main>
 
       <CreateCommunityModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />

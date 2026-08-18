@@ -1,8 +1,15 @@
+import { randomUUID } from "node:crypto";
 import { eq, and, count } from "drizzle-orm";
 import { createPublicClient, getAddress, http, type Address } from "viem";
 import { db } from "../db/client.js";
-import { communities, memberships, type Community } from "../db/schema.js";
-import type { CommunityBody, PollDeployConfigBody } from "../validators/communitySchema.js";
+import {
+  communities,
+  memberships,
+  maciGovernanceConfigs,
+  type Community,
+  type MaciGovernanceConfig,
+} from "../db/schema.js";
+import type { IdentityBody, GovernanceBody, PollDeployConfigBody } from "../validators/communitySchema.js";
 import { getRpcUrl } from "./chainRpc.js";
 import { createTiersForCommunity, listTiers } from "./membershipService.js";
 import { deployCommunitySubgraph, subgraphQueryUrlFor } from "./subgraphDeployService.js";
@@ -43,51 +50,76 @@ const POLL_DEPLOY_CONFIG_COLUMNS = [
   "initialVoiceCreditAmount",
 ] as const;
 
-export type CommunityRecord = Omit<
-  Community,
-  "allowedPolicies" | "supportedModes" | (typeof POLL_DEPLOY_CONFIG_COLUMNS)[number]
-> & {
+// Flat merged shape (Architecture Issue 3, locked): callers never see the identity/governance
+// table split — get()/list() join both tables and return one object, same shape a caller of
+// the old single-table communities row would have seen, plus governanceConfigured so callers
+// can tell "no governance row exists yet" apart from "governance fields happen to be null."
+export type CommunityRecord = Community & {
+  governanceConfigured: boolean;
+  contractAddress: string | null;
+  chainId: number | null;
+  governanceType: string | null;
   allowedPolicies: number[];
   supportedModes: number[];
+  signUpPolicyType: string | null;
+  signUpPolicyAddress: string | null;
+  stateTreeDepth: number | null;
+  maciDeploymentBlock: number | null;
+  subgraphName: string | null;
+  subgraphStatus: "pending" | "ready" | "failed" | null;
   pollDeployConfig: PollDeployConfigBody | null;
 };
 
-function parseRecord(raw: Community): CommunityRecord {
-  const pollDeployConfig = POLL_DEPLOY_CONFIG_COLUMNS.every((column) => raw[column] !== null)
+function parseRecord(identity: Community, governance: MaciGovernanceConfig | null): CommunityRecord {
+  if (!governance) {
+    return {
+      ...identity,
+      governanceConfigured: false,
+      contractAddress: null,
+      chainId: null,
+      governanceType: null,
+      allowedPolicies: [],
+      supportedModes: [],
+      signUpPolicyType: null,
+      signUpPolicyAddress: null,
+      stateTreeDepth: null,
+      maciDeploymentBlock: null,
+      subgraphName: null,
+      subgraphStatus: null,
+      pollDeployConfig: null,
+    };
+  }
+
+  const pollDeployConfig = POLL_DEPLOY_CONFIG_COLUMNS.every((column) => governance[column] !== null)
     ? ({
-        coordinatorPublicKey: raw.coordinatorPublicKey,
+        coordinatorPublicKey: governance.coordinatorPublicKey,
         treeDepths: {
-          tallyProcessingStateTreeDepth: raw.tallyProcessingStateTreeDepth,
-          voteOptionTreeDepth: raw.voteOptionTreeDepth,
-          stateTreeDepth: raw.stateTreeDepth,
+          tallyProcessingStateTreeDepth: governance.tallyProcessingStateTreeDepth,
+          voteOptionTreeDepth: governance.voteOptionTreeDepth,
+          stateTreeDepth: governance.stateTreeDepth,
         },
-        messageBatchSize: raw.messageBatchSize,
-        freeForAllPolicyFactory: raw.freeForAllPolicyFactory,
-        freeForAllChecker: raw.freeForAllChecker,
-        constantVoiceCreditProxyFactory: raw.constantVoiceCreditProxyFactory,
-        initialVoiceCreditAmount: raw.initialVoiceCreditAmount,
+        messageBatchSize: governance.messageBatchSize,
+        freeForAllPolicyFactory: governance.freeForAllPolicyFactory,
+        freeForAllChecker: governance.freeForAllChecker,
+        constantVoiceCreditProxyFactory: governance.constantVoiceCreditProxyFactory,
+        initialVoiceCreditAmount: governance.initialVoiceCreditAmount,
       } as PollDeployConfigBody)
     : null;
 
-  // Destructure the flat columns out rather than relying on the return type's Omit<> — a type
-  // annotation doesn't strip runtime properties, so `...rest` (not `...raw`) is required to avoid
-  // leaking them as duplicate top-level fields alongside the nested `pollDeployConfig` above.
-  const {
-    coordinatorPublicKey: _coordinatorPublicKey,
-    tallyProcessingStateTreeDepth: _tallyProcessingStateTreeDepth,
-    voteOptionTreeDepth: _voteOptionTreeDepth,
-    messageBatchSize: _messageBatchSize,
-    freeForAllPolicyFactory: _freeForAllPolicyFactory,
-    freeForAllChecker: _freeForAllChecker,
-    constantVoiceCreditProxyFactory: _constantVoiceCreditProxyFactory,
-    initialVoiceCreditAmount: _initialVoiceCreditAmount,
-    ...rest
-  } = raw;
-
   return {
-    ...rest,
-    allowedPolicies: JSON.parse(raw.allowedPolicies) as number[],
-    supportedModes: JSON.parse(raw.supportedModes) as number[],
+    ...identity,
+    governanceConfigured: true,
+    contractAddress: governance.contractAddress,
+    chainId: governance.chainId,
+    governanceType: governance.governanceType,
+    allowedPolicies: JSON.parse(governance.allowedPolicies) as number[],
+    supportedModes: JSON.parse(governance.supportedModes) as number[],
+    signUpPolicyType: governance.signUpPolicyType,
+    signUpPolicyAddress: governance.signUpPolicyAddress,
+    stateTreeDepth: governance.stateTreeDepth,
+    maciDeploymentBlock: governance.maciDeploymentBlock,
+    subgraphName: governance.subgraphName,
+    subgraphStatus: governance.subgraphStatus,
     pollDeployConfig,
   };
 }
@@ -101,35 +133,56 @@ export async function list(
   const offset = (page - 1) * limit;
 
   const conditions = [
-    chainId !== undefined ? eq(communities.chainId, chainId) : undefined,
+    chainId !== undefined ? eq(maciGovernanceConfigs.chainId, chainId) : undefined,
     creatorAddress !== undefined ? eq(communities.creatorAddress, creatorAddress) : undefined,
   ].filter((condition) => condition !== undefined);
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
   const [rows, totalRows] = await Promise.all([
-    db.select().from(communities).where(baseWhere).limit(limit).offset(offset).orderBy(communities.registeredAt),
-    db.select({ value: count() }).from(communities).where(baseWhere),
+    db
+      .select()
+      .from(communities)
+      .leftJoin(maciGovernanceConfigs, eq(communities.id, maciGovernanceConfigs.communityId))
+      .where(baseWhere)
+      .limit(limit)
+      .offset(offset)
+      .orderBy(communities.registeredAt),
+    db
+      .select({ value: count() })
+      .from(communities)
+      .leftJoin(maciGovernanceConfigs, eq(communities.id, maciGovernanceConfigs.communityId))
+      .where(baseWhere),
   ]);
 
   const total = Number(totalRows[0]?.value ?? 0);
   return {
-    communities: rows.map(parseRecord),
+    communities: rows.map((row) => parseRecord(row.communities, row.maci_governance_configs)),
     total,
     hasMore: offset + rows.length < total,
   };
 }
 
 export async function get(id: string): Promise<CommunityRecord | null> {
-  const rows = await db.select().from(communities).where(eq(communities.id, id)).limit(1);
-  return rows[0] ? parseRecord(rows[0]) : null;
+  const rows = await db
+    .select()
+    .from(communities)
+    .leftJoin(maciGovernanceConfigs, eq(communities.id, maciGovernanceConfigs.communityId))
+    .where(eq(communities.id, id))
+    .limit(1);
+  const row = rows[0];
+  return row ? parseRecord(row.communities, row.maci_governance_configs) : null;
 }
 
 // Lightpaper's "communities and sub-communities" building block: local chapters, event teams,
 // and contributor circles nested under a parent. No pagination — sub-community counts per
 // community are expected to stay small (chapters/teams, not a general listing surface).
 export async function listChildren(parentId: string): Promise<CommunityRecord[]> {
-  const rows = await db.select().from(communities).where(eq(communities.parentCommunityId, parentId));
-  return rows.map(parseRecord);
+  const rows = await db
+    .select()
+    .from(communities)
+    .leftJoin(maciGovernanceConfigs, eq(communities.id, maciGovernanceConfigs.communityId))
+    .where(eq(communities.parentCommunityId, parentId));
+  return rows.map((row) => parseRecord(row.communities, row.maci_governance_configs));
 }
 
 /**
@@ -138,17 +191,20 @@ export async function listChildren(parentId: string): Promise<CommunityRecord[]>
  * OwnershipTransferred handler but which this app is never otherwise told about (no
  * webhook from graph-node — see subgraphQueryUrlFor). Called lazily when a community is
  * fetched, mirroring the on-page-load on-chain reads used elsewhere in this app rather
- * than adding new polling infrastructure.
+ * than adding new polling infrastructure. No-op for communities with no governance
+ * configured yet — there's no subgraph to reconcile against.
  */
 export async function reconcileCreatorAddress(community: CommunityRecord): Promise<CommunityRecord> {
-  if (community.subgraphStatus !== "ready" || !community.subgraphName) return community;
+  if (!community.governanceConfigured || community.subgraphStatus !== "ready" || !community.subgraphName) {
+    return community;
+  }
 
   let owner: string | undefined;
   try {
     const res = await fetch(subgraphQueryUrlFor(community.subgraphName), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: `{ maci(id: "${community.id.toLowerCase()}") { owner } }` }),
+      body: JSON.stringify({ query: `{ maci(id: "${community.contractAddress!.toLowerCase()}") { owner } }` }),
     });
     if (!res.ok) return community;
     const body = (await res.json()) as { data?: { maci?: { owner: string } | null } };
@@ -172,12 +228,13 @@ export async function reconcileCreatorAddress(community: CommunityRecord): Promi
  * existed (see schema.ts's comment on signUpPolicyType) by reading MACI's immutable
  * signUpPolicy() getter and the resulting policy contract's trait() directly from chain. Unlike
  * reconcileCreatorAddress above, this value can't change after MACI's constructor runs, so it
- * only needs to be read once — no subgraph dependency, and nothing to do once it's set.
+ * only needs to be read once — no subgraph dependency, and nothing to do once it's set. No-op
+ * for communities with no governance configured yet — there's no deployed contract to read.
  */
 export async function reconcileSignUpPolicy(community: CommunityRecord): Promise<CommunityRecord> {
-  if (community.signUpPolicyType !== null) return community;
+  if (!community.governanceConfigured || community.signUpPolicyType !== null) return community;
 
-  const rpcUrl = getRpcUrl(community.chainId);
+  const rpcUrl = getRpcUrl(community.chainId!);
   if (!rpcUrl) return community;
 
   const client = createPublicClient({ transport: http(rpcUrl) });
@@ -186,7 +243,7 @@ export async function reconcileSignUpPolicy(community: CommunityRecord): Promise
   let trait: string;
   try {
     signUpPolicyAddress = await client.readContract({
-      address: community.id as Address,
+      address: community.contractAddress as Address,
       abi: SIGN_UP_POLICY_ABI,
       functionName: "signUpPolicy",
     });
@@ -204,9 +261,9 @@ export async function reconcileSignUpPolicy(community: CommunityRecord): Promise
 
   const checksummedPolicyAddress = getAddress(signUpPolicyAddress);
   await db
-    .update(communities)
+    .update(maciGovernanceConfigs)
     .set({ signUpPolicyType, signUpPolicyAddress: checksummedPolicyAddress })
-    .where(eq(communities.id, community.id));
+    .where(eq(maciGovernanceConfigs.communityId, community.id));
 
   return { ...community, signUpPolicyType, signUpPolicyAddress: checksummedPolicyAddress };
 }
@@ -223,7 +280,34 @@ export class ParentCommunityNotFoundError extends Error {
   }
 }
 
-export async function create(data: CommunityBody): Promise<{ community: CommunityRecord; created: boolean }> {
+export class CommunityNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Community "${id}" not found`);
+  }
+}
+
+export class GovernanceAlreadyConfiguredError extends Error {
+  constructor(id: string) {
+    super(`Community "${id}" already has governance configured`);
+  }
+}
+
+/**
+ * Creates a community's identity — displayName/description/logo, its place in the
+ * parent/child hierarchy, and its membership structure (tiers + creator enrollment). No
+ * governance is attached here (see attachGovernance below) — a community's identity and
+ * membership can exist before any governance tool is configured (Architecture 1A/1B/2b).
+ *
+ * `id`: omitted for wizard-sourced communities (server generates a UUID — identity is
+ * created before the MACI contract is deployed, so there's no address to use yet).
+ * Provided for manual-sourced communities (the caller is registering an already-deployed
+ * contract, so its address IS the natural, deterministic id — same retry-idempotency as
+ * before: a duplicate-key insert on a client-supplied id returns the existing record rather
+ * than erroring).
+ */
+export async function createIdentity(
+  data: IdentityBody & { id?: string; creatorAddress: string },
+): Promise<{ community: CommunityRecord; created: boolean }> {
   const now = Math.floor(Date.now() / 1000);
 
   if (data.parentCommunityId !== undefined) {
@@ -232,31 +316,16 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
     if (!parent) throw new ParentCommunityNotFoundError(data.parentCommunityId);
   }
 
+  const id = data.id ?? randomUUID();
   const newRecord = {
-    id: data.id,
-    chainId: data.chainId,
+    id,
     displayName: data.displayName,
     description: data.description ?? null,
     logo: data.logo ?? null,
     creatorAddress: data.creatorAddress,
     parentCommunityId: data.parentCommunityId ?? null,
-    governanceType: "maci",
-    allowedPolicies: JSON.stringify(data.allowedPolicies),
-    supportedModes: JSON.stringify(data.supportedModes),
-    signUpPolicyType: data.signUpPolicyType,
-    signUpPolicyAddress: data.signUpPolicyAddress,
-    maciDeploymentBlock: data.maciDeploymentBlock,
-    stateTreeDepth: data.stateTreeDepth,
     membershipPolicy: data.membershipPolicy,
     tierChangesRequireVote: data.tierChangesRequireVote,
-    coordinatorPublicKey: data.pollDeployConfig?.coordinatorPublicKey ?? null,
-    tallyProcessingStateTreeDepth: data.pollDeployConfig?.treeDepths.tallyProcessingStateTreeDepth ?? null,
-    voteOptionTreeDepth: data.pollDeployConfig?.treeDepths.voteOptionTreeDepth ?? null,
-    messageBatchSize: data.pollDeployConfig?.messageBatchSize ?? null,
-    freeForAllPolicyFactory: data.pollDeployConfig?.freeForAllPolicyFactory ?? null,
-    freeForAllChecker: data.pollDeployConfig?.freeForAllChecker ?? null,
-    constantVoiceCreditProxyFactory: data.pollDeployConfig?.constantVoiceCreditProxyFactory ?? null,
-    initialVoiceCreditAmount: data.pollDeployConfig?.initialVoiceCreditAmount ?? null,
     createdAt: now,
     registeredAt: now,
   };
@@ -277,11 +346,12 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
       .returning();
 
     // The creator otherwise has no membership row at all, so tier-scoped permission checks
-    // (e.g. governanceActionService's canCreateGovernanceActions) would reject them on their own
-    // community. Enroll them at the full-permission ("Admin"-equivalent) tier, not the default
-    // tier meant for new joiners — those are frequently different (e.g. the wizard's own default
-    // is "Regular", which lacks canCreateGovernanceActions), and a creator locked out of their
-    // own community's governance actions is a real, previously-reproducible bug.
+    // (e.g. governanceActionService's canCreateGovernanceActions, or union invite's
+    // canManageMembership gate) would reject them on their own community. Enroll them at the
+    // full-permission ("Admin"-equivalent) tier, not the default tier meant for new joiners —
+    // those are frequently different (e.g. the wizard's own default is "Regular", which lacks
+    // canCreateGovernanceActions), and a creator locked out of their own community's governance
+    // actions is a real, previously-reproducible bug.
     await db.insert(memberships).values({
       walletAddress: data.creatorAddress,
       communityId: community.id,
@@ -289,22 +359,68 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
       joinedAt: now,
     });
 
-    // Fire-and-forget: deploying the community's subgraph shouldn't block or fail
-    // registration. deployCommunitySubgraph never throws — failures land in
-    // subgraphStatus for the retry route — but .catch is kept as a defensive backstop.
-    void deployCommunitySubgraph(community.id, data.chainId, data.maciDeploymentBlock).catch((err: unknown) => {
-      console.error(`[communityService] Unexpected error deploying subgraph for ${community.id}:`, err);
-    });
-
-    return { community: parseRecord(withDefaultTier!), created: true };
+    return { community: parseRecord(withDefaultTier!, null), created: true };
   } catch (err: unknown) {
     const isUniqueViolation = err instanceof Error && err.message.includes("duplicate key");
-    if (isUniqueViolation) {
+    if (isUniqueViolation && data.id !== undefined) {
       const existing = await get(data.id);
       return { community: existing!, created: false };
     }
     throw err;
   }
+}
+
+/**
+ * Attaches governance config to an existing community identity — one governance row per
+ * community, enforced at the DB level by maciGovernanceConfigs' communityId PK (a duplicate
+ * insert throws a unique-violation, caught below and surfaced as GovernanceAlreadyConfiguredError
+ * rather than a raw DB error leaking to the client). This is the fix for the eng review's
+ * highest-severity failure mode: two tabs finishing wizard setup simultaneously must not both
+ * succeed in attaching governance.
+ */
+export async function attachGovernance(id: string, data: GovernanceBody): Promise<CommunityRecord> {
+  const identityRows = await db.select().from(communities).where(eq(communities.id, id)).limit(1);
+  if (!identityRows[0]) throw new CommunityNotFoundError(id);
+
+  const newGovernanceRecord = {
+    communityId: id,
+    contractAddress: data.contractAddress,
+    chainId: data.chainId,
+    governanceType: "maci",
+    allowedPolicies: JSON.stringify(data.allowedPolicies),
+    supportedModes: JSON.stringify(data.supportedModes),
+    signUpPolicyType: data.signUpPolicyType,
+    signUpPolicyAddress: data.signUpPolicyAddress,
+    maciDeploymentBlock: data.maciDeploymentBlock,
+    stateTreeDepth: data.stateTreeDepth,
+    coordinatorPublicKey: data.pollDeployConfig?.coordinatorPublicKey ?? null,
+    tallyProcessingStateTreeDepth: data.pollDeployConfig?.treeDepths.tallyProcessingStateTreeDepth ?? null,
+    voteOptionTreeDepth: data.pollDeployConfig?.treeDepths.voteOptionTreeDepth ?? null,
+    messageBatchSize: data.pollDeployConfig?.messageBatchSize ?? null,
+    freeForAllPolicyFactory: data.pollDeployConfig?.freeForAllPolicyFactory ?? null,
+    freeForAllChecker: data.pollDeployConfig?.freeForAllChecker ?? null,
+    constantVoiceCreditProxyFactory: data.pollDeployConfig?.constantVoiceCreditProxyFactory ?? null,
+    initialVoiceCreditAmount: data.pollDeployConfig?.initialVoiceCreditAmount ?? null,
+  };
+
+  try {
+    await db.insert(maciGovernanceConfigs).values(newGovernanceRecord);
+  } catch (err: unknown) {
+    const isUniqueViolation = err instanceof Error && err.message.includes("duplicate key");
+    if (isUniqueViolation) throw new GovernanceAlreadyConfiguredError(id);
+    throw err;
+  }
+
+  // Fire-and-forget: deploying the community's subgraph shouldn't block or fail attach.
+  // deployCommunitySubgraph never throws — failures land in subgraphStatus for the retry
+  // route — but .catch is kept as a defensive backstop.
+  void deployCommunitySubgraph(id, data.contractAddress, data.chainId, data.maciDeploymentBlock).catch(
+    (err: unknown) => {
+      console.error(`[communityService] Unexpected error deploying subgraph for ${id}:`, err);
+    },
+  );
+
+  return (await get(id))!;
 }
 
 export interface CommunityUpdatePatch {
@@ -324,6 +440,8 @@ export class TierLabelNotFoundError extends Error {
   }
 }
 
+// All patchable fields are identity-layer (displayName, membership policy, etc.) — none of
+// them touch maciGovernanceConfigs, so this never needs to join or update the governance table.
 export async function update(id: string, patch: CommunityUpdatePatch): Promise<CommunityRecord | null> {
   const dbPatch: Partial<Community> = {};
   if (patch.displayName !== undefined) dbPatch.displayName = patch.displayName;
@@ -344,5 +462,5 @@ export async function update(id: string, patch: CommunityUpdatePatch): Promise<C
   if (Object.keys(dbPatch).length === 0) return get(id);
 
   const [updated] = await db.update(communities).set(dbPatch).where(eq(communities.id, id)).returning();
-  return updated ? parseRecord(updated) : null;
+  return updated ? get(id) : null;
 }

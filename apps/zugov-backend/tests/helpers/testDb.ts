@@ -25,6 +25,9 @@ export async function clearCommunities() {
   await testDb.delete(schema.joinRequests);
   await testDb.delete(schema.memberships);
   await testDb.delete(schema.membershipTiers);
+  await testDb.delete(schema.unionMemberships);
+  await testDb.delete(schema.unions);
+  await testDb.delete(schema.maciGovernanceConfigs);
   await testDb.delete(schema.communities);
 }
 

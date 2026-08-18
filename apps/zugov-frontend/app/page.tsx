@@ -39,7 +39,7 @@ function apiToItem(c: communityApi.Community): CommunityItem {
     createdAt: c.createdAt,
     signUpPolicyType: c.signUpPolicyType,
     subgraphStatus: c.subgraphStatus,
-    governanceType: c.governanceType,
+    governanceType: c.governanceType ?? undefined,
   };
 }
 

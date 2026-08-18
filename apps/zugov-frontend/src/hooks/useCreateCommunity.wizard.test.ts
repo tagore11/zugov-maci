@@ -49,8 +49,24 @@ vi.mock("@/src/services/checkpointStore", async () => {
   };
 });
 
-beforeEach(() => {
+// setCommunitySetup now creates the community's identity via a real network call
+// (Architecture 1A/1B) — mock it out so these tests only exercise step-transition logic.
+let registerIdentityCounter = 0;
+vi.mock("@/src/services/communityApi", async () => {
+  const actual = await vi.importActual<typeof import("@/src/services/communityApi")>("@/src/services/communityApi");
+  return {
+    ...actual,
+    registerIdentity: vi.fn(async () => ({ id: `identity-${++registerIdentityCounter}` })),
+    update: vi.fn(async (id: string) => ({ id })),
+  };
+});
+
+beforeEach(async () => {
   localStorage.clear();
+  registerIdentityCounter = 0;
+  const communityApi = await import("@/src/services/communityApi");
+  vi.mocked(communityApi.registerIdentity).mockClear();
+  vi.mocked(communityApi.update).mockClear();
 });
 
 describe("RESIDENT_ORGANIZER_TIERS", () => {
@@ -79,7 +95,7 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.step).toBe("community_info");
   });
 
-  it("community_info -> community_setup, then community_setup -> network_check with defaults applied", () => {
+  it("community_info -> community_setup, then community_setup -> network_check with defaults applied", async () => {
     const { result } = renderHook(() => useCreateCommunity());
 
     act(() => {
@@ -88,8 +104,8 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.step).toBe("community_setup");
     expect(result.current.state.config.displayName).toBe("Zukas");
 
-    act(() => {
-      result.current.setCommunitySetup({ membershipPolicy: "open" });
+    await act(async () => {
+      await result.current.setCommunitySetup({ membershipPolicy: "open" });
     });
 
     expect(result.current.state.step).toBe("network_check");
@@ -102,27 +118,27 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.config.supportedModes).toEqual([1]);
   });
 
-  it("approval-required membership policy is preserved through to network_check, not silently reset to open", () => {
+  it("approval-required membership policy is preserved through to network_check, not silently reset to open", async () => {
     const { result } = renderHook(() => useCreateCommunity());
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");
     });
-    act(() => {
-      result.current.setCommunitySetup({ membershipPolicy: "approval" });
+    await act(async () => {
+      await result.current.setCommunitySetup({ membershipPolicy: "approval" });
     });
 
     expect(result.current.state.config.membershipPolicy).toBe("approval");
   });
 
-  it("Advanced settings, when provided, override the zero-config defaults", () => {
+  it("Advanced settings, when provided, override the zero-config defaults", async () => {
     const { result } = renderHook(() => useCreateCommunity());
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");
     });
-    act(() => {
-      result.current.setCommunitySetup({
+    await act(async () => {
+      await result.current.setCommunitySetup({
         membershipPolicy: "open",
         advanced: {
           signUpPolicy: { type: "MerkleProof", merkleRoot: "0xabc" },
@@ -135,6 +151,37 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.config.signUpPolicy).toEqual({ type: "MerkleProof", merkleRoot: "0xabc" });
     expect(result.current.state.config.allowedPolicies).toEqual([2]);
     expect(result.current.state.config.supportedModes).toEqual([0]);
+  });
+
+  it("setCommunitySetup creates the identity once and updates (not re-creates) it on re-submission after Back", async () => {
+    const communityApi = await import("@/src/services/communityApi");
+    const { result } = renderHook(() => useCreateCommunity());
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+    await act(async () => {
+      await result.current.setCommunitySetup({ membershipPolicy: "open" });
+    });
+    const firstIdentityId = result.current.state.identityCommunityId;
+    expect(firstIdentityId).toBeDefined();
+    expect(communityApi.registerIdentity).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.goBack();
+    });
+    expect(result.current.state.step).toBe("community_setup");
+
+    await act(async () => {
+      await result.current.setCommunitySetup({ membershipPolicy: "approval" });
+    });
+
+    expect(result.current.state.identityCommunityId).toBe(firstIdentityId);
+    expect(communityApi.registerIdentity).toHaveBeenCalledTimes(1);
+    expect(communityApi.update).toHaveBeenCalledWith(
+      firstIdentityId,
+      expect.objectContaining({ membershipPolicy: "approval" }),
+    );
   });
 
   it("goBack from community_setup returns to community_info", () => {

@@ -101,25 +101,38 @@ export function StepCommunitySetup({
   const [policies, setPolicies] = useState<number[]>(initialPolicies ?? DEFAULT_POLICIES);
   const [modes, setModes] = useState<number[]>(initialModes ?? DEFAULT_MODES);
   const [advancedError, setAdvancedError] = useState<string | undefined>();
+  // setCommunitySetup now creates the community's identity (Architecture 1A/1B: id known before
+  // deployment starts) — a real network call, not a pure state update, so this step needs its
+  // own loading/error handling like the later network-check/deploy steps already have.
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | undefined>();
 
   function updateInput(key: keyof PolicyInputState, value: string) {
     setInputs((prev) => ({ ...prev, [key]: value }));
   }
 
-  function handleNext() {
-    if (!advancedOpen) {
-      setCommunitySetup({ membershipPolicy });
-      return;
+  async function handleNext() {
+    setSubmitError(undefined);
+    const advanced = advancedOpen
+      ? (() => {
+          const signUpPolicy = buildPolicyArgs(policyType, inputs);
+          if (!signUpPolicy || policies.length === 0 || modes.length === 0) {
+            setAdvancedError("Fill in the advanced settings, or collapse the section to use the defaults.");
+            return undefined;
+          }
+          return { signUpPolicy, allowedPolicies: policies, supportedModes: modes };
+        })()
+      : undefined;
+    if (advancedOpen && !advanced) return;
+
+    setIsSubmitting(true);
+    try {
+      await setCommunitySetup({ membershipPolicy, advanced });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to create community identity");
+    } finally {
+      setIsSubmitting(false);
     }
-    const signUpPolicy = buildPolicyArgs(policyType, inputs);
-    if (!signUpPolicy || policies.length === 0 || modes.length === 0) {
-      setAdvancedError("Fill in the advanced settings, or collapse the section to use the defaults.");
-      return;
-    }
-    setCommunitySetup({
-      membershipPolicy,
-      advanced: { signUpPolicy, allowedPolicies: policies, supportedModes: modes },
-    });
   }
 
   return (
@@ -138,7 +151,7 @@ export function StepCommunitySetup({
             aria-pressed={membershipPolicy === "open"}
             className={`w-full min-h-[44px] text-left p-3 rounded-lg border transition-colors ${
               membershipPolicy === "open"
-                ? "border-purple-500 bg-purple-900/20"
+                ? "border-[#648DAF] bg-[#648DAF]/10"
                 : "border-gray-700 bg-gray-800/30 hover:bg-gray-800/60"
             }`}
           >
@@ -151,7 +164,7 @@ export function StepCommunitySetup({
             aria-pressed={membershipPolicy === "approval"}
             className={`w-full min-h-[44px] text-left p-3 rounded-lg border transition-colors ${
               membershipPolicy === "approval"
-                ? "border-purple-500 bg-purple-900/20"
+                ? "border-[#648DAF] bg-[#648DAF]/10"
                 : "border-gray-700 bg-gray-800/30 hover:bg-gray-800/60"
             }`}
           >
@@ -202,7 +215,7 @@ export function StepCommunitySetup({
                 value={policyType}
                 onChange={(e) => setPolicyType(e.target.value as SignUpPolicyType)}
                 className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm
-                  focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
               >
                 {POLICY_TYPE_OPTIONS.map(({ type, label }) => (
                   <option key={type} value={type}>
@@ -227,7 +240,7 @@ export function StepCommunitySetup({
                         onChange={() =>
                           setPolicies((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
                         }
-                        className="rounded border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
+                        className="rounded border-gray-600 bg-gray-800 text-[#648DAF] focus:ring-[#648DAF]"
                       />
                       <span className={`text-sm ${checked ? "text-white" : "text-gray-400"} group-hover:text-gray-200`}>
                         {policy.name}
@@ -252,7 +265,7 @@ export function StepCommunitySetup({
                         onChange={() =>
                           setModes((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]))
                         }
-                        className="rounded border-gray-600 bg-gray-800 text-purple-500 focus:ring-purple-500"
+                        className="rounded border-gray-600 bg-gray-800 text-[#648DAF] focus:ring-[#648DAF]"
                       />
                       <span className={`text-sm ${checked ? "text-white" : "text-gray-400"} group-hover:text-gray-200`}>
                         {mode.name}
@@ -268,22 +281,26 @@ export function StepCommunitySetup({
         )}
       </div>
 
+      {submitError && <p className="text-xs text-red-400">{submitError}</p>}
+
       <div className="flex gap-3 pt-2">
         <button
           type="button"
           onClick={goBack}
+          disabled={isSubmitting}
           className="flex-1 min-h-[44px] py-2 px-4 rounded-lg border border-gray-600 text-gray-300
-            hover:bg-gray-700 transition-colors text-sm"
+            hover:bg-gray-700 transition-colors text-sm disabled:opacity-60"
         >
           Back
         </button>
         <button
           type="button"
-          onClick={handleNext}
-          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-            hover:bg-purple-700 transition-colors text-sm"
+          onClick={() => void handleNext()}
+          disabled={isSubmitting}
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+            hover:bg-[#86A6C1] transition-colors text-sm disabled:opacity-60"
         >
-          Next
+          {isSubmitting ? "Creating…" : "Next"}
         </button>
       </div>
     </div>
