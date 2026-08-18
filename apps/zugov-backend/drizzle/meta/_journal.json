@@ -99,6 +99,13 @@
       "when": 1787047282877,
       "tag": "0013_add_maci_governance_configs_unions",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1787083357355,
+      "tag": "0014_add_union_membership_left_status",
+      "breakpoints": true
     }
   ]
 }

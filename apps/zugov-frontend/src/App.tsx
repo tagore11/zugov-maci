@@ -13,6 +13,8 @@ import EditCommunityPage from "../app/manage-communities/[id]/edit/page";
 import CommunityMembersPage from "../app/manage-communities/[id]/members/page";
 import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
+import UnionsPage from "../app/unions/page";
+import UnionDetailPage from "../app/unions/[id]/page";
 
 export default function App() {
   return (
@@ -32,6 +34,8 @@ export default function App() {
             <Route path="/manage-communities/:id/members" element={<CommunityMembersPage />} />
             <Route path="/manage-profile" element={<ManageProfilePage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
+            <Route path="/unions" element={<UnionsPage />} />
+            <Route path="/unions/:id" element={<UnionDetailPage />} />
           </Routes>
         </BrowserRouter>
       </MaciProvider>

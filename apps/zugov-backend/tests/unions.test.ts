@@ -501,6 +501,242 @@ describe("POST /api/unions/:id/respond", () => {
   });
 });
 
+describe("POST /api/unions/:id/leave", () => {
+  it("returns 401 without authentication", async () => {
+    const cookie = await authCookieFor(FOUNDER);
+    const communityId = await registerCommunity(cookie);
+    const createRes = await createUnion(cookie, communityId);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ communityId }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 when the caller is not authorized on the leaving community (e.g. another member tries to remove it)", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+
+    // The founder tries to make the PEER leave — no "kick" path exists, only self-service.
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 409 when the community is not an active member (e.g. never invited)", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 409 when trying to leave a pending (not yet accepted) invite", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("moves an active membership to left, and it stops appearing in the union's member list", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+    expect(res.status).toBe(200);
+    const { membership } = (await res.json()) as { membership: { status: string } };
+    expect(membership.status).toBe("left");
+
+    const getRes = await app.request(`/api/unions/${union.id}`, { headers: { Cookie: peerCookie } });
+    const { members } = (await getRes.json()) as { members: { communityId: string }[] };
+    expect(members.some((m) => m.communityId === peerCommunity)).toBe(false);
+  });
+
+  it("returns 409 on a second leave attempt (already left)", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+    await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+
+    const res = await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("a re-invite after leaving resets the membership back to pending", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+    await app.request(`/api/unions/${union.id}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity }),
+    });
+
+    const res = await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    expect(res.status).toBe(201);
+    const { membership } = (await res.json()) as { membership: { status: string } };
+    expect(membership.status).toBe("pending");
+  });
+});
+
+describe("GET /api/unions (browse-all)", () => {
+  it("lists unions with active member counts, excluding pending/declined/left from the count", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity, "Browse Test Union");
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+
+    const pendingInviteCookie = await authCookieFor(privateKeyToAccount(`0x${"77".repeat(32)}`));
+    const pendingInviteCommunity = await registerCommunity(pendingInviteCookie, [MANAGE_TIER], "Pending Invite Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: pendingInviteCommunity, actingCommunityId: founderCommunity }),
+    });
+
+    const res = await app.request("/api/unions");
+    expect(res.status).toBe(200);
+    const { unions, total } = (await res.json()) as {
+      unions: { id: string; displayName: string; memberCount: number }[];
+      total: number;
+    };
+    expect(total).toBeGreaterThanOrEqual(1);
+    const listed = unions.find((u) => u.id === union.id);
+    expect(listed).toBeDefined();
+    // Founder + peer are active; the pending invite doesn't count.
+    expect(listed!.memberCount).toBe(2);
+  });
+
+  it("does not require authentication", async () => {
+    const res = await app.request("/api/unions");
+    expect(res.status).toBe(200);
+  });
+
+  it("respects page and limit query params", async () => {
+    const res = await app.request("/api/unions?page=1&limit=1");
+    expect(res.status).toBe(200);
+    const { unions } = (await res.json()) as { unions: unknown[] };
+    expect(unions.length).toBeLessThanOrEqual(1);
+  });
+});
+
 describe("GET /api/communities/:id/unions", () => {
   it("returns 404 for a nonexistent community", async () => {
     const res = await app.request("/api/communities/0x0000000000000000000000000000000000000000/unions");

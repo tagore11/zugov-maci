@@ -26,18 +26,6 @@
 **Priority:** P3
 **Depends on:** A second governance backend existing (currently: none)
 
-### Union browse-all page + leave-union flow
-
-**What:** A page to browse all unions (not just the ones a given community belongs to), and a way for a member community to leave a union it already joined.
-
-**Why:** The structural-core scope shipped in this review covers create/invite/accept/decline and a per-community "Unions" section, but not discovery or exit.
-
-**Context:** Leave-union is the higher-priority half of this — once a community accepts a union invite, there is no way back out except a direct DB edit. That's a real gap, not just a nice-to-have, even though it's deferred out of the initial pass. The browse-all page is lower priority (discovery, not correctness).
-
-**Effort:** S (leave flow — mirrors respond()'s existing state-machine) / M (browse page — new page type)
-**Priority:** P2 (leave flow) / P3 (browse page)
-**Depends on:** Union communities structural core (this review) landing first
-
 ## ZuGov / Lightpaper alignment
 
 ### Build the Contribution layer (badges, credentials, peer endorsement)

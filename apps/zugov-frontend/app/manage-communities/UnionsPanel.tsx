@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { Loader2, Users2, X } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 
@@ -195,6 +196,7 @@ function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; ac
 function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
   const queryClient = useQueryClient();
   const [respondingUnionId, setRespondingUnionId] = useState<string | null>(null);
+  const [leavingUnionId, setLeavingUnionId] = useState<string | null>(null);
   const [errorByUnionId, setErrorByUnionId] = useState<Record<string, string>>({});
 
   // Shared query key with the community detail page's UnionsSection — same cache entry, no
@@ -220,6 +222,29 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
       setErrorByUnionId((prev) => ({ ...prev, [unionId]: message }));
     } finally {
       setRespondingUnionId(null);
+    }
+  }
+
+  // No confirm modal — matches Decline's existing pattern (fire immediately, surface any error
+  // inline). Reversible: a re-invite after leaving resets straight back to pending.
+  async function leave(unionId: string) {
+    setErrorByUnionId((prev) => ({ ...prev, [unionId]: "" }));
+    setLeavingUnionId(unionId);
+    try {
+      await communityApi.leaveUnion(unionId, { communityId: community.id });
+      void queryClient.invalidateQueries({ queryKey: ["communityUnions", community.id] });
+    } catch (err) {
+      const message =
+        err instanceof communityApi.OwnershipError ||
+        err instanceof communityApi.AuthError ||
+        err instanceof communityApi.ConflictError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to leave union";
+      setErrorByUnionId((prev) => ({ ...prev, [unionId]: message }));
+    } finally {
+      setLeavingUnionId(null);
     }
   }
 
@@ -264,7 +289,18 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
                   </button>
                 </div>
               ) : (
-                <InviteToUnionForm unionId={union.id} actingCommunityId={community.id} />
+                <div className="flex flex-wrap items-center gap-3">
+                  <InviteToUnionForm unionId={union.id} actingCommunityId={community.id} />
+                  <button
+                    type="button"
+                    onClick={() => void leave(union.id)}
+                    disabled={leavingUnionId === union.id}
+                    className="min-h-[44px] px-2 text-xs font-medium text-red-400 hover:text-red-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {leavingUnionId === union.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {leavingUnionId === union.id ? "Leaving…" : "Leave union"}
+                  </button>
+                </div>
               )}
             </div>
             {errorByUnionId[union.id] && <p className="text-xs text-red-400 mt-1">{errorByUnionId[union.id]}</p>}
@@ -294,12 +330,17 @@ export function UnionsPanel({ communities }: { communities: OwnedCommunity[] }) 
           <Users2 className="w-5 h-5 text-accent-hover" />
           <h2 className="text-xl font-semibold text-foreground">Unions</h2>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="text-sm font-medium text-accent-hover hover:text-accent transition-colors"
-        >
-          + Create union
-        </button>
+        <div className="flex items-center gap-4">
+          <Link to="/unions" className="text-sm font-medium text-gray-400 hover:text-foreground transition-colors">
+            Browse all unions
+          </Link>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="text-sm font-medium text-accent-hover hover:text-accent transition-colors"
+          >
+            + Create union
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">

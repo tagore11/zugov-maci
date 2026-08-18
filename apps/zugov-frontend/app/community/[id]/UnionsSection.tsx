@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import * as communityApi from "@/src/services/communityApi";
 
 // Read-only display, mirroring the Sub-communities section's card/mini-card pattern (Design
-// Issue 1) — actual invite/accept/decline actions live on the manage-communities page
+// Issue 1) — actual invite/accept/decline/leave actions live on the manage-communities page
 // (UnionsPanel.tsx), scoped to communities the viewer actually manages.
 export function UnionsSection({ communityId }: { communityId: string }) {
   const { data: unions } = useQuery({
@@ -14,7 +15,12 @@ export function UnionsSection({ communityId }: { communityId: string }) {
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-      <h2 className="text-lg font-semibold text-foreground mb-3">Unions</h2>
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-lg font-semibold text-foreground">Unions</h2>
+        <Link to="/unions" className="text-xs font-medium text-gray-400 hover:text-foreground transition-colors">
+          Browse all unions
+        </Link>
+      </div>
       <div className="flex flex-wrap gap-3">
         {unions.map((union) => (
           <div

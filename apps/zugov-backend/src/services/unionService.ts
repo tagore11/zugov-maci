@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, count } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { unions, unionMemberships, type Union, type UnionMembership } from "../db/schema.js";
 import { get as getCommunity } from "./communityService.js";
@@ -25,6 +25,12 @@ export class DuplicateInviteError extends Error {
 export class MembershipNotFoundError extends Error {
   constructor() {
     super("No pending invite found for this community and union");
+  }
+}
+
+export class NotActiveMemberError extends Error {
+  constructor() {
+    super("This community is not an active member of this union");
   }
 }
 
@@ -75,6 +81,50 @@ export async function get(id: string): Promise<Union | null> {
   return rows[0] ?? null;
 }
 
+export interface UnionWithMemberCount extends Union {
+  memberCount: number;
+}
+
+// Public browse-all listing (Union communities follow-ups: "A page to browse all unions, not
+// just the ones a given community belongs to") — no auth required, same posture as
+// communityService.list(). memberCount is active-only, matching listMembers()'s public default;
+// pending/declined/left member counts aren't exposed here.
+export async function listAll(
+  page: number,
+  limit: number,
+): Promise<{ unions: UnionWithMemberCount[]; total: number; hasMore: boolean }> {
+  const offset = (page - 1) * limit;
+
+  const [rows, totalRows] = await Promise.all([
+    db.select().from(unions).orderBy(unions.createdAt).limit(limit).offset(offset),
+    db.select({ value: count() }).from(unions),
+  ]);
+
+  const total = Number(totalRows[0]?.value ?? 0);
+  if (rows.length === 0) return { unions: [], total, hasMore: false };
+
+  const memberCounts = await db
+    .select({ unionId: unionMemberships.unionId, value: count() })
+    .from(unionMemberships)
+    .where(
+      and(
+        inArray(
+          unionMemberships.unionId,
+          rows.map((u) => u.id),
+        ),
+        eq(unionMemberships.status, "active"),
+      ),
+    )
+    .groupBy(unionMemberships.unionId);
+  const countByUnionId = new Map(memberCounts.map((row) => [row.unionId, Number(row.value)]));
+
+  return {
+    unions: rows.map((union) => ({ ...union, memberCount: countByUnionId.get(union.id) ?? 0 })),
+    total,
+    hasMore: offset + rows.length < total,
+  };
+}
+
 // Proposes a community join a union. A community declined once can be re-invited — invite()
 // resets a "declined" row back to "pending" rather than being permanently blocked (Architecture
 // decision 6). "pending" or "active" rows reject with DuplicateInviteError — no re-inviting a
@@ -94,10 +144,10 @@ export async function invite(unionId: string, communityId: string, invitedByAddr
     .limit(1);
 
   if (existing) {
-    if (existing.status !== "declined") throw new DuplicateInviteError();
+    if (existing.status !== "declined" && existing.status !== "left") throw new DuplicateInviteError();
     const [updated] = await db
       .update(unionMemberships)
-      .set({ status: "pending", invitedByAddress, requestedAt: now, respondedAt: null })
+      .set({ status: "pending", invitedByAddress, requestedAt: now, respondedAt: null, leftAt: null })
       .where(and(eq(unionMemberships.unionId, unionId), eq(unionMemberships.communityId, communityId)))
       .returning();
     return updated!;
@@ -126,6 +176,30 @@ export async function respond(unionId: string, communityId: string, accept: bool
   const [updated] = await db
     .update(unionMemberships)
     .set({ status: accept ? "active" : "declined", respondedAt: now })
+    .where(and(eq(unionMemberships.unionId, unionId), eq(unionMemberships.communityId, communityId)))
+    .returning();
+  return updated!;
+}
+
+// Self-service only — checked by the route via isAuthorized(communityId, caller), same as
+// respond(). No "kick another member out" path exists; a community leaves on its own behalf.
+// Only an "active" row can leave (mirrors respond()'s "only pending can respond" guard) — a
+// community that's already left, declined, or was never invited has nothing to leave. Leaving
+// doesn't delete the row (keeps requestedAt/respondedAt as the original invite/accept history);
+// invite() already treats "left" the same as "declined" for re-inviting.
+export async function leave(unionId: string, communityId: string): Promise<UnionMembership> {
+  const now = Math.floor(Date.now() / 1000);
+  const [existing] = await db
+    .select()
+    .from(unionMemberships)
+    .where(and(eq(unionMemberships.unionId, unionId), eq(unionMemberships.communityId, communityId)))
+    .limit(1);
+
+  if (!existing || existing.status !== "active") throw new NotActiveMemberError();
+
+  const [updated] = await db
+    .update(unionMemberships)
+    .set({ status: "left", leftAt: now })
     .where(and(eq(unionMemberships.unionId, unionId), eq(unionMemberships.communityId, communityId)))
     .returning();
   return updated!;

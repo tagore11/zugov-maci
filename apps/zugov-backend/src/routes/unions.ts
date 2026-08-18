@@ -25,7 +25,22 @@ const respondSchema = z.object({
   accept: z.boolean(),
 });
 
+const leaveSchema = z.object({
+  communityId: z.string().min(1),
+});
+
 export const unionsRouter = new Hono();
+
+// Public browse-all listing — no auth required, mirrors GET /api/communities.
+unionsRouter.get("/", async (c) => {
+  const pageStr = c.req.query("page") ?? "1";
+  const limitStr = c.req.query("limit") ?? "20";
+  const page = Math.max(1, Number(pageStr));
+  const limit = Math.min(50, Math.max(1, Number(limitStr)));
+
+  const result = await unionService.listAll(page, limit);
+  return c.json(result);
+});
 
 // Founding community joins as an active member automatically — the creator must be
 // authorized (canManageMembership) on the community they're founding the union as.
@@ -140,6 +155,32 @@ unionsRouter.post("/:id/respond", requireAuth, async (c) => {
   } catch (err) {
     if (err instanceof unionService.MembershipNotFoundError) {
       return c.json({ error: err.message }, 404);
+    }
+    throw err;
+  }
+});
+
+// Self-service only — only the LEAVING community's own admin may call this, never another
+// member (no "kick" path exists). Mirrors respond()'s auth pattern.
+unionsRouter.post("/:id/leave", requireAuth, async (c) => {
+  const unionId = c.req.param("id");
+  const body = await c.req.json();
+  const parsed = leaveSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
+  }
+
+  const session = await getSession(c);
+  if (!(await isAuthorized(parsed.data.communityId, session.address!))) {
+    return c.json({ error: "Not authorized to act on behalf of this community" }, 403);
+  }
+
+  try {
+    const membership = await unionService.leave(unionId, parsed.data.communityId);
+    return c.json({ membership });
+  } catch (err) {
+    if (err instanceof unionService.NotActiveMemberError) {
+      return c.json({ error: err.message }, 409);
     }
     throw err;
   }

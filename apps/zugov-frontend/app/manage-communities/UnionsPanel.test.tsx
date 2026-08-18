@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { UnionsPanel } from "./UnionsPanel";
 
@@ -7,6 +8,7 @@ const listUnionsForCommunityMock = vi.fn();
 const createUnionMock = vi.fn();
 const inviteToUnionMock = vi.fn();
 const respondToUnionInviteMock = vi.fn();
+const leaveUnionMock = vi.fn();
 
 vi.mock("@/src/services/communityApi", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/communityApi")>("@/src/services/communityApi");
@@ -16,6 +18,7 @@ vi.mock("@/src/services/communityApi", async () => {
     createUnion: (...args: unknown[]) => createUnionMock(...args),
     inviteToUnion: (...args: unknown[]) => inviteToUnionMock(...args),
     respondToUnionInvite: (...args: unknown[]) => respondToUnionInviteMock(...args),
+    leaveUnion: (...args: unknown[]) => leaveUnionMock(...args),
   };
 });
 
@@ -23,7 +26,11 @@ const COMMUNITY = { id: "community-1", name: "Zukas", logo: "🏛️" };
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -31,6 +38,7 @@ beforeEach(() => {
   createUnionMock.mockReset();
   inviteToUnionMock.mockReset();
   respondToUnionInviteMock.mockReset();
+  leaveUnionMock.mockReset();
 });
 
 describe("UnionsPanel", () => {
@@ -156,6 +164,43 @@ describe("UnionsPanel", () => {
     const declineButton = screen.getByText("Decline");
     expect(acceptButton.closest("button")?.className).toContain("min-h-[44px]");
     expect(declineButton.closest("button")?.className).toContain("min-h-[44px]");
+  });
+
+  it("clicking Leave union calls leaveUnion with the community id and refreshes on success", async () => {
+    listUnionsForCommunityMock.mockResolvedValueOnce([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    leaveUnionMock.mockResolvedValue(undefined);
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    await screen.findByText("Leave union");
+    listUnionsForCommunityMock.mockResolvedValueOnce([]);
+    fireEvent.click(screen.getByText("Leave union"));
+
+    await waitFor(() => expect(leaveUnionMock).toHaveBeenCalledWith("union-1", { communityId: "community-1" }));
+    await waitFor(() => expect(screen.queryByText("Alliance")).not.toBeInTheDocument());
+  });
+
+  it("shows an inline error, not a toast, when leaving fails (e.g. already left elsewhere)", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    const communityApi = await import("@/src/services/communityApi");
+    leaveUnionMock.mockRejectedValue(
+      new communityApi.ConflictError("This community is not an active member of this union"),
+    );
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    fireEvent.click(await screen.findByText("Leave union"));
+
+    await waitFor(() =>
+      expect(screen.getByText("This community is not an active member of this union")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("This community is not an active member of this union").closest("div")).not.toHaveClass(
+      "fixed",
+    );
   });
 
   it("creates a union via the modal and refreshes union lists on success", async () => {

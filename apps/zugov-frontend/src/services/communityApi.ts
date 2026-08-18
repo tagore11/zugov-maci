@@ -206,7 +206,7 @@ export async function update(id: string, payload: CommunityUpdatePayload): Promi
 // Distinct from parentCommunityId's hierarchy: a union has no governance of its own, and
 // member communities stay fully independent (Architecture decision on union communities).
 
-export type UnionMembershipStatus = "pending" | "active" | "declined";
+export type UnionMembershipStatus = "pending" | "active" | "declined" | "left";
 
 export type Union = {
   id: string;
@@ -215,6 +215,14 @@ export type Union = {
   logo: string | null;
   creatorAddress: string;
   createdAt: number;
+};
+
+export type UnionWithMemberCount = Union & { memberCount: number };
+
+export type UnionListResponse = {
+  unions: UnionWithMemberCount[];
+  total: number;
+  hasMore: boolean;
 };
 
 export type UnionMember = {
@@ -228,7 +236,7 @@ export type CommunityUnion = {
   id: string;
   displayName: string;
   logo: string | null;
-  status: UnionMembershipStatus extends infer S ? Exclude<S, "declined"> : never;
+  status: UnionMembershipStatus extends infer S ? Exclude<S, "declined" | "left"> : never;
 };
 
 export async function createUnion(payload: {
@@ -316,4 +324,35 @@ export async function listUnionsForCommunity(id: string): Promise<CommunityUnion
   if (!res.ok) throw new Error(`Failed to fetch unions: ${res.status}`);
   const data = (await res.json()) as { unions: CommunityUnion[] };
   return data.unions;
+}
+
+/** Self-service only — the community leaves on its own behalf, no "kick" path exists. */
+export async function leaveUnion(unionId: string, payload: { communityId: string }): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/unions/${unionId}/leave`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  if (res.status === 401) throw new AuthError();
+  if (res.status === 403) {
+    const data = (await res.json()) as { error: string };
+    throw new OwnershipError(data.error);
+  }
+  if (res.status === 409) {
+    const data = (await res.json()) as { error: string };
+    throw new ConflictError(data.error);
+  }
+  if (!res.ok) {
+    const data = (await res.json()) as { error: string };
+    throw new Error(data.error ?? `Failed to leave union: ${res.status}`);
+  }
+}
+
+/** Public browse-all listing — no auth required. */
+export async function listAllUnions(page = 1): Promise<UnionListResponse> {
+  const params = new URLSearchParams({ page: String(page) });
+  const res = await fetch(`${BASE_URL}/api/unions?${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch unions: ${res.status}`);
+  return res.json() as Promise<UnionListResponse>;
 }

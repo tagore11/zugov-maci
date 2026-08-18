@@ -122,8 +122,9 @@ export type Union = typeof unions.$inferSelect;
 export type NewUnion = typeof unions.$inferInsert;
 
 // Many-to-many, consent-gated: invite() creates a "pending" row, respond() (by the INVITED
-// community's own admin, never the inviter) flips it to "active" or "declined". A later
-// invite() on a "declined" row resets it to "pending" — declining once isn't permanent.
+// community's own admin, never the inviter) flips it to "active" or "declined". leave() (by the
+// MEMBER community's own admin) flips an "active" row to "left". A later invite() on a
+// "declined" or "left" row resets it to "pending" — neither declining nor leaving is permanent.
 export const unionMemberships = pgTable(
   "union_memberships",
   {
@@ -133,10 +134,11 @@ export const unionMemberships = pgTable(
     communityId: text("community_id")
       .notNull()
       .references(() => communities.id, { onDelete: "cascade" }),
-    status: text("status").$type<"pending" | "active" | "declined">().notNull(),
+    status: text("status").$type<"pending" | "active" | "declined" | "left">().notNull(),
     invitedByAddress: text("invited_by_address").notNull(),
     requestedAt: integer("requested_at").notNull(),
     respondedAt: integer("responded_at"),
+    leftAt: integer("left_at"),
   },
   (table) => [primaryKey({ columns: [table.unionId, table.communityId] })],
 );
