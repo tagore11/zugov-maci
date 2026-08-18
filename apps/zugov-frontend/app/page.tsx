@@ -4,6 +4,7 @@ import { Header } from "./components/Header";
 import { Search, TrendingUp, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AuthModal } from "./components/AuthModal";
+import { CreateCommunityModal } from "./components/CreateCommunityModal";
 import { EXAMPLE_COMMUNITIES } from "@/app/lib/placeholder-data";
 import type { GovernanceType } from "@/src/config";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
@@ -45,6 +46,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [communities, setCommunities] = useState<CommunityItem[]>([...EXAMPLE_COMMUNITIES]);
   const [filteredCommunities, setFilteredCommunities] = useState<CommunityItem[]>(communities);
   const [hasMore, setHasMore] = useState(false);
@@ -158,12 +160,13 @@ export default function Home() {
             >
               Manage Profile
             </Link>
-            <Link
-              to="/manage-communities"
+            <button
+              type="button"
+              onClick={() => setShowCreateModal(true)}
               className="px-5 sm:px-6 py-3 bg-transparent text-gray-300 border border-gray-700 rounded-[6px] font-semibold hover:bg-gray-800 transition-colors"
             >
               + Create Community
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -311,6 +314,7 @@ export default function Home() {
       </main>
 
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
+      <CreateCommunityModal isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} />
     </div>
   );
 }

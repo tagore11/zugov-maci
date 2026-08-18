@@ -1,4 +1,5 @@
 import { useAccount } from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
 import { useCreateCommunity } from "@/src/hooks/useCreateCommunity";
 import type { WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
@@ -32,6 +33,7 @@ const VISIBLE_STEPS: WizardStep[] = [
 
 export function CreateCommunityWizard() {
   const { address } = useAccount();
+  const { login } = usePrivy();
   const {
     state,
     goToStep,
@@ -47,8 +49,15 @@ export function CreateCommunityWizard() {
 
   if (!address) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 space-y-3">
-        <p className="text-gray-300">Connect your wallet to create a community.</p>
+      <div className="flex flex-col items-center justify-center py-8 space-y-4">
+        <p className="text-gray-300">Sign in to create a community.</p>
+        <button
+          type="button"
+          onClick={() => login()}
+          className="px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors"
+        >
+          Sign in
+        </button>
       </div>
     );
   }
