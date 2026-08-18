@@ -92,18 +92,6 @@
 
 ## Repo Infrastructure
 
-### Fix zugov-backend's engines field (">=22") to match repo-wide Node 20 standard
-
-**What:** `apps/zugov-backend/package.json` declares `"engines": {"node": ">=22"}`, which contradicts the root's `"node": "20"` pin and every CI workflow (20+ files, including `deploy-backend.yml`), all of which run Node 20.
-
-**Why:** This is almost certainly a stray/incorrect declaration, not an intentional decision — the backend already deploys successfully on Node 20 in CI. Investigated during the zukas2026 branch work when a pre-commit hook (husky, running a repo-wide `pnpm install` + Nx type-check) failed under Node 20 because of this mismatch, requiring a local Node 20/pnpm 10 shim workaround to commit.
-
-**Context:** Considered bumping the whole repo to Node 22/pnpm 11 instead (to match what's actually available in some dev environments), but rejected: would mean updating 20+ CI workflow files, likely triggering a `pnpm-lock.yaml` format migration (currently `lockfileVersion: '9.0'`), and diverging from what's actually deployed to production today. The narrow fix (correct zugov-backend's own field) is smaller and safer. Deferred until the broader system re-architecture lands, per founder's call — not blocking Zukas 2026.
-
-**Effort:** XS (one-line fix, once prioritized)
-**Priority:** P3
-**Depends on:** None
-
 ### Manually fund each resident's embedded wallet with Sepolia test ETH
 
 **What:** After a resident signs up via email (Privy auto-provisions an embedded wallet), the wallet has 0 Sepolia ETH and cannot sign any transaction (MACI signup, voting). Tarik/Sait need to manually send test ETH to each resident's wallet address (visible in the Privy dashboard or via the app) before that resident can actually participate.
