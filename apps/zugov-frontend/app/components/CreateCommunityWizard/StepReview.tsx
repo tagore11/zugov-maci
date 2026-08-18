@@ -99,8 +99,8 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
         <button
           type="button"
           onClick={() => void startDeployment()}
-          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-            hover:bg-purple-700 transition-colors text-sm"
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+            hover:bg-[#86A6C1] transition-colors text-sm"
         >
           Deploy
         </button>

@@ -34,6 +34,14 @@ export function Providers({ children }: { children: ReactNode }) {
         },
         defaultChain: sepolia,
         supportedChains: [...CHAINS],
+        // DESIGN.md: dark base + steel-blue accent — the login modal is Privy-hosted (not our
+        // own Tailwind classes), so this appearance config is the only lever we have to keep it
+        // from reading as a generic default-purple auth widget bolted onto a civic-tooling app.
+        appearance: {
+          theme: "dark",
+          accentColor: "#648DAF",
+          logo: "/logo.svg",
+        },
       }}
     >
       <QueryClientProvider client={queryClient}>

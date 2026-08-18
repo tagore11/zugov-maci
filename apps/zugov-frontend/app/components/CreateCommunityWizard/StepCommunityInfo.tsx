@@ -69,7 +69,7 @@ export function StepCommunityInfo({
           onBlur={() => setTouched(true)}
           placeholder="e.g. ZuKas Residency"
           className={`w-full px-3 py-2 rounded-lg bg-gray-800 border text-white placeholder-gray-500
-            focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm
+            focus:outline-none focus:ring-2 focus:ring-[#648DAF] text-sm
             ${nameError ? "border-red-500" : "border-gray-600"}`}
         />
         {nameError && <p className="mt-1 text-xs text-red-400">{nameError}</p>}
@@ -87,7 +87,7 @@ export function StepCommunityInfo({
           placeholder="Describe your community's purpose…"
           rows={3}
           className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white
-            placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none"
+            placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#648DAF] text-sm resize-none"
         />
         <p className="mt-1 text-xs text-gray-500">{description.length}/500</p>
       </div>
@@ -101,7 +101,7 @@ export function StepCommunityInfo({
             value={parentCommunityId}
             onChange={(e) => setParentCommunityId(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white
-              focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+              focus:outline-none focus:ring-2 focus:ring-[#648DAF] text-sm"
           >
             <option value="">None — top-level community</option>
             {candidateParents.map((parent) => (
@@ -129,8 +129,8 @@ export function StepCommunityInfo({
           type="button"
           onClick={handleNext}
           disabled={!canProceed}
-          className="flex-1 py-2 px-4 rounded-lg bg-purple-600 text-white font-medium
-            hover:bg-purple-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
+          className="flex-1 py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
+            hover:bg-[#86A6C1] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm"
         >
           Next
         </button>
