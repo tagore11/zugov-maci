@@ -1,19 +1,5 @@
 # TODOS
 
-## ZuGov / DESIGN.md rollout
-
-### Formalize DESIGN.md tokens into Tailwind theme config
-
-**What:** Header.tsx, PrivyConnectButton.tsx, the home page hero, and now the rest of app/page.tsx all reference DESIGN.md's colors via Tailwind arbitrary values (`bg-[#648DAF]`, `rounded-[6px]`, etc.) rather than named theme tokens (`bg-accent`, `rounded-btn`).
-
-**Why:** Arbitrary values work today and match what's already shipped, but every new component has to re-type the same hex codes instead of referencing a token — real drift risk as more surfaces get built (union UI, manage-communities, etc.).
-
-**Context:** Deliberately deferred rather than done as part of the logo/page.tsx work — extending `tailwind.config`/`@theme` is a repo-wide change with its own testing surface, not something to bolt onto a styling pass. `globals.css` already has the raw CSS custom properties (`--color-accent` etc.) as a starting point.
-
-**Effort:** S-M (config change + spot-check every file already using arbitrary values still resolves correctly)
-**Priority:** P3
-**Depends on:** None
-
 ## ZuGov / Union communities follow-ups (from 2026-08-18 eng review)
 
 ### Events (one-time/recurring) as a first-class concept
@@ -139,18 +125,6 @@
 **Effort:** S
 **Priority:** P3
 **Depends on:** None
-
-### Full responsive/mobile-layout redesign for CreateCommunityWizard
-
-**What:** Intentional mobile layouts (not just "stacked on mobile") for every wizard step, including the new communities-first flow (role selection, Advanced settings accordion, plain-language review screen).
-
-**Why:** The Sept 9 design review specified only a minimum bar (keyboard nav, 44px touch targets, contrast) — full mobile behavior is untested and unspecified.
-
-**Context:** Deferred because Zukas 2026 community setup is organizer-facing and desktop-likely; residents interacting with polls (not community creation) are a separate, already-scoped flow. Revisit if mobile usage data from the live event shows real friction.
-
-**Effort:** M
-**Priority:** P3
-**Depends on:** Communities-first wizard redesign landing first
 
 ### Full accessibility audit for CreateCommunityWizard
 
