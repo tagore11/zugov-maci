@@ -1,20 +1,35 @@
 @import "tailwindcss";
 
+/* Design tokens — see DESIGN.md. Dark is the primary/default posture. */
 :root {
-  --background: #ffffff;
+  --background: #0a0a0c;
+  --foreground: #f4f4f5;
+  --color-surface: #16161a;
+  --color-surface-raised: #1e1e24;
+  --color-border: #2c2c33;
+  --color-text-secondary: #a1a1aa;
+  --color-accent: #648daf;
+  --color-accent-hover: #86a6c1;
+  --color-success: #64af8c;
+  --color-success-hover: #86c1a5;
+  --color-error: #af6467;
+  --color-error-hover: #c18688;
+}
+
+[data-theme="light"] {
+  --background: #f7f7f5;
   --foreground: #171717;
+  --color-surface: #ffffff;
+  --color-surface-raised: #f0f0ee;
+  --color-border: #d9d9d6;
+  --color-text-secondary: #5a5a5a;
+  --color-accent: #2d5f8a;
+  --color-accent-hover: #244d70;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {

@@ -9,7 +9,7 @@ export function PrivyConnectButton() {
 
   if (!ready) {
     return (
-      <button disabled className="px-4 py-2 text-sm font-medium text-gray-400 cursor-not-allowed">
+      <button disabled className="px-4 py-2 text-sm font-medium text-gray-500 cursor-not-allowed">
         Loading...
       </button>
     );
@@ -20,7 +20,7 @@ export function PrivyConnectButton() {
     return (
       <button
         onClick={() => void logout()}
-        className="px-4 py-2 text-sm font-medium text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+        className="px-4 py-2 text-sm font-medium text-gray-300 border border-gray-700 rounded-[6px] hover:bg-gray-800 transition-colors"
       >
         {address ? truncateAddress(address) : "Account"}
       </button>
@@ -30,7 +30,7 @@ export function PrivyConnectButton() {
   return (
     <button
       onClick={() => login()}
-      className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+      className="px-4 py-2 text-sm font-medium text-white bg-[#648DAF] rounded-[6px] hover:bg-[#86A6C1] transition-colors"
     >
       Sign in
     </button>
