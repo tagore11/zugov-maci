@@ -262,6 +262,15 @@ export async function submitJoinRequest(
   return { status: "pending" };
 }
 
+/** Communities this wallet holds an approved membership in — used by the profile page's
+ * "awaiting actions" section to know which communities' governance actions to check. */
+export async function listMembershipsForWallet(walletAddress: string): Promise<{ communityId: string }[]> {
+  return db
+    .select({ communityId: memberships.communityId })
+    .from(memberships)
+    .where(eq(memberships.walletAddress, walletAddress));
+}
+
 export async function listPendingRequests(
   communityId: string,
 ): Promise<{ id: string; walletAddress: string; createdAt: number }[]> {

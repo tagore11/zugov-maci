@@ -85,6 +85,13 @@ export async function approveRequest(communityId: string, requestId: string): Pr
   await parseErrorOr(res, `Failed to approve request: ${res.status}`);
 }
 
+/** Communities the current session's wallet holds an approved membership in. */
+export async function listMyMemberships(): Promise<string[]> {
+  const res = await fetch(`${BASE_URL}/api/memberships/mine`, { credentials: "include" });
+  const data = await parseErrorOr<{ communityIds: string[] }>(res, `Failed to list memberships: ${res.status}`);
+  return data.communityIds;
+}
+
 export async function rejectRequest(communityId: string, requestId: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/join-requests/${requestId}/reject`, {
     method: "POST",

@@ -4,6 +4,7 @@ import { authRouter } from "./routes/auth.js";
 import { communitiesRouter } from "./routes/communities.js";
 import { credentialsRouter } from "./routes/credentials.js";
 import { membershipRouter } from "./routes/membership.js";
+import { myMembershipsRouter } from "./routes/memberships.js";
 import { governanceActionsRouter } from "./routes/governanceActions.js";
 import { unionsRouter } from "./routes/unions.js";
 
@@ -31,5 +32,6 @@ app.route("/api/auth", authRouter);
 app.route("/api/communities", communitiesRouter);
 app.route("/api/communities", membershipRouter);
 app.route("/api/communities", governanceActionsRouter);
+app.route("/api/memberships", myMembershipsRouter);
 app.route("/api/unions", unionsRouter);
 app.route("/api/credentials", credentialsRouter);

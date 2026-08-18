@@ -163,6 +163,34 @@ describe("POST /api/communities/:id/join (FR-009 duplicate prevention)", () => {
   });
 });
 
+describe("GET /api/memberships/mine", () => {
+  it("returns 401 when not authenticated", async () => {
+    const res = await app.request("/api/memberships/mine");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns the community ids the caller's wallet is a member of — the creator is auto-enrolled", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const res = await app.request("/api/memberships/mine", { headers: { Cookie: cookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { communityIds: string[] };
+    expect(body.communityIds).toContain(community.id);
+  });
+
+  it("does not include a community the wallet never joined", async () => {
+    const cookie = await getAuthCookie();
+    await registerIdentity(cookie);
+
+    const otherCookie = await authCookieFor(privateKeyToAccount(`0x${"55".repeat(32)}`));
+    const res = await app.request("/api/memberships/mine", { headers: { Cookie: otherCookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { communityIds: string[] };
+    expect(body.communityIds).toEqual([]);
+  });
+});
+
 describe("GET /api/communities/:id/join-requests", () => {
   it("returns 403 for a non-authorized wallet", async () => {
     const cookie = await getAuthCookie();
