@@ -135,9 +135,9 @@ export default function Home() {
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Hero Section */}
-        <div className="bg-[#16161a] border border-[#2c2c33] rounded-lg p-8 mb-8">
+        <div className="bg-gray-900 border border-gray-700 rounded-lg p-8 mb-8">
           <h1
-            className="text-4xl mb-4 text-white"
+            className="text-4xl mb-4 text-foreground"
             style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontWeight: 600 }}
           >
             Community governance, built for pop-up cities
@@ -145,22 +145,22 @@ export default function Home() {
           <p className="text-lg text-gray-400 mb-6">
             Join a community, vote in polls, and see decisions made in the open.
           </p>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-3 sm:gap-4">
             <Link
               to="/manage-communities"
-              className="px-6 py-3 bg-[#648DAF] text-white rounded-[6px] font-semibold hover:bg-[#86A6C1] transition-colors"
+              className="px-5 sm:px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors"
             >
               Manage Your Communities
             </Link>
             <Link
               to="/manage-profile"
-              className="px-6 py-3 bg-transparent text-white border border-[#2c2c33] rounded-[6px] font-semibold hover:bg-[#1e1e24] transition-colors"
+              className="px-5 sm:px-6 py-3 bg-transparent text-foreground border border-gray-700 rounded-[6px] font-semibold hover:bg-gray-800 transition-colors"
             >
               Manage Profile
             </Link>
             <Link
               to="/manage-communities"
-              className="px-6 py-3 bg-transparent text-gray-300 border border-[#2c2c33] rounded-[6px] font-semibold hover:bg-[#1e1e24] transition-colors"
+              className="px-5 sm:px-6 py-3 bg-transparent text-gray-300 border border-gray-700 rounded-[6px] font-semibold hover:bg-gray-800 transition-colors"
             >
               + Create Community
             </Link>
@@ -176,7 +176,7 @@ export default function Home() {
               placeholder="Search communities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-[6px] text-white placeholder-gray-500 focus:ring-2 focus:ring-[#648DAF] focus:border-transparent"
+              className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 rounded-[6px] text-foreground placeholder-gray-500 focus:ring-2 focus:ring-accent focus:border-transparent"
             />
           </div>
 
@@ -187,7 +187,7 @@ export default function Home() {
                 onClick={() => setSelectedCategory(category)}
                 className={`px-4 py-2 rounded-[6px] font-medium whitespace-nowrap transition-colors ${
                   selectedCategory === category
-                    ? "bg-[#648DAF] text-white"
+                    ? "bg-accent text-white"
                     : "bg-gray-900 text-gray-300 border border-gray-700 hover:bg-gray-800"
                 }`}
               >
@@ -204,7 +204,7 @@ export default function Home() {
               <Users className="w-5 h-5 text-gray-500" />
               <span className="text-sm font-medium text-gray-400">Total Communities</span>
             </div>
-            <p className="text-2xl font-bold text-white">{communities.length}</p>
+            <p className="text-2xl font-bold text-foreground">{communities.length}</p>
           </div>
 
           <div className="bg-gray-900 rounded-lg p-6 border border-gray-700">
@@ -212,7 +212,7 @@ export default function Home() {
               <FileText className="w-5 h-5 text-gray-500" />
               <span className="text-sm font-medium text-gray-400">Active Proposals</span>
             </div>
-            <p className="text-2xl font-bold text-white">
+            <p className="text-2xl font-bold text-foreground">
               {communities.reduce((sum, c) => sum + (communityStats[c.id]?.proposals ?? c.proposals), 0)}
             </p>
           </div>
@@ -222,7 +222,7 @@ export default function Home() {
               <TrendingUp className="w-5 h-5 text-gray-500" />
               <span className="text-sm font-medium text-gray-400">Total Members</span>
             </div>
-            <p className="text-2xl font-bold text-white">
+            <p className="text-2xl font-bold text-foreground">
               {communities.reduce((sum, c) => sum + (communityStats[c.id]?.members ?? c.members), 0).toLocaleString()}
             </p>
           </div>
@@ -230,7 +230,7 @@ export default function Home() {
 
         {/* Communities List */}
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-white">Showing {filteredCommunities.length} Communities</h2>
+          <h2 className="text-xl font-semibold text-foreground">Showing {filteredCommunities.length} Communities</h2>
         </div>
 
         {isLoadingCommunities && communities.length === 0 ? (
@@ -249,13 +249,13 @@ export default function Home() {
                 <Link
                   key={community.id}
                   to={`/community/${community.id}`}
-                  className="bg-gray-900 rounded-lg border border-gray-700 p-6 hover:border-[#648DAF] transition-colors"
+                  className="bg-gray-900 rounded-lg border border-gray-700 p-6 hover:border-accent transition-colors"
                 >
                   <div className="flex items-start gap-4 mb-4">
                     <div className="text-4xl">{community.logo}</div>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-semibold text-lg text-white">{community.name}</h3>
+                        <h3 className="font-semibold text-lg text-foreground">{community.name}</h3>
                         {isNew && (
                           <span className="inline-block px-1.5 py-0.5 text-xs font-medium text-[#86C1A5] border border-[#64AF8C]/40 rounded-[8px]">
                             just now
@@ -263,7 +263,7 @@ export default function Home() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="inline-block px-2 py-1 text-xs font-medium text-[#86A6C1] border border-[#648DAF]/40 rounded-[8px]">
+                        <span className="inline-block px-2 py-1 text-xs font-medium text-accent-hover border border-accent/40 rounded-[8px]">
                           {community.category}
                         </span>
                         <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-800 text-gray-400 rounded-[8px]">
@@ -302,7 +302,7 @@ export default function Home() {
                 void fetchCommunities(nextPage, false);
               }}
               disabled={isLoadingCommunities}
-              className="px-6 py-3 bg-[#648DAF] text-white rounded-[6px] font-semibold hover:bg-[#86A6C1] transition-colors disabled:opacity-60"
+              className="px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
             >
               {isLoadingCommunities ? "Loading..." : "Load more"}
             </button>

@@ -53,19 +53,19 @@ export default function CommunityMembersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           to="/manage-communities"
-          className="inline-flex items-center gap-2 text-[#86A6C1] hover:text-[#648DAF] mb-6 font-medium"
+          className="inline-flex items-center gap-2 text-accent-hover hover:text-accent mb-6 font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Manage Communities
         </Link>
 
         <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8">
-          <h1 className="text-3xl font-bold text-white mb-6">Pending Join Requests</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-6">Pending Join Requests</h1>
 
           {loading && <p className="text-gray-500">Loading…</p>}
 
@@ -78,12 +78,15 @@ export default function CommunityMembersPage() {
           {!loading && !forbidden && requests.length > 0 && (
             <div className="space-y-3">
               {requests.map((req) => (
-                <div key={req.id} className="flex items-center justify-between p-4 border-2 border-gray-700 rounded-lg">
-                  <div>
-                    <p className="font-mono text-sm text-white">{req.walletAddress}</p>
+                <div
+                  key={req.id}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border-2 border-gray-700 rounded-lg"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-sm text-foreground truncate">{req.walletAddress}</p>
                     <p className="text-xs text-gray-500">{new Date(req.createdAt * 1000).toLocaleString()}</p>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 shrink-0">
                     <button
                       onClick={() => void handleApprove(req.id)}
                       disabled={actingOn === req.id}

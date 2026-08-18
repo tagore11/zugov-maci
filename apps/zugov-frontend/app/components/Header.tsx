@@ -24,7 +24,10 @@ export function Header() {
                 <rect width="32" height="32" rx="7" fill="#16161a" />
                 <path d="M6,6 L26,6 L26,11 L14,21 L26,21 L26,26 L6,26 L6,21 L18,11 L6,11 Z" fill="#648DAF" />
               </svg>
-              <span className="font-[600] text-xl text-white" style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}>
+              <span
+                className="font-[600] text-xl text-foreground"
+                style={{ fontFamily: "'IBM Plex Sans', sans-serif" }}
+              >
                 ZuGov
               </span>
             </Link>
@@ -34,7 +37,7 @@ export function Header() {
                   key={item.to}
                   to={item.to}
                   className={`text-sm font-medium transition-colors ${
-                    pathname === item.to ? "text-[#86A6C1]" : "text-gray-400 hover:text-white"
+                    pathname === item.to ? "text-accent-hover" : "text-gray-400 hover:text-foreground"
                   }`}
                 >
                   {item.label}

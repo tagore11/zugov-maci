@@ -42,8 +42,8 @@ export function CustodialWalletCard() {
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
       <div className="flex items-center gap-3">
-        <Wallet className="w-5 h-5 text-[#86A6C1]" />
-        <h2 className="text-lg font-semibold text-white">Custodial Wallet</h2>
+        <Wallet className="w-5 h-5 text-accent-hover" />
+        <h2 className="text-lg font-semibold text-foreground">Custodial Wallet</h2>
       </div>
       <p className="text-xs text-gray-500">
         You signed in with email — ZuGov created this wallet for you automatically. No separate app or seed phrase
@@ -54,12 +54,12 @@ export function CustodialWalletCard() {
         <div className="flex items-center justify-between gap-4 px-4 py-2.5">
           <span className="text-gray-400 shrink-0">Address</span>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-white font-mono text-xs truncate">{address}</span>
+            <span className="text-foreground font-mono text-xs truncate">{address}</span>
             <button
               type="button"
               onClick={handleCopy}
               aria-label="Copy wallet address"
-              className="shrink-0 text-gray-500 hover:text-[#86A6C1] transition-colors"
+              className="shrink-0 text-gray-500 hover:text-accent-hover transition-colors"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-[#64AF8C]" /> : <Copy className="w-3.5 h-3.5" />}
             </button>
@@ -67,11 +67,11 @@ export function CustodialWalletCard() {
         </div>
         <div className="flex justify-between gap-4 px-4 py-2.5">
           <span className="text-gray-400">Network</span>
-          <span className="text-white">{chainName}</span>
+          <span className="text-foreground">{chainName}</span>
         </div>
         <div className="flex justify-between gap-4 px-4 py-2.5">
           <span className="text-gray-400">Balance</span>
-          <span className="text-white font-mono text-xs">
+          <span className="text-foreground font-mono text-xs">
             {isBalanceLoading ? "…" : balance ? `${Number(balance.formatted).toFixed(4)} ${balance.symbol}` : "—"}
           </span>
         </div>

@@ -132,7 +132,7 @@ export default function EditCommunityPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <p className="text-gray-500">Loading community…</p>
@@ -143,11 +143,11 @@ export default function EditCommunityPage() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <p className="text-gray-500">Community not found.</p>
-          <Link to="/manage-communities" className="text-[#86A6C1] hover:text-[#648DAF] font-medium">
+          <Link to="/manage-communities" className="text-accent-hover hover:text-accent font-medium">
             Back to Manage Communities
           </Link>
         </main>
@@ -156,13 +156,13 @@ export default function EditCommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Link
           to="/manage-communities"
-          className="inline-flex items-center gap-2 text-[#86A6C1] hover:text-[#648DAF] mb-6 font-medium"
+          className="inline-flex items-center gap-2 text-accent-hover hover:text-accent mb-6 font-medium"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Manage Communities
@@ -170,10 +170,10 @@ export default function EditCommunityPage() {
 
         <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8">
           <div className="flex items-center justify-between mb-8">
-            <h1 className="text-3xl font-bold text-white">Edit Community</h1>
+            <h1 className="text-3xl font-bold text-foreground">Edit Community</h1>
             <Link
               to={`/manage-communities/${communityId}/members`}
-              className="text-sm font-medium text-[#86A6C1] hover:text-[#648DAF]"
+              className="text-sm font-medium text-accent-hover hover:text-accent"
             >
               Review pending requests →
             </Link>
@@ -181,44 +181,44 @@ export default function EditCommunityPage() {
 
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Community Name *</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">Community Name *</label>
               <input
                 type="text"
                 required
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Description</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={4}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Logo (emoji or URL)</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">Logo (emoji or URL)</label>
               <input
                 type="text"
                 value={logo}
                 onChange={(e) => setLogo(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
               />
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-semibold text-white">Membership Tiers *</label>
+                <label className="block text-sm font-semibold text-foreground">Membership Tiers *</label>
                 {!tiersLocked && (
                   <button
                     type="button"
                     onClick={addTier}
-                    className="text-sm text-[#86A6C1] hover:text-[#648DAF] font-medium"
+                    className="text-sm text-accent-hover hover:text-accent font-medium"
                   >
                     + Add tier
                   </button>
@@ -238,7 +238,7 @@ export default function EditCommunityPage() {
                         value={tier.label}
                         disabled={tiersLocked}
                         onChange={(e) => updateTierField(i, { label: e.target.value })}
-                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg text-sm disabled:bg-gray-800/40 disabled:text-gray-500"
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg text-sm disabled:bg-gray-800/40 disabled:text-gray-500"
                       />
                       {!tiersLocked && (
                         <button
@@ -286,11 +286,11 @@ export default function EditCommunityPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Default Tier</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">Default Tier</label>
               <select
                 value={defaultTierLabel}
                 onChange={(e) => setDefaultTierLabel(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
               >
                 {tiers.map((t, i) => (
                   <option key={t.id ?? `new-${i}`} value={t.label}>
@@ -301,8 +301,8 @@ export default function EditCommunityPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Membership Policy</label>
-              <div className="flex gap-6">
+              <label className="block text-sm font-semibold text-foreground mb-3">Membership Policy</label>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
                 <label className="flex items-center gap-2 text-sm text-gray-300">
                   <input
                     type="radio"
@@ -368,7 +368,7 @@ export default function EditCommunityPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex-1 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors text-base disabled:opacity-60"
+                className="flex-1 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Save Changes"}
               </button>

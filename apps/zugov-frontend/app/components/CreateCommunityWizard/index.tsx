@@ -88,7 +88,7 @@ export function CreateCommunityWizard() {
                 <div key={step} className="flex items-center gap-1 flex-1">
                   <div
                     className={`h-1 flex-1 rounded-full transition-colors ${
-                      isDone ? "bg-[#648DAF]" : isActive ? "bg-[#86A6C1]" : "bg-gray-700"
+                      isDone ? "bg-accent" : isActive ? "bg-accent-hover" : "bg-gray-700"
                     }`}
                   />
                   {idx < 3 && <div className="w-0.5" />}

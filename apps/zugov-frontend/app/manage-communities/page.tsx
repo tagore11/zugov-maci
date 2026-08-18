@@ -85,40 +85,40 @@ export default function ManageCommunitiesPage() {
   }, [fetchUserCommunities]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Manage Your Communities</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Manage Your Communities</h1>
           <p className="text-gray-400">Create and manage your communities</p>
         </div>
 
         <div className="mb-6 flex gap-3 flex-wrap">
           <button
             onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-[6px] font-semibold hover:bg-[#86A6C1] transition-colors"
+            className="flex items-center gap-2 px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors"
           >
             <Plus className="w-5 h-5" />
             Create New Community
           </button>
           <Link
             to="/manage-communities/register"
-            className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-[#86A6C1] border border-[#648DAF] rounded-[6px] font-semibold hover:bg-[#648DAF]/10 transition-colors"
+            className="flex items-center gap-2 px-6 py-3 bg-gray-900 text-accent-hover border border-accent rounded-[6px] font-semibold hover:bg-accent/10 transition-colors"
           >
             Register Existing Community
           </Link>
         </div>
 
         <div className="bg-gray-900 rounded-xl border border-gray-700 p-6">
-          <h2 className="text-xl font-semibold text-white mb-6">Your Communities</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-6">Your Communities</h2>
 
           {userCommunities.length === 0 ? (
             <div className="text-center py-12">
               <p className="text-gray-500 mb-4">You don't own any communities yet</p>
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="text-[#86A6C1] hover:text-[#648DAF] font-medium"
+                className="text-accent-hover hover:text-accent font-medium"
               >
                 Create your first community
               </button>
@@ -142,7 +142,7 @@ export default function ManageCommunitiesPage() {
                   <div className="flex items-center gap-4">
                     <div className="text-3xl">{community.logo}</div>
                     <div>
-                      <h3 className="font-semibold text-lg text-white">{community.name}</h3>
+                      <h3 className="font-semibold text-lg text-foreground">{community.name}</h3>
                       <p className="text-sm text-gray-400">{community.description}</p>
                       <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
                         <div className="flex items-center gap-1">

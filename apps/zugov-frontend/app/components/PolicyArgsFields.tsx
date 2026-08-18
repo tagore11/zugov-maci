@@ -140,12 +140,12 @@ const THEME_CLASSES = {
   light: {
     wrapper: "border-gray-200 bg-gray-50",
     label: "text-gray-700",
-    input: "border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:ring-[#2D5F8A]",
+    input: "border-gray-300 bg-white text-gray-900 placeholder-gray-400 focus:ring-accent",
   },
   dark: {
     wrapper: "border-gray-700 bg-gray-800/40",
     label: "text-gray-400",
-    input: "border-gray-700 bg-gray-900 text-white placeholder-gray-600 focus:ring-[#648DAF]",
+    input: "border-gray-700 bg-gray-900 text-foreground placeholder-gray-600 focus:ring-accent",
   },
 } as const;
 

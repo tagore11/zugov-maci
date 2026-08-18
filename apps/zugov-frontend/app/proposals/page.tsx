@@ -4,36 +4,36 @@ import { ALL_PROPOSALS } from "@/app/lib/placeholder-data";
 
 export default function ProposalsPage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">All Proposals</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">All Proposals</h1>
           <p className="text-gray-400">Browse and vote on proposals across all communities</p>
         </div>
 
         {/* Filters */}
         <div className="bg-gray-900 rounded-lg border border-gray-700 p-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent">
+            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
               <option>All Status</option>
               <option>Active</option>
               <option>Closed</option>
             </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent">
+            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
               <option>All Types</option>
               <option>Onchain</option>
               <option>Offchain</option>
             </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent">
+            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
               <option>All Communities</option>
               <option>ZuKas Residency</option>
               <option>ZuAfrique</option>
               <option>Zuitzerland</option>
               <option>EDGE City</option>
             </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-white rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent">
+            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
               <option>All Eligibility</option>
               <option>Eligible Only</option>
               <option>Not Eligible</option>
@@ -54,7 +54,7 @@ export default function ProposalsPage() {
                     <span className="text-2xl">{proposal.communityLogo}</span>
                     <span className="text-sm font-medium text-gray-400">{proposal.community}</span>
                   </div>
-                  <h3 className="font-semibold text-xl text-white mb-3">{proposal.title}</h3>
+                  <h3 className="font-semibold text-xl text-foreground mb-3">{proposal.title}</h3>
                   <div className="flex flex-wrap gap-2">
                     <span
                       className={`px-3 py-1 text-xs font-medium rounded-full ${
@@ -73,7 +73,7 @@ export default function ProposalsPage() {
                     <span className="px-3 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded-full">
                       {proposal.type.toUpperCase()}
                     </span>
-                    <span className="px-3 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded-full">
+                    <span className="px-3 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded-full">
                       {proposal.privacy.toUpperCase()}
                     </span>
                     {proposal.eligible ? (
@@ -103,7 +103,7 @@ export default function ProposalsPage() {
                   </span>
                 </div>
                 {proposal.eligible && proposal.status === "active" && (
-                  <button className="px-6 py-2 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors">
+                  <button className="px-6 py-2 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors">
                     Vote Now
                   </button>
                 )}

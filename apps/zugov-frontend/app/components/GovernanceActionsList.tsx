@@ -139,7 +139,7 @@ function DeployPollPrompt({
         <select
           value={eligibilityPolicyType}
           onChange={(e) => setEligibilityPolicyType(e.target.value as SignUpPolicyType)}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-foreground"
         >
           {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
           {allowedPolicyTypes.map((type) => (
@@ -160,14 +160,14 @@ function DeployPollPrompt({
           type="datetime-local"
           value={startDate}
           onChange={(e) => setStartDate(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-foreground"
           aria-label="Poll start date"
         />
         <input
           type="datetime-local"
           value={endDate}
           onChange={(e) => setEndDate(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+          className="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-foreground"
           aria-label="Poll end date"
         />
       </div>
@@ -178,7 +178,7 @@ function DeployPollPrompt({
             value={option}
             placeholder={`Option ${i + 1}`}
             onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
-            className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+            className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-foreground"
           />
           {options.length > 2 && (
             <button
@@ -195,14 +195,14 @@ function DeployPollPrompt({
       <button
         type="button"
         onClick={() => setOptions([...options, ""])}
-        className="w-full border border-dashed border-gray-600 rounded px-2 py-1 text-gray-400 hover:border-[#648DAF] hover:text-[#86A6C1]"
+        className="w-full border border-dashed border-gray-600 rounded px-2 py-1 text-gray-400 hover:border-accent hover:text-accent-hover"
       >
         + Add Option
       </button>
       <button
         onClick={handleDeploy}
         disabled={isDeploying || !startDate || !endDate || !hasEnoughOptions || !policyArgs}
-        className="px-3 py-1.5 bg-[#648DAF] text-white rounded text-xs font-medium hover:bg-[#86A6C1] disabled:opacity-60"
+        className="px-3 py-1.5 bg-accent text-white rounded text-xs font-medium hover:bg-accent-hover disabled:opacity-60"
       >
         {isDeploying ? (deployStep ?? "Deploying...") : "Deploy Poll"}
       </button>
@@ -348,7 +348,7 @@ function FormalizedActionRow({
     <div className="border border-gray-700 rounded-lg p-4 space-y-2">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-semibold text-white">{action.title}</h3>
+          <h3 className="font-semibold text-foreground">{action.title}</h3>
           <p className="text-sm text-gray-400">{action.description}</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -356,7 +356,7 @@ function FormalizedActionRow({
           {eligibility?.eligible && action.pollAddress && (
             <button
               onClick={handleVoteClick}
-              className="px-3 py-1.5 bg-[#648DAF] text-white rounded-lg text-xs font-medium hover:bg-[#86A6C1]"
+              className="px-3 py-1.5 bg-accent text-white rounded-lg text-xs font-medium hover:bg-accent-hover"
             >
               Vote
             </button>
@@ -453,13 +453,13 @@ function DraftRow({
     <div className="border border-gray-700 rounded-lg p-4 space-y-2">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h3 className="font-semibold text-white">{action.title}</h3>
+          <h3 className="font-semibold text-foreground">{action.title}</h3>
           <p className="text-sm text-gray-400">{action.description}</p>
         </div>
         <button
           onClick={handleSponsor}
           disabled={isSponsoring}
-          className="shrink-0 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1] disabled:opacity-60"
+          className="shrink-0 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-60"
         >
           {isSponsoring ? "Sponsoring..." : "Sponsor"}
         </button>
@@ -529,10 +529,10 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-white">Governance Actions</h2>
+        <h2 className="text-lg font-semibold text-foreground">Governance Actions</h2>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1]"
+          className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover"
         >
           <Plus className="w-4 h-4" />
           {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}

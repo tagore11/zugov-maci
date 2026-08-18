@@ -164,10 +164,10 @@ export function CreateProposalModal({
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-700 flex items-center justify-between sticky top-0 bg-gray-900 rounded-t-2xl z-10">
-          <h2 className="text-2xl font-bold text-white">Create New Proposal</h2>
+          <h2 className="text-2xl font-bold text-foreground">Create New Proposal</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-white"
+            className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-foreground"
           >
             <X className="w-5 h-5" />
           </button>
@@ -176,37 +176,37 @@ export function CreateProposalModal({
         <form onSubmit={handleSubmit} className="p-8 space-y-10">
           {/* Title */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Proposal Title *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Proposal Title *</label>
             <input
               type="text"
               required
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white placeholder:text-gray-500"
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
               placeholder="Enter proposal title"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Description *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Description *</label>
             <textarea
               required
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={4}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white placeholder:text-gray-500"
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
               placeholder="Describe the proposal in detail"
             />
           </div>
 
           {/* Voting Mechanism */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Voting Mechanism *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Voting Mechanism *</label>
             <select
               value={formData.votingMechanism}
               onChange={(e) => setFormData({ ...formData, votingMechanism: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white"
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
             >
               <option value="simple">Simple Majority</option>
               <option value="quadratic">Quadratic Voting</option>
@@ -222,10 +222,10 @@ export function CreateProposalModal({
                 type="checkbox"
                 disabled
                 checked={false} //TODO
-                className="w-5 h-5 rounded text-[#648DAF] focus:ring-[#648DAF] mt-1 cursor-not-allowed"
+                className="w-5 h-5 rounded text-accent focus:ring-accent mt-1 cursor-not-allowed"
               />
               <div>
-                <span className="text-base font-semibold text-white block mb-2">Weighted Voting</span>
+                <span className="text-base font-semibold text-foreground block mb-2">Weighted Voting</span>
                 <p className="text-sm text-gray-400">Enable voting power based on token holdings or reputation score</p>
                 <p className="text-xs text-gray-500 mt-1">Coming soon</p>
               </div>
@@ -234,7 +234,7 @@ export function CreateProposalModal({
 
           {/* Privacy */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Privacy *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Privacy *</label>
             {isMaci && <p className="text-sm text-gray-500 mb-3">MACI governance requires private voting.</p>}
             <div className="grid grid-cols-2 gap-4">
               <label
@@ -247,12 +247,12 @@ export function CreateProposalModal({
                   checked={formData.privacy === "public"}
                   disabled={isMaci} //TODO
                   onChange={(e) => setFormData({ ...formData, privacy: e.target.value })}
-                  className="w-5 h-5 text-[#648DAF] focus:ring-[#648DAF]"
+                  className="w-5 h-5 text-accent focus:ring-accent"
                 />
-                <span className="font-semibold text-base text-white">Public</span>
+                <span className="font-semibold text-base text-foreground">Public</span>
               </label>
               <label
-                className={`flex items-center gap-3 p-5 border-2 rounded-lg ${isMaci ? "border-[#648DAF] bg-[#648DAF]/10 cursor-not-allowed" : "border-gray-700 cursor-pointer hover:bg-gray-800/60"}`}
+                className={`flex items-center gap-3 p-5 border-2 rounded-lg ${isMaci ? "border-accent bg-accent/10 cursor-not-allowed" : "border-gray-700 cursor-pointer hover:bg-gray-800/60"}`}
               >
                 <input
                   type="radio"
@@ -261,9 +261,9 @@ export function CreateProposalModal({
                   checked={formData.privacy === "private"}
                   disabled={isMaci} //TODO
                   onChange={(e) => setFormData({ ...formData, privacy: e.target.value })}
-                  className="w-5 h-5 text-[#648DAF] focus:ring-[#648DAF]"
+                  className="w-5 h-5 text-accent focus:ring-accent"
                 />
-                <span className="font-semibold text-base text-white">Private</span>
+                <span className="font-semibold text-base text-foreground">Private</span>
               </label>
             </div>
           </div>
@@ -271,36 +271,36 @@ export function CreateProposalModal({
           {/* Dates */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">Start Date *</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">Start Date *</label>
               <input
                 type="datetime-local"
                 required
                 value={formData.startDate}
                 onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-white mb-3">End Date *</label>
+              <label className="block text-sm font-semibold text-foreground mb-3">End Date *</label>
               <input
                 type="datetime-local"
                 required
                 value={formData.endDate}
                 onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
               />
             </div>
           </div>
 
           {/* Eligibility */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Eligibility Criteria *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Criteria *</label>
             {isMaci ? (
               <select
                 required
                 value={formData.eligibility}
                 onChange={(e) => setFormData({ ...formData, eligibility: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
               >
                 {MACI_ELIGIBILITY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value} disabled={!opt.enabled}>
@@ -315,7 +315,7 @@ export function CreateProposalModal({
                 required
                 value={formData.eligibility}
                 onChange={(e) => setFormData({ ...formData, eligibility: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white placeholder:text-gray-500"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
                 placeholder="Define who can vote on this proposal"
               />
             )}
@@ -323,7 +323,7 @@ export function CreateProposalModal({
 
           {/* Options */}
           <div>
-            <label className="block text-sm font-semibold text-white mb-3">Voting Options *</label>
+            <label className="block text-sm font-semibold text-foreground mb-3">Voting Options *</label>
             <div className="space-y-3">
               {formData.options.map((option, index) => (
                 <div key={index} className="flex gap-3">
@@ -332,7 +332,7 @@ export function CreateProposalModal({
                     required
                     value={option}
                     onChange={(e) => updateOption(index, e.target.value)}
-                    className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent text-base text-white placeholder:text-gray-500"
+                    className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
                     placeholder={`Option ${index + 1}`}
                   />
                   {formData.options.length > 2 && (
@@ -349,7 +349,7 @@ export function CreateProposalModal({
               <button
                 type="button"
                 onClick={addOption}
-                className="w-full px-4 py-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-[#648DAF] hover:text-[#86A6C1] transition-colors font-medium"
+                className="w-full px-4 py-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-accent hover:text-accent-hover transition-colors font-medium"
               >
                 + Add Option
               </button>
@@ -368,14 +368,14 @@ export function CreateProposalModal({
               type="button"
               onClick={onClose}
               disabled={isDeploying}
-              className="flex-1 px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-base text-white disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-base text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isDeploying}
-              className="flex-1 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors text-base disabled:opacity-60 disabled:cursor-not-allowed"
+              className="flex-1 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {isDeploying ? (deployStep ?? "Deploying...") : "Create Proposal"}
             </button>

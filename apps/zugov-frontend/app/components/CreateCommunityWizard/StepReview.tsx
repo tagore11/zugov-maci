@@ -47,9 +47,9 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold text-white">Review & Deploy</h2>
+      <h2 className="text-lg font-semibold text-foreground">Review & Deploy</h2>
       <p className="text-sm text-gray-400">
-        Creating <span className="text-white font-medium">{config.displayName ?? "your community"}</span> —{" "}
+        Creating <span className="text-foreground font-medium">{config.displayName ?? "your community"}</span> —{" "}
         {joinDescription}
       </p>
 
@@ -67,7 +67,7 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
           onClick={() => setShowTechnical((v) => !v)}
           aria-expanded={showTechnical}
           className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-sm text-gray-300
-            hover:text-white transition-colors"
+            hover:text-foreground transition-colors"
         >
           <span>Technical details</span>
           <span className="text-gray-500" aria-hidden="true">
@@ -99,8 +99,8 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
         <button
           type="button"
           onClick={() => void startDeployment()}
-          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-            hover:bg-[#86A6C1] transition-colors text-sm"
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+            hover:bg-accent-hover transition-colors text-sm"
         >
           Deploy
         </button>
@@ -136,7 +136,9 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
   return (
     <div className="flex justify-between gap-4 px-4 py-2.5">
       <span className="text-gray-400 shrink-0">{label}</span>
-      <span className={`text-white text-right ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      <span className={`text-foreground text-right min-w-0 break-words ${mono ? "font-mono text-xs" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }

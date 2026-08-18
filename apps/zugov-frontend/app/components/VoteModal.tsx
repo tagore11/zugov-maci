@@ -107,7 +107,7 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
         <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <h2 className="text-xl font-bold text-white">{poll.name}</h2>
+          <h2 className="text-xl font-bold text-foreground">{poll.name}</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-800 transition-colors">
             <X className="w-5 h-5 text-gray-400" />
           </button>
@@ -138,16 +138,16 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
                       onDragEnd={handleDragEnd}
                       className={`w-full flex items-center gap-3 p-3 border rounded-lg cursor-grab active:cursor-grabbing transition-colors select-none ${
                         dragIndex === idx
-                          ? "border-[#648DAF] bg-[#648DAF]/10 opacity-60"
+                          ? "border-accent bg-accent/10 opacity-60"
                           : "border-gray-700 hover:border-gray-600 hover:bg-gray-800/60"
                       }`}
                     >
                       <GripVertical className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                      <div className="w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 bg-[#648DAF] text-white">
+                      <div className="w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 bg-accent text-white">
                         {idx + 1}
                       </div>
                       <span className="text-white flex-1">{option}</span>
-                      <span className="text-xs font-medium text-[#86A6C1] bg-[#648DAF]/10 px-2 py-0.5 rounded-full">
+                      <span className="text-xs font-medium text-accent-hover bg-accent/10 px-2 py-0.5 rounded-full">
                         weight {weight}
                       </span>
                     </div>
@@ -165,18 +165,18 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
                     onClick={() => setSelectedOption(idx)}
                     className={`w-full flex items-center gap-3 p-3 border rounded-lg text-left transition-colors ${
                       selectedOption === idx
-                        ? "border-[#648DAF] bg-[#648DAF]/10"
+                        ? "border-accent bg-accent/10"
                         : "border-gray-700 hover:border-gray-600 hover:bg-gray-800/60"
                     }`}
                   >
                     <div
                       className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 ${
-                        selectedOption === idx ? "bg-[#648DAF] text-white" : "bg-gray-800 text-gray-300"
+                        selectedOption === idx ? "bg-accent text-white" : "bg-gray-800 text-gray-300"
                       }`}
                     >
                       {idx + 1}
                     </div>
-                    <span className="text-white">{option}</span>
+                    <span className="text-foreground">{option}</span>
                   </button>
                 ))}
               </div>
@@ -195,7 +195,7 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
             <button
               onClick={handleVote}
               disabled={!canSubmit || isVoting}
-              className="flex-1 px-4 py-2 bg-[#648DAF] text-white rounded-lg font-medium hover:bg-[#86A6C1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 bg-accent text-white rounded-lg font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isVoting ? "Submitting..." : storedVote ? "Recast Vote" : "Cast Vote"}
             </button>

@@ -106,8 +106,8 @@ export function AwaitingActions({ address }: { address: string | undefined }) {
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
       <div className="flex items-center gap-3">
-        <ListChecks className="w-5 h-5 text-[#86A6C1]" />
-        <h2 className="text-lg font-semibold text-white">Awaiting Your Action</h2>
+        <ListChecks className="w-5 h-5 text-accent-hover" />
+        <h2 className="text-lg font-semibold text-foreground">Awaiting Your Action</h2>
       </div>
 
       {isLoading ? (
@@ -124,21 +124,21 @@ export function AwaitingActions({ address }: { address: string | undefined }) {
               <span className="text-gray-300">
                 {item.kind === "union_invite" && (
                   <>
-                    🤝 <span className="text-white font-medium">{item.unionName}</span> invited{" "}
-                    <span className="text-white font-medium">{item.communityName}</span> to join
+                    🤝 <span className="text-foreground font-medium">{item.unionName}</span> invited{" "}
+                    <span className="text-foreground font-medium">{item.communityName}</span> to join
                   </>
                 )}
                 {item.kind === "membership_requests" && (
                   <>
-                    👥 <span className="text-white font-medium">{item.count}</span> join request
+                    👥 <span className="text-foreground font-medium">{item.count}</span> join request
                     {item.count === 1 ? "" : "s"} waiting in{" "}
-                    <span className="text-white font-medium">{item.communityName}</span>
+                    <span className="text-foreground font-medium">{item.communityName}</span>
                   </>
                 )}
                 {item.kind === "governance_vote" && (
                   <>
-                    🗳️ &ldquo;<span className="text-white font-medium">{item.actionTitle}</span>&rdquo; is open for
-                    voting in <span className="text-white font-medium">{item.communityName}</span>
+                    🗳️ &ldquo;<span className="text-foreground font-medium">{item.actionTitle}</span>&rdquo; is open for
+                    voting in <span className="text-foreground font-medium">{item.communityName}</span>
                   </>
                 )}
               </span>
@@ -150,7 +150,7 @@ export function AwaitingActions({ address }: { address: string | undefined }) {
                       ? `/manage-communities/${item.communityId}/members`
                       : `/community/${item.communityId}`
                 }
-                className="shrink-0 text-xs font-medium text-[#86A6C1] hover:text-[#648DAF] transition-colors"
+                className="shrink-0 text-xs font-medium text-accent-hover hover:text-accent transition-colors"
               >
                 {item.kind === "governance_vote" ? "Vote" : "Review"}
               </Link>

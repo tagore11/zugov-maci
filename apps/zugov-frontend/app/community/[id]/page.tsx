@@ -45,7 +45,9 @@ function InfoRow({ label, value, mono = false }: { label: string; value: string;
   return (
     <div className="flex justify-between gap-4 px-4 py-2.5">
       <span className="text-gray-500 shrink-0">{label}</span>
-      <span className={`text-white text-right ${mono ? "font-mono text-xs" : ""}`}>{value}</span>
+      <span className={`text-foreground text-right min-w-0 break-words ${mono ? "font-mono text-xs" : ""}`}>
+        {value}
+      </span>
     </div>
   );
 }
@@ -180,7 +182,7 @@ export default function CommunityPage() {
   // Loading state while fetching from backend
   if (!community && isCommunityLoading) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8">
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 animate-pulse">
@@ -203,10 +205,10 @@ export default function CommunityPage() {
       .join(", ");
 
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm">
+          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground text-sm">
             <ArrowLeft className="w-4 h-4" />
             Back to Communities
           </Link>
@@ -225,10 +227,10 @@ export default function CommunityPage() {
             {parentCommunity && (
               <Link
                 to={`/community/${parentCommunity.id}`}
-                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-[#86A6C1] transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-accent-hover transition-colors"
               >
                 <span aria-hidden="true">↳</span>
-                Sub-community of <span className="text-white font-medium">{parentCommunity.displayName}</span>
+                Sub-community of <span className="text-foreground font-medium">{parentCommunity.displayName}</span>
               </Link>
             )}
 
@@ -243,7 +245,7 @@ export default function CommunityPage() {
           {/* Governance status: "not yet configured" empty state (mirrors the existing
               subgraphStatus 'pending' tone), or the real config + join/vote panels once set up. */}
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-white">Governance</h2>
+            <h2 className="text-lg font-semibold text-foreground">Governance</h2>
 
             {!dc.governanceConfigured ? (
               <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
@@ -316,17 +318,17 @@ export default function CommunityPage() {
 
           {!!subCommunities?.length && (
             <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-              <h2 className="text-lg font-semibold text-white mb-3">Sub-communities</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-3">Sub-communities</h2>
               <div className="flex flex-wrap gap-3">
                 {subCommunities.map((child) => (
                   <Link
                     key={child.id}
                     to={`/community/${child.id}`}
                     className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-700
-                      hover:border-[#648DAF] hover:bg-gray-800 transition-colors"
+                      hover:border-accent hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-xl">{child.logo || "🏛️"}</span>
-                    <span className="font-medium text-white">{child.displayName}</span>
+                    <span className="font-medium text-foreground">{child.displayName}</span>
                   </Link>
                 ))}
               </div>
@@ -345,15 +347,15 @@ export default function CommunityPage() {
 
   if (!community && !backendCommunity) {
     return (
-      <div className="min-h-screen bg-gray-950 text-white">
+      <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-4">
-          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white text-sm">
+          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground text-sm">
             <ArrowLeft className="w-4 h-4" />
             Back to Communities
           </Link>
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-8 text-center">
-            <p className="text-xl font-semibold text-white mb-2">Community not found</p>
+            <p className="text-xl font-semibold text-foreground mb-2">Community not found</p>
             <p className="text-gray-400 text-sm">No community is registered at this address.</p>
           </div>
         </main>
@@ -362,11 +364,14 @@ export default function CommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground mb-6 transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm font-medium">Back to Communities</span>
         </Link>
@@ -378,14 +383,14 @@ export default function CommunityPage() {
               <div className="text-5xl">{community.logo}</div>
               <div>
                 <h1 className="text-3xl font-bold text-white mb-2">{community.name}</h1>
-                <span className="inline-block px-3 py-1 text-sm font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
+                <span className="inline-block px-3 py-1 text-sm font-medium bg-accent/20 text-accent-hover rounded">
                   {community.category}
                 </span>
               </div>
             </div>
             <button
               onClick={() => setShowCreateProposal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors"
+              className="flex items-center gap-2 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors"
             >
               <Plus className="w-5 h-5" />
               Create Proposal
@@ -394,27 +399,27 @@ export default function CommunityPage() {
 
           {/* Summary & Description */}
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-white mb-2">Summary</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Summary</h2>
             <p className="text-gray-300 mb-4">{community.summary}</p>
-            <h2 className="text-lg font-semibold text-white mb-2">Description</h2>
+            <h2 className="text-lg font-semibold text-foreground mb-2">Description</h2>
             <p className="text-gray-400">{community.description}</p>
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <div className="text-center p-4 bg-gray-800/40 rounded-lg">
-              <Users className="w-6 h-6 text-[#648DAF] mx-auto mb-2" />
-              <p className="text-2xl font-bold text-white">{memberCount.toLocaleString()}</p>
+              <Users className="w-6 h-6 text-accent mx-auto mb-2" />
+              <p className="text-2xl font-bold text-foreground">{memberCount.toLocaleString()}</p>
               <p className="text-sm text-gray-400">Members</p>
             </div>
             <div className="text-center p-4 bg-gray-800/40 rounded-lg">
               <FileText className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-white">{displayProposals.length}</p>
+              <p className="text-2xl font-bold text-foreground">{displayProposals.length}</p>
               <p className="text-sm text-gray-400">Proposals</p>
             </div>
             <div className="text-center p-4 bg-gray-800/40 rounded-lg">
-              <MessageSquare className="w-6 h-6 text-[#86A6C1] mx-auto mb-2" />
-              <p className="text-2xl font-bold text-white">{FORUM_POSTS.length}</p>
+              <MessageSquare className="w-6 h-6 text-accent-hover mx-auto mb-2" />
+              <p className="text-2xl font-bold text-foreground">{FORUM_POSTS.length}</p>
               <p className="text-sm text-gray-400">Forum Posts</p>
             </div>
           </div>
@@ -422,7 +427,7 @@ export default function CommunityPage() {
           {/* Affiliated Communities */}
           {community.affiliatedCommunities && community.affiliatedCommunities.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-white mb-3">Affiliated Communities</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-3">Affiliated Communities</h2>
               <div className="flex flex-wrap gap-3">
                 {community.affiliatedCommunities.map((affiliated) => (
                   <Link
@@ -431,7 +436,7 @@ export default function CommunityPage() {
                     className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-xl">{affiliated.logo}</span>
-                    <span className="font-medium text-white">{affiliated.name}</span>
+                    <span className="font-medium text-foreground">{affiliated.name}</span>
                   </Link>
                 ))}
               </div>
@@ -446,7 +451,7 @@ export default function CommunityPage() {
               onClick={() => setActiveTab("proposals")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "proposals"
-                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  ? "text-accent-hover border-b-2 border-accent bg-accent/10"
                   : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
@@ -456,7 +461,7 @@ export default function CommunityPage() {
               onClick={() => setActiveTab("forum")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "forum"
-                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  ? "text-accent-hover border-b-2 border-accent bg-accent/10"
                   : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
@@ -490,7 +495,7 @@ export default function CommunityPage() {
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-lg text-white">{proposal.title}</h3>
+                              <h3 className="font-semibold text-lg text-foreground">{proposal.title}</h3>
                               {expandedProposal === proposal.id ? (
                                 <ChevronUp className="w-5 h-5 text-gray-400" />
                               ) : (
@@ -506,7 +511,7 @@ export default function CommunityPage() {
                               <span className="px-2 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded">
                                 {proposal.type.toUpperCase()}
                               </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
+                              <span className="px-2 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded">
                                 {proposal.privacy.toUpperCase()}
                               </span>
                               {proposal.eligible ? (
@@ -521,7 +526,7 @@ export default function CommunityPage() {
                                 </span>
                               )}
                               {proposal.votingMechanism && (
-                                <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
+                                <span className="px-2 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded">
                                   {proposal.votingMechanism.toUpperCase()}
                                 </span>
                               )}
@@ -575,31 +580,31 @@ export default function CommunityPage() {
 
                             {proposal.description && (
                               <div>
-                                <h4 className="font-semibold text-white mb-2">Description</h4>
+                                <h4 className="font-semibold text-foreground mb-2">Description</h4>
                                 <p className="text-gray-300">{proposal.description}</p>
                               </div>
                             )}
 
                             {proposal.eligibility && (
                               <div>
-                                <h4 className="font-semibold text-white mb-2">Eligibility Criteria</h4>
+                                <h4 className="font-semibold text-foreground mb-2">Eligibility Criteria</h4>
                                 <p className="text-gray-300">{proposal.eligibility}</p>
                               </div>
                             )}
 
                             {proposal.options && proposal.options.length > 0 && (
                               <div>
-                                <h4 className="font-semibold text-white mb-2">Voting Options</h4>
+                                <h4 className="font-semibold text-foreground mb-2">Voting Options</h4>
                                 <div className="space-y-2">
                                   {proposal.options.map((option: string, idx: number) => (
                                     <div
                                       key={idx}
                                       className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-700 rounded-lg"
                                     >
-                                      <div className="w-8 h-8 flex items-center justify-center bg-[#648DAF]/20 text-[#86A6C1] rounded-full font-semibold text-sm">
+                                      <div className="w-8 h-8 flex items-center justify-center bg-accent/20 text-accent-hover rounded-full font-semibold text-sm">
                                         {idx + 1}
                                       </div>
-                                      <span className="text-white">{option}</span>
+                                      <span className="text-foreground">{option}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -609,11 +614,11 @@ export default function CommunityPage() {
                             {proposal.startDate && proposal.endDate && (
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <h4 className="font-semibold text-white mb-1">Start Date</h4>
+                                  <h4 className="font-semibold text-foreground mb-1">Start Date</h4>
                                   <p className="text-gray-300">{new Date(proposal.startDate).toLocaleString()}</p>
                                 </div>
                                 <div>
-                                  <h4 className="font-semibold text-white mb-1">End Date</h4>
+                                  <h4 className="font-semibold text-foreground mb-1">End Date</h4>
                                   <p className="text-gray-300">{new Date(proposal.endDate).toLocaleString()}</p>
                                 </div>
                               </div>
@@ -634,7 +639,7 @@ export default function CommunityPage() {
                     key={post.id}
                     className="p-4 border border-gray-700 rounded-lg hover:bg-gray-800/60 transition-colors cursor-pointer"
                   >
-                    <h3 className="font-semibold text-lg text-white mb-2">{post.title}</h3>
+                    <h3 className="font-semibold text-lg text-foreground mb-2">{post.title}</h3>
                     <div className="flex items-center justify-between text-sm text-gray-400">
                       <span>{post.author}</span>
                       <div className="flex items-center gap-4">

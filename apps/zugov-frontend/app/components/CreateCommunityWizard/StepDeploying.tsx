@@ -46,7 +46,7 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
 
   return (
     <div className="space-y-5">
-      <h2 className="text-lg font-semibold text-white">
+      <h2 className="text-lg font-semibold text-foreground">
         {isError ? "Deployment failed" : isResumable ? "Deployment paused" : "Deploying…"}
       </h2>
 
@@ -60,16 +60,16 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <div
               key={phase}
               className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm
-                ${isActive ? "bg-[#648DAF]/10 border border-[#648DAF]/40" : ""}
+                ${isActive ? "bg-accent/10 border border-accent/40" : ""}
                 ${isDone ? "opacity-70" : ""}`}
             >
               {isDone && <span className="text-green-400 w-5 text-center">✓</span>}
               {isActive && (
-                <div className="w-5 h-5 border-2 border-[#648DAF] border-t-transparent rounded-full animate-spin shrink-0" />
+                <div className="w-5 h-5 border-2 border-accent border-t-transparent rounded-full animate-spin shrink-0" />
               )}
               {isPending && <span className="text-gray-600 w-5 text-center">○</span>}
 
-              <span className={isDone ? "text-gray-400" : isActive ? "text-white" : "text-gray-600"}>
+              <span className={isDone ? "text-gray-400" : isActive ? "text-foreground" : "text-gray-600"}>
                 {PHASE_LABELS[phase]}
               </span>
             </div>
@@ -82,7 +82,7 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
           href={getBlockExplorerTxUrl(currentTxHash, chainId)}
           target="_blank"
           rel="noopener noreferrer"
-          className="block text-xs text-[#86A6C1] hover:text-[#648DAF] font-mono truncate"
+          className="block text-xs text-accent-hover hover:text-accent font-mono truncate"
         >
           {currentTxHash}
         </a>
@@ -95,8 +95,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <button
               type="button"
               onClick={() => void saveCommunity()}
-              className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-                hover:bg-[#86A6C1] transition-colors text-sm"
+              className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+                hover:bg-accent-hover transition-colors text-sm"
             >
               Save Community
             </button>
@@ -104,8 +104,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
             <button
               type="button"
               onClick={() => void retryDeployment()}
-              className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-                hover:bg-[#86A6C1] transition-colors text-sm"
+              className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+                hover:bg-accent-hover transition-colors text-sm"
             >
               Try again
             </button>
@@ -122,8 +122,8 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
           <button
             type="button"
             onClick={() => void retryDeployment()}
-            className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-              hover:bg-[#86A6C1] transition-colors text-sm"
+            className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+              hover:bg-accent-hover transition-colors text-sm"
           >
             Continue deployment
           </button>

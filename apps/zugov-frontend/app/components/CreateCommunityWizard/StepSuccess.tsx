@@ -39,7 +39,7 @@ export function StepSuccess({ communityId, reset }: Props) {
     <div className="text-center space-y-5 py-4">
       <div className="text-4xl">🎉</div>
       <div>
-        <h2 className="text-xl font-bold text-white">Community created!</h2>
+        <h2 className="text-xl font-bold text-foreground">Community created!</h2>
         {communityId && (
           <p className="text-sm text-gray-400 font-mono mt-1 break-all">
             {communityId.slice(0, 8)}…{communityId.slice(-6)}
@@ -49,7 +49,7 @@ export function StepSuccess({ communityId, reset }: Props) {
 
       {!cancelled && communityId && (
         <p className="text-sm text-gray-400">
-          Redirecting in <span className="text-white font-semibold">{countdown}</span>…
+          Redirecting in <span className="text-foreground font-semibold">{countdown}</span>…
         </p>
       )}
 
@@ -58,8 +58,8 @@ export function StepSuccess({ communityId, reset }: Props) {
           <button
             type="button"
             onClick={handleGoNow}
-            className="w-full py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-              hover:bg-[#86A6C1] transition-colors text-sm"
+            className="w-full py-2 px-4 rounded-lg bg-accent text-white font-medium
+              hover:bg-accent-hover transition-colors text-sm"
           >
             Go to community now
           </button>

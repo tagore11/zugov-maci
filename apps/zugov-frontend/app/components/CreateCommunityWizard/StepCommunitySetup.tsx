@@ -138,7 +138,7 @@ export function StepCommunitySetup({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-white">Who&apos;s in your community?</h2>
+        <h2 className="text-lg font-semibold text-foreground">Who&apos;s in your community?</h2>
         <p className="text-sm text-gray-400 mt-1">You&apos;ll be the first Organizer.</p>
       </div>
 
@@ -151,11 +151,11 @@ export function StepCommunitySetup({
             aria-pressed={membershipPolicy === "open"}
             className={`w-full min-h-[44px] text-left p-3 rounded-lg border transition-colors ${
               membershipPolicy === "open"
-                ? "border-[#648DAF] bg-[#648DAF]/10"
+                ? "border-accent bg-accent/10"
                 : "border-gray-700 bg-gray-800/30 hover:bg-gray-800/60"
             }`}
           >
-            <div className="font-medium text-white text-sm">Anyone can join</div>
+            <div className="font-medium text-foreground text-sm">Anyone can join</div>
             <div className="text-xs text-gray-400 mt-0.5">Residents join instantly, no approval needed.</div>
           </button>
           <button
@@ -164,11 +164,11 @@ export function StepCommunitySetup({
             aria-pressed={membershipPolicy === "approval"}
             className={`w-full min-h-[44px] text-left p-3 rounded-lg border transition-colors ${
               membershipPolicy === "approval"
-                ? "border-[#648DAF] bg-[#648DAF]/10"
+                ? "border-accent bg-accent/10"
                 : "border-gray-700 bg-gray-800/30 hover:bg-gray-800/60"
             }`}
           >
-            <div className="font-medium text-white text-sm">Organizers approve new residents</div>
+            <div className="font-medium text-foreground text-sm">Organizers approve new residents</div>
             <div className="text-xs text-gray-400 mt-0.5">Join requests wait for an Organizer to approve them.</div>
           </button>
         </div>
@@ -179,7 +179,7 @@ export function StepCommunitySetup({
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 divide-y divide-gray-700 text-sm">
           {RESIDENT_ORGANIZER_TIERS.map((tier) => (
             <div key={tier.label} className="px-4 py-2.5">
-              <div className="text-white font-medium">{tier.label}</div>
+              <div className="text-foreground font-medium">{tier.label}</div>
               <div className="text-xs text-gray-400 mt-0.5">{describeTier(tier)}</div>
             </div>
           ))}
@@ -192,7 +192,7 @@ export function StepCommunitySetup({
           onClick={() => setAdvancedOpen((v) => !v)}
           aria-expanded={advancedOpen}
           className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-sm text-gray-300
-            hover:text-white transition-colors"
+            hover:text-foreground transition-colors"
         >
           <span>Advanced settings</span>
           <span className="text-gray-500" aria-hidden="true">
@@ -214,8 +214,8 @@ export function StepCommunitySetup({
               <select
                 value={policyType}
                 onChange={(e) => setPolicyType(e.target.value as SignUpPolicyType)}
-                className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white text-sm
-                  focus:outline-none focus:ring-2 focus:ring-[#648DAF]"
+                className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-foreground text-sm
+                  focus:outline-none focus:ring-2 focus:ring-accent"
               >
                 {POLICY_TYPE_OPTIONS.map(({ type, label }) => (
                   <option key={type} value={type}>
@@ -240,9 +240,11 @@ export function StepCommunitySetup({
                         onChange={() =>
                           setPolicies((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
                         }
-                        className="rounded border-gray-600 bg-gray-800 text-[#648DAF] focus:ring-[#648DAF]"
+                        className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                       />
-                      <span className={`text-sm ${checked ? "text-white" : "text-gray-400"} group-hover:text-gray-200`}>
+                      <span
+                        className={`text-sm ${checked ? "text-foreground" : "text-gray-400"} group-hover:text-gray-200`}
+                      >
                         {policy.name}
                       </span>
                     </label>
@@ -265,9 +267,11 @@ export function StepCommunitySetup({
                         onChange={() =>
                           setModes((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]))
                         }
-                        className="rounded border-gray-600 bg-gray-800 text-[#648DAF] focus:ring-[#648DAF]"
+                        className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
                       />
-                      <span className={`text-sm ${checked ? "text-white" : "text-gray-400"} group-hover:text-gray-200`}>
+                      <span
+                        className={`text-sm ${checked ? "text-foreground" : "text-gray-400"} group-hover:text-gray-200`}
+                      >
                         {mode.name}
                       </span>
                     </label>
@@ -297,8 +301,8 @@ export function StepCommunitySetup({
           type="button"
           onClick={() => void handleNext()}
           disabled={isSubmitting}
-          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-            hover:bg-[#86A6C1] transition-colors text-sm disabled:opacity-60"
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+            hover:bg-accent-hover transition-colors text-sm disabled:opacity-60"
         >
           {isSubmitting ? "Creating…" : "Next"}
         </button>

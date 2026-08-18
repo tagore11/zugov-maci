@@ -89,12 +89,12 @@ export default function ManageProfilePage() {
   });
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Manage Profile</h1>
+          <h1 className="text-2xl font-bold text-foreground mb-1">Manage Profile</h1>
           <p className="text-sm text-gray-400">Your identity, wallet, and community affiliations</p>
         </div>
 
@@ -105,8 +105,8 @@ export default function ManageProfilePage() {
         {/* Identity Badges Section */}
         <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Shield className="w-5 h-5 text-[#86A6C1]" />
-            <h2 className="text-lg font-semibold text-white">Identity Badges</h2>
+            <Shield className="w-5 h-5 text-accent-hover" />
+            <h2 className="text-lg font-semibold text-foreground">Identity Badges</h2>
           </div>
 
           {!address ? (
@@ -125,20 +125,20 @@ export default function ManageProfilePage() {
                       <div className="flex items-center gap-3">
                         <span className="text-2xl">{label.icon}</span>
                         <div>
-                          <h3 className="font-semibold text-white">{label.name}</h3>
+                          <h3 className="font-semibold text-foreground">{label.name}</h3>
                           <span className={`text-xs font-medium ${style.text}`}>{style.label}</span>
                         </div>
                       </div>
                       {status === "verified" && (
                         <div className="w-6 h-6 bg-[#64AF8C] rounded-full flex items-center justify-center">
-                          <Check className="w-4 h-4 text-white" />
+                          <Check className="w-4 h-4 text-foreground" />
                         </div>
                       )}
                     </div>
                     <button
                       onClick={() => void handleRecheck(protocol)}
                       disabled={isRechecking}
-                      className="w-full mt-2 px-4 py-2 text-sm font-medium text-[#86A6C1] border border-[#648DAF] rounded-[6px] hover:bg-[#648DAF]/10 transition-colors disabled:opacity-50"
+                      className="w-full mt-2 px-4 py-2 text-sm font-medium text-accent-hover border border-accent rounded-[6px] hover:bg-accent/10 transition-colors disabled:opacity-50"
                     >
                       {isRechecking ? "Checking…" : "Re-check"}
                     </button>
@@ -152,8 +152,8 @@ export default function ManageProfilePage() {
         {/* Community Affiliations Section */}
         <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
           <div className="flex items-center gap-3">
-            <Users className="w-5 h-5 text-[#86A6C1]" />
-            <h2 className="text-lg font-semibold text-white">Community Affiliations</h2>
+            <Users className="w-5 h-5 text-accent-hover" />
+            <h2 className="text-lg font-semibold text-foreground">Community Affiliations</h2>
           </div>
 
           {!maciUserId ? (
@@ -166,13 +166,13 @@ export default function ManageProfilePage() {
                 <Link
                   key={community.id}
                   to={`/community/${community.id}`}
-                  className="block p-4 rounded-lg border border-gray-700 hover:border-[#648DAF] hover:bg-gray-800/60 transition-colors"
+                  className="block p-4 rounded-lg border border-gray-700 hover:border-accent hover:bg-gray-800/60 transition-colors"
                 >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-4">
                       <div className="text-3xl">{community.logo ?? ""}</div>
                       <div>
-                        <h3 className="font-semibold text-white">{community.displayName ?? community.id}</h3>
+                        <h3 className="font-semibold text-foreground">{community.displayName ?? community.id}</h3>
                         <p className="text-sm text-gray-400">Member</p>
                       </div>
                     </div>
@@ -184,7 +184,7 @@ export default function ManageProfilePage() {
 
                   {/* Reputation Bar */}
                   <div className="w-full bg-gray-800 rounded-full h-2">
-                    <div className="bg-[#648DAF] h-2 rounded-full" style={{ width: "0%" }} />
+                    <div className="bg-accent h-2 rounded-full" style={{ width: "0%" }} />
                   </div>
                   <p className="text-xs text-gray-500 mt-1">Reputation Score: —</p>
                 </Link>

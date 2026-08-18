@@ -4,12 +4,12 @@ import { DOCUMENTS, KNOWLEDGE_BASE_CATEGORIES } from "@/app/lib/placeholder-data
 
 export default function KnowledgeBasePage() {
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
+    <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Knowledge Base</h1>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Knowledge Base</h1>
           <p className="text-gray-400">Comprehensive documentation and resources for ZuGov</p>
         </div>
 
@@ -20,7 +20,7 @@ export default function KnowledgeBasePage() {
             <input
               type="text"
               placeholder="Search documentation..."
-              className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 text-white placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#648DAF] focus:border-transparent"
+              className="w-full pl-12 pr-4 py-3 bg-gray-900 border border-gray-700 text-foreground placeholder-gray-500 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
             />
           </div>
         </div>
@@ -47,14 +47,14 @@ export default function KnowledgeBasePage() {
                 className="bg-gray-900 rounded-xl border border-gray-700 p-6 hover:border-gray-600 transition-colors cursor-pointer"
               >
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="p-3 bg-[#648DAF]/20 rounded-lg">
-                    <Icon className="w-6 h-6 text-[#86A6C1]" />
+                  <div className="p-3 bg-accent/20 rounded-lg">
+                    <Icon className="w-6 h-6 text-accent-hover" />
                   </div>
                   <div className="flex-1">
                     <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-800 text-gray-300 rounded mb-2">
                       {doc.category}
                     </span>
-                    <h3 className="font-semibold text-lg text-white">{doc.title}</h3>
+                    <h3 className="font-semibold text-lg text-foreground">{doc.title}</h3>
                   </div>
                 </div>
                 <p className="text-sm text-gray-400 mb-4">{doc.description}</p>
@@ -65,14 +65,14 @@ export default function KnowledgeBasePage() {
         </div>
 
         {/* Help Section */}
-        <div className="mt-12 bg-[#648DAF] rounded-2xl p-8 text-white text-center">
+        <div className="mt-12 bg-accent rounded-2xl p-8 text-white text-center">
           <h2 className="text-2xl font-bold mb-4">Need More Help?</h2>
           <p className="mb-6">Can't find what you're looking for? Our community is here to help.</p>
-          <div className="flex gap-4 justify-center">
-            <button className="px-6 py-3 bg-gray-900 text-white rounded-lg font-semibold hover:bg-gray-800 transition-colors">
+          <div className="flex flex-wrap gap-4 justify-center">
+            <button className="px-6 py-3 bg-gray-900 text-foreground rounded-lg font-semibold hover:bg-gray-800 transition-colors">
               Join Discord
             </button>
-            <button className="px-6 py-3 bg-[#86A6C1] text-white rounded-lg font-semibold hover:bg-[#a3bcd3] transition-colors">
+            <button className="px-6 py-3 bg-accent-hover text-white rounded-lg font-semibold hover:brightness-110 transition-colors">
               Contact Support
             </button>
           </div>

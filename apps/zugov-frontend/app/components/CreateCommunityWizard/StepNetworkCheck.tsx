@@ -25,9 +25,9 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
   if (!status || status.isLoading) {
     return (
       <div className="space-y-4">
-        <h2 className="text-lg font-semibold text-white">Network Check</h2>
+        <h2 className="text-lg font-semibold text-foreground">Network Check</h2>
         <div className="flex items-center gap-3 text-gray-400">
-          <div className="w-4 h-4 border-2 border-[#648DAF] border-t-transparent rounded-full animate-spin" />
+          <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
           <span className="text-sm">Checking {networkName}…</span>
         </div>
       </div>
@@ -45,7 +45,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
         <button
           type="button"
           onClick={goBack}
-          className="w-full py-2 px-4 rounded-lg border border-gray-600 text-gray-300
+          className="w-full min-h-[44px] py-2 px-4 rounded-lg border border-gray-600 text-gray-300
             hover:bg-gray-700 transition-colors text-sm"
         >
           Back
@@ -70,7 +70,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
         <button
           type="button"
           onClick={goBack}
-          className="w-full py-2 px-4 rounded-lg border border-gray-600 text-gray-300
+          className="w-full min-h-[44px] py-2 px-4 rounded-lg border border-gray-600 text-gray-300
             hover:bg-gray-700 transition-colors text-sm"
         >
           Back
@@ -93,7 +93,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
         <button
           type="button"
           onClick={goBack}
-          className="flex-1 py-2 px-4 rounded-lg border border-gray-600 text-gray-300
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg border border-gray-600 text-gray-300
             hover:bg-gray-700 transition-colors text-sm"
         >
           Back
@@ -101,8 +101,8 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
         <button
           type="button"
           onClick={goToReview}
-          className="flex-1 py-2 px-4 rounded-lg bg-[#648DAF] text-white font-medium
-            hover:bg-[#86A6C1] transition-colors text-sm"
+          className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
+            hover:bg-accent-hover transition-colors text-sm"
         >
           Next
         </button>
