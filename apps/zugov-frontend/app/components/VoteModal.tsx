@@ -104,18 +104,18 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
   const canSubmit = isRanked ? true : selectedOption !== null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">{poll.name}</h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-gray-100 transition-colors">
-            <X className="w-5 h-5 text-gray-500" />
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="bg-gray-900 border border-gray-700 rounded-xl w-full max-w-md">
+        <div className="flex items-center justify-between p-6 border-b border-gray-700">
+          <h2 className="text-xl font-bold text-white">{poll.name}</h2>
+          <button onClick={onClose} className="p-1 rounded hover:bg-gray-800 transition-colors">
+            <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
 
         <div className="p-6">
           {storedVote && (
-            <div className="flex items-center gap-2 text-sm text-amber-700 mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+            <div className="flex items-center gap-2 text-sm text-amber-400 mb-4 p-3 bg-amber-900/20 border border-amber-700/40 rounded-lg">
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
               You already cast a vote on this poll. You can recast it below.
             </div>
@@ -123,7 +123,7 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
 
           {isRanked ? (
             <>
-              <p className="text-sm text-gray-600 mb-4">
+              <p className="text-sm text-gray-400 mb-4">
                 Drag to rank your choices. The option in 1st place receives the highest weight.
               </p>
               <div className="space-y-2 mb-6">
@@ -138,16 +138,16 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
                       onDragEnd={handleDragEnd}
                       className={`w-full flex items-center gap-3 p-3 border rounded-lg cursor-grab active:cursor-grabbing transition-colors select-none ${
                         dragIndex === idx
-                          ? "border-indigo-400 bg-indigo-50 opacity-60"
-                          : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                          ? "border-[#648DAF] bg-[#648DAF]/10 opacity-60"
+                          : "border-gray-700 hover:border-gray-600 hover:bg-gray-800/60"
                       }`}
                     >
-                      <GripVertical className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <div className="w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 bg-indigo-600 text-white">
+                      <GripVertical className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                      <div className="w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 bg-[#648DAF] text-white">
                         {idx + 1}
                       </div>
-                      <span className="text-gray-900 flex-1">{option}</span>
-                      <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+                      <span className="text-white flex-1">{option}</span>
+                      <span className="text-xs font-medium text-[#86A6C1] bg-[#648DAF]/10 px-2 py-0.5 rounded-full">
                         weight {weight}
                       </span>
                     </div>
@@ -157,7 +157,7 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
             </>
           ) : (
             <>
-              <p className="text-sm text-gray-600 mb-4">Select one option to cast your vote.</p>
+              <p className="text-sm text-gray-400 mb-4">Select one option to cast your vote.</p>
               <div className="space-y-2 mb-6">
                 {options.map((option, idx) => (
                   <button
@@ -165,37 +165,37 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
                     onClick={() => setSelectedOption(idx)}
                     className={`w-full flex items-center gap-3 p-3 border rounded-lg text-left transition-colors ${
                       selectedOption === idx
-                        ? "border-indigo-600 bg-indigo-50"
-                        : "border-gray-200 hover:border-gray-300 hover:bg-gray-50"
+                        ? "border-[#648DAF] bg-[#648DAF]/10"
+                        : "border-gray-700 hover:border-gray-600 hover:bg-gray-800/60"
                     }`}
                   >
                     <div
                       className={`w-8 h-8 flex items-center justify-center rounded-full font-semibold text-sm flex-shrink-0 ${
-                        selectedOption === idx ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
+                        selectedOption === idx ? "bg-[#648DAF] text-white" : "bg-gray-800 text-gray-300"
                       }`}
                     >
                       {idx + 1}
                     </div>
-                    <span className="text-gray-900">{option}</span>
+                    <span className="text-white">{option}</span>
                   </button>
                 ))}
               </div>
             </>
           )}
 
-          {voteError && <p className="text-sm text-red-600 mb-4 p-3 bg-red-50 rounded-lg">{voteError}</p>}
+          {voteError && <p className="text-sm text-red-400 mb-4 p-3 bg-red-900/20 rounded-lg">{voteError}</p>}
 
           <div className="flex gap-3">
             <button
               onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              className="flex-1 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg font-medium hover:bg-gray-800 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleVote}
               disabled={!canSubmit || isVoting}
-              className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 px-4 py-2 bg-[#648DAF] text-white rounded-lg font-medium hover:bg-[#86A6C1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isVoting ? "Submitting..." : storedVote ? "Recast Vote" : "Cast Vote"}
             </button>

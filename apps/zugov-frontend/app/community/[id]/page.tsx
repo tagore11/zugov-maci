@@ -176,7 +176,7 @@ function PollActionButton({
         e.stopPropagation();
         onVote(poll);
       }}
-      className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors"
+      className="px-4 py-2 bg-[#648DAF] text-white rounded-lg font-medium hover:bg-[#86A6C1] transition-colors"
     >
       {hasVoted ? "Recast Vote" : "Vote Now"}
     </button>
@@ -542,26 +542,23 @@ export default function CommunityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-950 text-white">
       <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
-        >
+        <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
           <ArrowLeft className="w-4 h-4" />
           <span className="text-sm font-medium">Back to Communities</span>
         </Link>
 
         {/* Community Header */}
-        <div className="bg-white rounded-xl border border-gray-200 p-8 mb-6">
+        <div className="bg-gray-900 rounded-xl border border-gray-700 p-8 mb-6">
           <div className="flex items-start justify-between mb-6">
             <div className="flex items-start gap-4">
               <div className="text-5xl">{community.logo}</div>
               <div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{community.name}</h1>
-                <span className="inline-block px-3 py-1 text-sm font-medium bg-indigo-100 text-indigo-700 rounded">
+                <h1 className="text-3xl font-bold text-white mb-2">{community.name}</h1>
+                <span className="inline-block px-3 py-1 text-sm font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                   {community.category}
                 </span>
               </div>
@@ -570,7 +567,7 @@ export default function CommunityPage() {
               isRegistered ? (
                 <button
                   onClick={() => setShowCreateProposal(true)}
-                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                  className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors"
                 >
                   <Plus className="w-5 h-5" />
                   Create Proposal
@@ -592,7 +589,7 @@ export default function CommunityPage() {
             ) : (
               <button
                 onClick={() => setShowCreateProposal(true)}
-                className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg font-semibold hover:bg-indigo-700 transition-colors"
+                className="flex items-center gap-2 px-6 py-3 bg-[#648DAF] text-white rounded-lg font-semibold hover:bg-[#86A6C1] transition-colors"
               >
                 <Plus className="w-5 h-5" />
                 Create Proposal
@@ -602,44 +599,44 @@ export default function CommunityPage() {
 
           {/* Summary & Description */}
           <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Summary</h2>
-            <p className="text-gray-700 mb-4">{community.summary}</p>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Description</h2>
-            <p className="text-gray-600">{community.description}</p>
+            <h2 className="text-lg font-semibold text-white mb-2">Summary</h2>
+            <p className="text-gray-300 mb-4">{community.summary}</p>
+            <h2 className="text-lg font-semibold text-white mb-2">Description</h2>
+            <p className="text-gray-400">{community.description}</p>
           </div>
 
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <Users className="w-6 h-6 text-indigo-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{memberCount.toLocaleString()}</p>
-              <p className="text-sm text-gray-600">Members</p>
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
+              <Users className="w-6 h-6 text-[#648DAF] mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{memberCount.toLocaleString()}</p>
+              <p className="text-sm text-gray-400">Members</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
               <FileText className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{displayProposals.length}</p>
-              <p className="text-sm text-gray-600">Proposals</p>
+              <p className="text-2xl font-bold text-white">{displayProposals.length}</p>
+              <p className="text-sm text-gray-400">Proposals</p>
             </div>
-            <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <MessageSquare className="w-6 h-6 text-purple-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-gray-900">{FORUM_POSTS.length}</p>
-              <p className="text-sm text-gray-600">Forum Posts</p>
+            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
+              <MessageSquare className="w-6 h-6 text-[#86A6C1] mx-auto mb-2" />
+              <p className="text-2xl font-bold text-white">{FORUM_POSTS.length}</p>
+              <p className="text-sm text-gray-400">Forum Posts</p>
             </div>
           </div>
 
           {/* Affiliated Communities */}
           {community.affiliatedCommunities && community.affiliatedCommunities.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Affiliated Communities</h2>
+              <h2 className="text-lg font-semibold text-white mb-3">Affiliated Communities</h2>
               <div className="flex flex-wrap gap-3">
                 {community.affiliatedCommunities.map((affiliated) => (
                   <Link
                     key={affiliated.id}
                     to={`/community/${affiliated.id}`}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-xl">{affiliated.logo}</span>
-                    <span className="font-medium text-gray-900">{affiliated.name}</span>
+                    <span className="font-medium text-white">{affiliated.name}</span>
                   </Link>
                 ))}
               </div>
@@ -648,14 +645,14 @@ export default function CommunityPage() {
         </div>
 
         {/* Tabs */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="border-b border-gray-200 flex">
+        <div className="bg-gray-900 rounded-xl border border-gray-700 overflow-hidden">
+          <div className="border-b border-gray-700 flex">
             <button
               onClick={() => setActiveTab("proposals")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "proposals"
-                  ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
               Proposals
@@ -664,8 +661,8 @@ export default function CommunityPage() {
               onClick={() => setActiveTab("forum")}
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "forum"
-                  ? "text-indigo-600 border-b-2 border-indigo-600 bg-indigo-50"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-50"
+                  ? "text-[#86A6C1] border-b-2 border-[#648DAF] bg-[#648DAF]/10"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
               }`}
             >
               Forum
@@ -690,15 +687,15 @@ export default function CommunityPage() {
                         : storedVote.rankedOptions.join(" > ")
                       : null;
                   return (
-                    <div key={proposal.id} className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div key={proposal.id} className="border border-gray-700 rounded-lg overflow-hidden">
                       <div
-                        className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                        className="p-4 hover:bg-gray-800/60 transition-colors cursor-pointer"
                         onClick={() => setExpandedProposal(expandedProposal === proposal.id ? null : proposal.id)}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-lg text-gray-900">{proposal.title}</h3>
+                              <h3 className="font-semibold text-lg text-white">{proposal.title}</h3>
                               {expandedProposal === proposal.id ? (
                                 <ChevronUp className="w-5 h-5 text-gray-400" />
                               ) : (
@@ -709,41 +706,41 @@ export default function CommunityPage() {
                               <span
                                 className={`px-2 py-1 text-xs font-medium rounded ${
                                   proposal.status === "active"
-                                    ? "bg-green-100 text-green-700"
-                                    : "bg-gray-100 text-gray-700"
+                                    ? "bg-green-900/30 text-green-300"
+                                    : "bg-gray-800 text-gray-400"
                                 }`}
                               >
                                 {proposal.status.toUpperCase()}
                               </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                              <span className="px-2 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded">
                                 {proposal.type.toUpperCase()}
                               </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">
+                              <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                                 {proposal.privacy.toUpperCase()}
                               </span>
                               {proposal.eligible ? (
-                                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-green-900/30 text-green-300 rounded flex items-center gap-1">
                                   <CheckCircle className="w-3 h-3" />
                                   ELIGIBLE
                                 </span>
                               ) : (
-                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-red-900/30 text-red-300 rounded flex items-center gap-1">
                                   <XCircle className="w-3 h-3" />
                                   NOT ELIGIBLE
                                 </span>
                               )}
                               {proposal.votingMechanism && (
-                                <span className="px-2 py-1 text-xs font-medium bg-indigo-100 text-indigo-700 rounded">
+                                <span className="px-2 py-1 text-xs font-medium bg-[#648DAF]/20 text-[#86A6C1] rounded">
                                   {proposal.votingMechanism.toUpperCase()}
                                 </span>
                               )}
                               {proposal.weighted && (
-                                <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">
+                                <span className="px-2 py-1 text-xs font-medium bg-yellow-900/30 text-yellow-300 rounded">
                                   WEIGHTED
                                 </span>
                               )}
                               {storedVote && (
-                                <span className="px-2 py-1 text-xs font-medium bg-emerald-100 text-emerald-700 rounded flex items-center gap-1">
+                                <span className="px-2 py-1 text-xs font-medium bg-emerald-900/30 text-emerald-300 rounded flex items-center gap-1">
                                   <CheckCircle className="w-3 h-3" />
                                   VOTED
                                 </span>
@@ -751,7 +748,7 @@ export default function CommunityPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between text-sm text-gray-600">
+                        <div className="flex items-center justify-between text-sm text-gray-400">
                           <div className="flex items-center gap-4">
                             <span className="flex items-center gap-1">
                               <Users className="w-4 h-4" />
@@ -781,47 +778,47 @@ export default function CommunityPage() {
 
                       {/* Expanded Details */}
                       {expandedProposal === proposal.id && (
-                        <div className="px-4 pb-4 border-t border-gray-200 bg-gray-50">
+                        <div className="px-4 pb-4 border-t border-gray-700 bg-gray-800/40">
                           <div className="pt-4 space-y-4">
                             {voteLabel && (
-                              <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                                <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                              <div className="flex items-center gap-2 p-3 bg-emerald-900/20 border border-emerald-700/40 rounded-lg">
+                                <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                                 <div>
-                                  <span className="text-xs font-medium text-emerald-700 uppercase tracking-wide">
+                                  <span className="text-xs font-medium text-emerald-300 uppercase tracking-wide">
                                     Your vote
                                   </span>
-                                  <p className="text-sm font-semibold text-emerald-900">{voteLabel}</p>
+                                  <p className="text-sm font-semibold text-emerald-200">{voteLabel}</p>
                                 </div>
                               </div>
                             )}
 
                             {proposal.description && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Description</h4>
-                                <p className="text-gray-700">{proposal.description}</p>
+                                <h4 className="font-semibold text-white mb-2">Description</h4>
+                                <p className="text-gray-300">{proposal.description}</p>
                               </div>
                             )}
 
                             {proposal.eligibility && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Eligibility Criteria</h4>
-                                <p className="text-gray-700">{proposal.eligibility}</p>
+                                <h4 className="font-semibold text-white mb-2">Eligibility Criteria</h4>
+                                <p className="text-gray-300">{proposal.eligibility}</p>
                               </div>
                             )}
 
                             {proposal.options && proposal.options.length > 0 && (
                               <div>
-                                <h4 className="font-semibold text-gray-900 mb-2">Voting Options</h4>
+                                <h4 className="font-semibold text-white mb-2">Voting Options</h4>
                                 <div className="space-y-2">
                                   {proposal.options.map((option: string, idx: number) => (
                                     <div
                                       key={idx}
-                                      className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-lg"
+                                      className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-700 rounded-lg"
                                     >
-                                      <div className="w-8 h-8 flex items-center justify-center bg-indigo-100 text-indigo-700 rounded-full font-semibold text-sm">
+                                      <div className="w-8 h-8 flex items-center justify-center bg-[#648DAF]/20 text-[#86A6C1] rounded-full font-semibold text-sm">
                                         {idx + 1}
                                       </div>
-                                      <span className="text-gray-900">{option}</span>
+                                      <span className="text-white">{option}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -831,12 +828,12 @@ export default function CommunityPage() {
                             {proposal.startDate && proposal.endDate && (
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                  <h4 className="font-semibold text-gray-900 mb-1">Start Date</h4>
-                                  <p className="text-gray-700">{new Date(proposal.startDate).toLocaleString()}</p>
+                                  <h4 className="font-semibold text-white mb-1">Start Date</h4>
+                                  <p className="text-gray-300">{new Date(proposal.startDate).toLocaleString()}</p>
                                 </div>
                                 <div>
-                                  <h4 className="font-semibold text-gray-900 mb-1">End Date</h4>
-                                  <p className="text-gray-700">{new Date(proposal.endDate).toLocaleString()}</p>
+                                  <h4 className="font-semibold text-white mb-1">End Date</h4>
+                                  <p className="text-gray-300">{new Date(proposal.endDate).toLocaleString()}</p>
                                 </div>
                               </div>
                             )}
@@ -854,10 +851,10 @@ export default function CommunityPage() {
                 {FORUM_POSTS.map((post) => (
                   <div
                     key={post.id}
-                    className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
+                    className="p-4 border border-gray-700 rounded-lg hover:bg-gray-800/60 transition-colors cursor-pointer"
                   >
-                    <h3 className="font-semibold text-lg text-gray-900 mb-2">{post.title}</h3>
-                    <div className="flex items-center justify-between text-sm text-gray-600">
+                    <h3 className="font-semibold text-lg text-white mb-2">{post.title}</h3>
+                    <div className="flex items-center justify-between text-sm text-gray-400">
                       <span>{post.author}</span>
                       <div className="flex items-center gap-4">
                         <span className="flex items-center gap-1">

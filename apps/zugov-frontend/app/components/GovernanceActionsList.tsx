@@ -135,7 +135,7 @@ function DeployPollPrompt({
       <button
         onClick={handleDeploy}
         disabled={isDeploying || !startDate || !endDate || !hasEnoughOptions}
-        className="px-3 py-1.5 bg-indigo-600 text-white rounded text-xs font-medium hover:bg-indigo-700 disabled:opacity-60"
+        className="px-3 py-1.5 bg-[#648DAF] text-white rounded text-xs font-medium hover:bg-[#86A6C1] disabled:opacity-60"
       >
         {isDeploying ? (deployStep ?? "Deploying...") : "Deploy Poll"}
       </button>
@@ -228,7 +228,7 @@ function FormalizedActionRow({
           {eligibility?.eligible && action.pollAddress && (
             <button
               onClick={handleVoteClick}
-              className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700"
+              className="px-3 py-1.5 bg-[#648DAF] text-white rounded-lg text-xs font-medium hover:bg-[#86A6C1]"
             >
               Vote
             </button>
@@ -318,7 +318,7 @@ function DraftRow({
         <button
           onClick={handleSponsor}
           disabled={isSponsoring}
-          className="shrink-0 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-60"
+          className="shrink-0 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1] disabled:opacity-60"
         >
           {isSponsoring ? "Sponsoring..." : "Sponsor"}
         </button>
@@ -390,7 +390,7 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
         <h2 className="text-lg font-semibold text-white">Governance Actions</h2>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700"
+          className="flex items-center gap-2 px-4 py-2 bg-[#648DAF] text-white rounded-lg text-sm font-medium hover:bg-[#86A6C1]"
         >
           <Plus className="w-4 h-4" />
           {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}

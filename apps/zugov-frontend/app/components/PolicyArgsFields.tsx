@@ -154,7 +154,7 @@ export function PolicyArgInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         className={`w-full px-3 py-1.5 rounded-md border border-gray-700 bg-gray-900 text-sm text-white
-          placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-500
+          placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-[#648DAF]
           ${mono ? "font-mono text-xs" : ""}`}
       />
     </div>
