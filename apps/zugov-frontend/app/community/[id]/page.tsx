@@ -17,6 +17,7 @@ import {
   ArrowLeft,
 } from "lucide-react";
 import { getStoredVote } from "@/src/lib/voteStorage";
+import { computePollStatus, pollStatusLabel, pollStatusClass, pollStatusBadgeClass } from "@/src/lib/pollStatus";
 import { CreateProposalModal } from "../../components/CreateProposalModal";
 import { VoteModal } from "../../components/VoteModal";
 import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/placeholder-data";
@@ -199,36 +200,6 @@ function formatRelativeTime(unixSec: number): string {
   return new Date(unixSec * 1000).toLocaleDateString();
 }
 
-const POLL_STATUS_LABELS: Record<string, string> = {
-  not_started: "Not started",
-  active: "Active",
-  closed: "Closed",
-};
-
-const POLL_STATUS_CLASSES: Record<string, string> = {
-  not_started: "text-amber-400",
-  active: "text-green-400",
-  closed: "text-gray-500",
-};
-
-function pollStatusLabel(status: string): string {
-  return POLL_STATUS_LABELS[status] ?? status;
-}
-
-function pollStatusClass(status: string): string {
-  return POLL_STATUS_CLASSES[status] ?? "text-gray-500";
-}
-
-const POLL_STATUS_BADGE_CLASSES: Record<string, string> = {
-  not_started: "bg-amber-100 text-amber-700",
-  active: "bg-green-100 text-green-700",
-  closed: "bg-gray-100 text-gray-700",
-};
-
-function pollStatusBadgeClass(status: string): string {
-  return POLL_STATUS_BADGE_CLASSES[status] ?? "bg-gray-100 text-gray-700";
-}
-
 export default function CommunityPage() {
   const params = useParams();
   const [showCreateProposal, setShowCreateProposal] = useState(false);
@@ -347,7 +318,7 @@ export default function CommunityPage() {
     id: poll.id,
     title: poll.name,
     description: poll.metadata,
-    status: now < Number(poll.startDate) ? "not_started" : now < Number(poll.endDate) ? "active" : "closed",
+    status: computePollStatus(poll.startDate, poll.endDate, now),
     type: "onchain",
     privacy: "public",
     eligible: eligibilityMap[poll.id] ?? false,
