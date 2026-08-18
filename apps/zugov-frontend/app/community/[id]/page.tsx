@@ -382,7 +382,7 @@ export default function CommunityPage() {
             <div className="flex items-start gap-4">
               <div className="text-5xl">{community.logo}</div>
               <div>
-                <h1 className="text-3xl font-bold text-white mb-2">{community.name}</h1>
+                <h1 className="text-3xl font-bold text-foreground mb-2">{community.name}</h1>
                 <span className="inline-block px-3 py-1 text-sm font-medium bg-accent/20 text-accent-hover rounded">
                   {community.category}
                 </span>
@@ -452,7 +452,7 @@ export default function CommunityPage() {
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "proposals"
                   ? "text-accent-hover border-b-2 border-accent bg-accent/10"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  : "text-gray-400 hover:text-foreground hover:bg-gray-800"
               }`}
             >
               Proposals
@@ -462,7 +462,7 @@ export default function CommunityPage() {
               className={`flex-1 px-6 py-4 font-semibold transition-colors ${
                 activeTab === "forum"
                   ? "text-accent-hover border-b-2 border-accent bg-accent/10"
-                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  : "text-gray-400 hover:text-foreground hover:bg-gray-800"
               }`}
             >
               Forum

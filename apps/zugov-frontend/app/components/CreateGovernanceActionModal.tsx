@@ -348,7 +348,7 @@ export function CreateGovernanceActionModal({
 
             {directDeploymentEnabled && (
               <div className="space-y-4 p-4 border-2 border-accent/40 bg-accent/10 rounded-lg">
-                <p className="text-sm font-semibold text-white">
+                <p className="text-sm font-semibold text-foreground">
                   This community deploys polls directly — no draft or co-sponsorship needed.
                 </p>
 

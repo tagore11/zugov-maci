@@ -42,7 +42,7 @@ export default function AboutPage() {
                 <li className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-accent rounded-full mt-2"></div>
                   <div>
-                    <p className="font-medium text-white">Multi-Authentication Support</p>
+                    <p className="font-medium text-foreground">Multi-Authentication Support</p>
                     <p className="text-gray-400">
                       Support for Zupass, EAS, Gitcoin Passport, Token & NFT Gating, and traditional wallet connections
                     </p>
@@ -51,21 +51,21 @@ export default function AboutPage() {
                 <li className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-accent rounded-full mt-2"></div>
                   <div>
-                    <p className="font-medium text-white">Flexible Voting Mechanisms</p>
+                    <p className="font-medium text-foreground">Flexible Voting Mechanisms</p>
                     <p className="text-gray-400">Simple majority, quadratic voting, and ranked choice voting options</p>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-accent rounded-full mt-2"></div>
                   <div>
-                    <p className="font-medium text-white">Anonymous Forum</p>
+                    <p className="font-medium text-foreground">Anonymous Forum</p>
                     <p className="text-gray-400">Enable community discussions while preserving voter privacy</p>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
                   <div className="w-2 h-2 bg-accent rounded-full mt-2"></div>
                   <div>
-                    <p className="font-medium text-white">Comprehensive Analytics</p>
+                    <p className="font-medium text-foreground">Comprehensive Analytics</p>
                     <p className="text-gray-400">
                       Track participation, engagement, and governance metrics across communities
                     </p>
