@@ -161,7 +161,7 @@ function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; ac
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="text-xs font-medium text-[#2D5F8A] hover:text-[#244d70] transition-colors"
+        className="text-xs font-medium text-[#86A6C1] hover:text-[#648DAF] transition-colors"
       >
         Invite a community
       </button>
@@ -176,18 +176,18 @@ function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; ac
         onChange={(e) => setTargetId(e.target.value)}
         disabled={invited}
         placeholder="Community ID"
-        className="flex-1 min-w-[10rem] px-3 py-2 rounded-[6px] bg-white border border-gray-300 text-gray-900 placeholder-gray-400 font-mono text-xs focus:outline-none focus:border-[#2D5F8A] disabled:opacity-60"
+        className="flex-1 min-w-[10rem] px-3 py-2 rounded-[6px] bg-gray-800 border border-gray-600 text-white placeholder-gray-500 font-mono text-xs focus:outline-none focus:border-[#648DAF] disabled:opacity-60"
       />
       <button
         type="button"
         onClick={() => void handleInvite()}
         disabled={isInviting || invited || !targetId.trim()}
-        className="min-h-[44px] px-3 py-2 rounded-[6px] bg-[#2D5F8A] text-white text-xs font-medium hover:bg-[#244d70] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+        className="min-h-[44px] px-3 py-2 rounded-[6px] bg-[#648DAF] text-white text-xs font-medium hover:bg-[#86A6C1] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
       >
         {isInviting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
         {isInviting ? "Inviting…" : invited ? "Invited" : "Invite"}
       </button>
-      {error && <p className="text-xs text-red-600 w-full">{error}</p>}
+      {error && <p className="text-xs text-red-400 w-full">{error}</p>}
     </div>
   );
 }
@@ -226,18 +226,18 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
   if (isLoading || !unions?.length) return null;
 
   return (
-    <div className="rounded-lg border border-gray-200 p-3 space-y-2">
-      <p className="text-sm font-medium text-gray-900 flex items-center gap-2">
+    <div className="rounded-lg border border-gray-700 p-3 space-y-2">
+      <p className="text-sm font-medium text-white flex items-center gap-2">
         <span className="text-lg">{community.logo || "🏛️"}</span>
         {community.name}
       </p>
       <div className="space-y-2">
         {unions.map((union) => (
-          <div key={union.id} className="pl-2 border-l-2 border-gray-200">
+          <div key={union.id} className="pl-2 border-l-2 border-gray-700">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span>{union.logo || "🤝"}</span>
-                <span className="text-sm text-gray-700">{union.displayName}</span>
+                <span className="text-sm text-gray-300">{union.displayName}</span>
                 {union.status === "pending" && (
                   <span className="text-xs text-gray-500">Invited — awaiting response</span>
                 )}
@@ -249,7 +249,7 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
                     type="button"
                     onClick={() => void respond(union.id, true)}
                     disabled={respondingUnionId === union.id}
-                    className="min-h-[44px] px-3 rounded-[6px] bg-[#2D5F8A] text-white text-xs font-medium hover:bg-[#244d70] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    className="min-h-[44px] px-3 rounded-[6px] bg-[#648DAF] text-white text-xs font-medium hover:bg-[#86A6C1] transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
                     {respondingUnionId === union.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     Accept
@@ -258,7 +258,7 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
                     type="button"
                     onClick={() => void respond(union.id, false)}
                     disabled={respondingUnionId === union.id}
-                    className="min-h-[44px] px-3 rounded-[6px] border border-gray-300 text-gray-700 text-xs font-medium hover:bg-gray-100 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="min-h-[44px] px-3 rounded-[6px] border border-gray-600 text-gray-300 text-xs font-medium hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Decline
                   </button>
@@ -267,7 +267,7 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
                 <InviteToUnionForm unionId={union.id} actingCommunityId={community.id} />
               )}
             </div>
-            {errorByUnionId[union.id] && <p className="text-xs text-red-600 mt-1">{errorByUnionId[union.id]}</p>}
+            {errorByUnionId[union.id] && <p className="text-xs text-red-400 mt-1">{errorByUnionId[union.id]}</p>}
           </div>
         ))}
       </div>
@@ -288,15 +288,15 @@ export function UnionsPanel({ communities }: { communities: OwnedCommunity[] }) 
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 mt-6">
+    <div className="bg-gray-900 rounded-xl border border-gray-700 p-6 mt-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Users2 className="w-5 h-5 text-gray-700" />
-          <h2 className="text-xl font-semibold text-gray-900">Unions</h2>
+          <Users2 className="w-5 h-5 text-[#86A6C1]" />
+          <h2 className="text-xl font-semibold text-white">Unions</h2>
         </div>
         <button
           onClick={() => setShowCreateModal(true)}
-          className="text-sm font-medium text-[#2D5F8A] hover:text-[#244d70] transition-colors"
+          className="text-sm font-medium text-[#86A6C1] hover:text-[#648DAF] transition-colors"
         >
           + Create union
         </button>
