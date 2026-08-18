@@ -75,15 +75,29 @@
     {
       "idx": 10,
       "version": "7",
-      "when": 1787039966638,
-      "tag": "0010_spooky_vindicator",
+      "when": 1786996419578,
+      "tag": "0010_dusty_cardiac",
       "breakpoints": true
     },
     {
       "idx": 11,
       "version": "7",
+      "when": 1786996785894,
+      "tag": "0011_huge_titanium_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1787039966638,
+      "tag": "0012_spooky_vindicator",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
       "when": 1787047282877,
-      "tag": "0011_add_maci_governance_configs_unions",
+      "tag": "0013_add_maci_governance_configs_unions",
       "breakpoints": true
     }
   ]

@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
-import { clearCommunities, clearCredentials } from "./helpers/testDb.js";
+import { clearCommunities, clearCredentials, testDb } from "./helpers/testDb.js";
+import * as schema from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -349,7 +350,13 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/confi
       {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: creatorCookie },
-        body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+        body: JSON.stringify({
+          pollAddress: "0xPoll",
+          pollId: "0",
+          txHash: "0xTx",
+          pollStartDate: 1000,
+          pollEndDate: 2000,
+        }),
       },
     );
     expect(res.status).toBe(200);
@@ -395,7 +402,13 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
     await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Cookie: creatorCookie },
-      body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: Math.floor(Date.now() / 1000),
+        pollEndDate: Math.floor(Date.now() / 1000) + 3600,
+      }),
     });
 
     const res = await app.request(
@@ -405,6 +418,86 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
     expect(res.status).toBe(200);
     const body = (await res.json()) as { eligible: boolean };
     expect(body.eligible).toBe(true);
+  });
+
+  it("returns eligible: true for a voting-tier member excluded from the draft-time eligible tiers", async () => {
+    // Regression: confirmFormalize used to persist only the tiers picked at draft creation, so a
+    // voting-capable member left out of that original selection stayed locked out forever, even
+    // though the real on-chain poll (via the deployed eligibility policy) doesn't enforce that
+    // narrower set. confirmFormalize now stamps every voting-capable tier at formalization time.
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      // Only the Creator tier is selected at draft time — the Voter tier is deliberately excluded.
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Creator"]] }),
+    });
+    const { governanceAction } = (await createRes.json()) as { governanceAction: { id: string } };
+
+    // Enroll SPONSOR on the excluded Voter tier directly — the public /join flow always lands new
+    // members on the community's default tier, so there's no API surface to pick a specific tier.
+    await testDb.insert(schema.memberships).values({
+      walletAddress: SPONSOR.address,
+      communityId,
+      tierId: tierIds["Voter"]!,
+      joinedAt: Math.floor(Date.now() / 1000),
+    });
+
+    await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: Math.floor(Date.now() / 1000),
+        pollEndDate: Math.floor(Date.now() / 1000) + 3600,
+      }),
+    });
+
+    const sponsorCookie = await authCookieFor(SPONSOR);
+    const res = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/vote-eligibility`,
+      { headers: { Cookie: sponsorCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { eligible: boolean };
+    expect(body.eligible).toBe(true);
+  });
+
+  it("returns poll_closed once the poll's end date has passed", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Creator"]] }),
+    });
+    const { governanceAction } = (await createRes.json()) as { governanceAction: { id: string } };
+
+    await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: Math.floor(Date.now() / 1000) - 7200,
+        pollEndDate: Math.floor(Date.now() / 1000) - 3600,
+      }),
+    });
+
+    const res = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/vote-eligibility`,
+      { headers: { Cookie: creatorCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { eligible: boolean; reason?: string };
+    expect(body.eligible).toBe(false);
+    expect(body.reason).toBe("poll_closed");
   });
 
   it("returns 401 without authentication", async () => {
@@ -497,6 +590,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(confirmRes.status).toBe(201);
@@ -527,6 +622,8 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(res.status).toBe(403);
@@ -588,6 +685,8 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
       }),
     });
     expect(confirmRes.status).toBe(403);
@@ -618,7 +717,13 @@ describe("Draft/direct mutual exclusion (specs/007 US3, FR-003/FR-008/FR-009)", 
       {
         method: "POST",
         headers: { "Content-Type": "application/json", Cookie: cookie },
-        body: JSON.stringify({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" }),
+        body: JSON.stringify({
+          pollAddress: "0xPoll",
+          pollId: "0",
+          txHash: "0xTx",
+          pollStartDate: 1000,
+          pollEndDate: 2000,
+        }),
       },
     );
     expect(confirmRes.status).toBe(200);

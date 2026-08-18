@@ -32,7 +32,10 @@ jobs:
           # room for drizzle-kit migrate/compose up/image prune before the SSH session is killed
           # (see run 32031989077: build succeeded, "Run Command Timeout" hit right after image
           # export — docker compose up -d never ran, so the new image was built but not deployed).
-          command_timeout: 25m
+          # Raised again to 45m: `docker compose up -d` also builds `coordinator` on its first
+          # run (its image doesn't exist yet on the host), and that build alone takes ~8m on top
+          # of backend's build+migrate, which blew through the 25m limit (run 32065939043).
+          command_timeout: 45m
           script: |
             set -euo pipefail
             cd /opt/zugov

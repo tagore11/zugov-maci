@@ -94,22 +94,6 @@ export interface PollDeployConfig {
   initialVoiceCreditAmount: number;
 }
 
-export interface Community {
-  governanceType: GovernanceType;
-  id?: string;
-  governanceContract: Hex;
-  subgraphUrl: string;
-  displayName?: string;
-  summary?: string;
-  description?: string;
-  logoUrl?: string;
-  logo?: string;
-  members?: number;
-  proposals?: number;
-  category?: string;
-  pollDeployConfig?: PollDeployConfig;
-}
-
 export interface PolicyFactoryPair {
   checker: Hex;
   policy: Hex;
@@ -160,7 +144,6 @@ export const appConstants: Record<
     /** The stateless FreeForAllChecker *instance* (reused across all polls) — distinct from
      * policyFactories.freeForAll.checker, which is the CheckerFactory. Zero address = not yet deployed. */
     freeForAllChecker: Hex;
-    daos: Record<string, Community>;
     faucets?: Array<{ name: string; url: string }>;
   }
 > = {
@@ -199,7 +182,6 @@ export const appConstants: Record<
     },
     constantVoiceCreditProxyFactory: ZERO_ADDR,
     freeForAllChecker: ZERO_ADDR,
-    daos: {},
     faucets: [
       {
         name: "Scroll Sepolia Faucet",
@@ -221,7 +203,6 @@ export const appConstants: Record<
     policyInfrastructure: sepoliaDeployment.policyInfrastructure,
     constantVoiceCreditProxyFactory: sepoliaDeployment.constantVoiceCreditProxyFactory,
     freeForAllChecker: sepoliaDeployment.freeForAllChecker,
-    daos: {},
     faucets: [
       {
         name: "Google Cloud Web3 Faucet",

@@ -13,11 +13,19 @@ import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
 import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
 import { deployPolicyContract } from "@/src/services/policyDeploy";
-import { GovernanceTypes, appConstants } from "@/src/config";
+import { GovernanceTypes, appConstants, type SignUpPolicyType } from "@/src/config";
 import { Poll__factory } from "@/src/poll-factory-shim";
 import type { SubgraphPoll, PollMode } from "@/src/services/subgraph";
-import { CreateGovernanceActionModal } from "./CreateGovernanceActionModal";
+import { CreateGovernanceActionModal, policyIdToType } from "./CreateGovernanceActionModal";
 import { VoteModal } from "./VoteModal";
+import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
+import {
+  POLICY_TYPE_OPTIONS,
+  DEFAULT_POLICY_INPUTS,
+  buildPolicyArgs,
+  PolicyArgsFields,
+  type PolicyInputState,
+} from "./PolicyArgsFields";
 
 interface GovernanceActionsListProps {
   communityId: string;
@@ -28,6 +36,7 @@ const VOTE_REASON_LABELS: Record<VoteEligibilityReason, string> = {
   tier_lacks_voting_rights: "Your current tier doesn't grant voting rights.",
   tier_not_eligible_for_action: "Your tier isn't eligible for this governance action.",
   not_formalized: "This governance action hasn't formalized yet.",
+  poll_closed: "Voting has closed for this poll.",
 };
 
 function VoteEligibilityBadge({ communityId, actionId }: { communityId: string; actionId: string }) {
@@ -53,34 +62,47 @@ function VoteEligibilityBadge({ communityId, actionId }: { communityId: string; 
  * the same data (research.md #5 of specs/006). */
 function DeployPollPrompt({
   communityId,
+  community,
   action,
   maciAddress,
   pollDeployConfig,
   onDeployed,
 }: {
   communityId: string;
+  community: Community;
   action: GovernanceActionWithMeta;
   maciAddress: string;
   pollDeployConfig: NonNullable<Community["pollDeployConfig"]>;
   onDeployed: () => void;
 }) {
+  const allowedPolicyTypes = (community.allowedPolicies ?? [])
+    .map(policyIdToType)
+    .filter((t): t is SignUpPolicyType => !!t);
+
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [options, setOptions] = useState(["", ""]);
+  const [eligibilityPolicyType, setEligibilityPolicyType] = useState<SignUpPolicyType>(
+    allowedPolicyTypes[0] ?? "FreeForAll",
+  );
+  const [policyInputs, setPolicyInputs] = useState<PolicyInputState>(DEFAULT_POLICY_INPUTS);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const chainId = useChainId();
   const { isDeploying, deployStep, deployError, deployPoll } = useDeployPoll(GovernanceTypes.MACI);
 
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
   const hasEnoughOptions = filledOptionCount >= 2;
+  const policyArgs = buildPolicyArgs(eligibilityPolicyType, policyInputs);
 
   const handleDeploy = async () => {
     setConfirmError(null);
+    if (!policyArgs) {
+      setConfirmError("Fill in all required eligibility policy fields");
+      return;
+    }
     try {
-      // No eligibility picker here (see CreateGovernanceActionModal for that) — matches this
-      // prompt's prior behavior of always deploying a fresh FreeForAll policy.
       const signer = await getEthersSigner();
-      const policyAddress = await deployPolicyContract({ type: "FreeForAll" }, signer, chainId);
+      const policyAddress = await deployPolicyContract(policyArgs, signer, chainId);
       const { pollAddress, pollId, txHash } = await deployPoll({
         maciAddress,
         pollDeployConfig,
@@ -92,11 +114,17 @@ function DeployPollPrompt({
           votingMechanism: action.tallyMechanism,
           startDate,
           endDate,
-          eligibility: "FreeForAll",
+          eligibility: eligibilityPolicyType,
           options,
         },
       });
-      await governanceActionApi.confirmFormalize(communityId, action.id, { pollAddress, pollId, txHash });
+      await governanceActionApi.confirmFormalize(communityId, action.id, {
+        pollAddress,
+        pollId,
+        txHash,
+        pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+        pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+      });
       onDeployed();
     } catch (err) {
       setConfirmError(err instanceof Error ? err.message : "Poll deployment failed");
@@ -106,6 +134,27 @@ function DeployPollPrompt({
   return (
     <div className="text-xs bg-amber-900/20 border border-amber-700 rounded p-3 space-y-2">
       <p className="text-amber-300">Ready to formalize — deploy the real on-chain poll.</p>
+      <div>
+        <label className="block text-gray-400 mb-1">Eligibility Policy</label>
+        <select
+          value={eligibilityPolicyType}
+          onChange={(e) => setEligibilityPolicyType(e.target.value as SignUpPolicyType)}
+          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+        >
+          {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
+          {allowedPolicyTypes.map((type) => (
+            <option key={type} value={type}>
+              {POLICY_TYPE_OPTIONS.find((p) => p.type === type)?.label ?? type}
+            </option>
+          ))}
+        </select>
+        <PolicyArgsFields
+          policyType={eligibilityPolicyType}
+          inputs={policyInputs}
+          updateInput={(key, value) => setPolicyInputs((prev) => ({ ...prev, [key]: value }))}
+          theme="dark"
+        />
+      </div>
       <div className="grid grid-cols-2 gap-2">
         <input
           type="datetime-local"
@@ -123,23 +172,42 @@ function DeployPollPrompt({
         />
       </div>
       {options.map((option, i) => (
-        <input
-          key={i}
-          type="text"
-          value={option}
-          placeholder={`Option ${i + 1}`}
-          onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
-          className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
-        />
+        <div key={i} className="flex gap-2">
+          <input
+            type="text"
+            value={option}
+            placeholder={`Option ${i + 1}`}
+            onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
+            className="flex-1 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white"
+          />
+          {options.length > 2 && (
+            <button
+              type="button"
+              onClick={() => setOptions(options.filter((_, j) => j !== i))}
+              className="px-2 text-red-400 hover:text-red-300"
+              aria-label={`Remove option ${i + 1}`}
+            >
+              ×
+            </button>
+          )}
+        </div>
       ))}
       <button
+        type="button"
+        onClick={() => setOptions([...options, ""])}
+        className="w-full border border-dashed border-gray-600 rounded px-2 py-1 text-gray-400 hover:border-[#648DAF] hover:text-[#86A6C1]"
+      >
+        + Add Option
+      </button>
+      <button
         onClick={handleDeploy}
-        disabled={isDeploying || !startDate || !endDate || !hasEnoughOptions}
+        disabled={isDeploying || !startDate || !endDate || !hasEnoughOptions || !policyArgs}
         className="px-3 py-1.5 bg-[#648DAF] text-white rounded text-xs font-medium hover:bg-[#86A6C1] disabled:opacity-60"
       >
         {isDeploying ? (deployStep ?? "Deploying...") : "Deploy Poll"}
       </button>
       {!hasEnoughOptions && <p className="text-gray-400">At least two options are required.</p>}
+      {!policyArgs && <p className="text-gray-400">Fill in all required eligibility policy fields.</p>}
       {(deployError ?? confirmError) && <p className="text-red-400">{deployError ?? confirmError}</p>}
     </div>
   );
@@ -180,6 +248,66 @@ async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: strin
     policyType: "",
     policy: "",
   };
+}
+
+const IN_PROGRESS_TALLY_STATUSES: governanceActionApi.TallyStatus[] = ["pending", "processing"];
+
+function TallySection({ communityId, action }: { communityId: string; action: GovernanceActionWithMeta }) {
+  const queryClient = useQueryClient();
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+  const [isTriggering, setIsTriggering] = useState(false);
+
+  const { data: status } = useQuery({
+    queryKey: ["tallyStatus", communityId, action.id],
+    queryFn: () => governanceActionApi.getTallyStatus(communityId, action.id),
+    initialData: action,
+    // Merge → generate → submit can take minutes to hours for a real-size poll — poll for
+    // updates while it's actually running, stop once it lands on a terminal state.
+    refetchInterval: (query) =>
+      query.state.data && IN_PROGRESS_TALLY_STATUSES.includes(query.state.data.tallyStatus) ? 10000 : false,
+  });
+
+  const isClosed =
+    !!action.pollStartDate &&
+    !!action.pollEndDate &&
+    computePollStatus(action.pollStartDate, action.pollEndDate) === "closed";
+  if (!action.pollAddress || !isClosed) return null;
+
+  const handleTally = async () => {
+    setTriggerError(null);
+    setIsTriggering(true);
+    try {
+      await governanceActionApi.triggerTally(communityId, action.id);
+      await queryClient.invalidateQueries({ queryKey: ["tallyStatus", communityId, action.id] });
+    } catch (err) {
+      setTriggerError(err instanceof Error ? err.message : "Failed to trigger tallying");
+    } finally {
+      setIsTriggering(false);
+    }
+  };
+
+  if (!status || status.tallyStatus === "not_started" || status.tallyStatus === "failed") {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleTally}
+          disabled={isTriggering}
+          className="px-3 py-1.5 bg-emerald-700 text-white rounded-lg text-xs font-medium hover:bg-emerald-600 disabled:opacity-60"
+        >
+          {isTriggering ? "Starting..." : status?.tallyStatus === "failed" ? "Retry Tally" : "Tally Results"}
+        </button>
+        {(status?.tallyError ?? triggerError) && (
+          <p className="text-xs text-red-400">{status?.tallyError ?? triggerError}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (IN_PROGRESS_TALLY_STATUSES.includes(status.tallyStatus)) {
+    return <p className="text-xs text-amber-300">Tallying in progress — this can take a while…</p>;
+  }
+
+  return <p className="text-xs text-emerald-400">Tallying complete.</p>;
 }
 
 function FormalizedActionRow({
@@ -236,6 +364,19 @@ function FormalizedActionRow({
         </div>
       </div>
       <p className="text-xs text-gray-500">Formalized{action.pollAddress ? ` — poll ${action.pollAddress}` : ""}</p>
+      {action.pollStartDate && action.pollEndDate && (
+        <p className="text-xs">
+          <span className={pollStatusClass(computePollStatus(action.pollStartDate, action.pollEndDate))}>
+            {pollStatusLabel(computePollStatus(action.pollStartDate, action.pollEndDate))}
+          </span>
+          <span className="text-gray-500">
+            {" "}
+            · {new Date(action.pollStartDate * 1000).toLocaleString()} –{" "}
+            {new Date(action.pollEndDate * 1000).toLocaleString()}
+          </span>
+        </p>
+      )}
+      <TallySection communityId={communityId} action={action} />
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
       {votingPoll && rpcUrl && community?.contractAddress && (
         <VoteModal
@@ -329,6 +470,7 @@ function DraftRow({
         (community?.pollDeployConfig && community.contractAddress ? (
           <DeployPollPrompt
             communityId={communityId}
+            community={community}
             action={action}
             maciAddress={community.contractAddress}
             pollDeployConfig={community.pollDeployConfig}

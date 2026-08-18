@@ -1,6 +1,6 @@
 {
-  "id": "fde4b9d4-3fb5-45b8-a8d4-f69119c87d1f",
-  "prevId": "795aa30f-3a5d-4ece-8e7c-21fcbe19b9f6",
+  "id": "ba0f007b-1191-447a-9e37-ee4372187438",
+  "prevId": "fde4b9d4-3fb5-45b8-a8d4-f69119c87d1f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -43,6 +43,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "parent_community_id": {
+          "name": "parent_community_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "governance_type": {
           "name": "governance_type",
@@ -196,7 +202,17 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "communities_parent_community_id_communities_id_fk": {
+          "name": "communities_parent_community_id_communities_id_fk",
+          "tableFrom": "communities",
+          "tableTo": "communities",
+          "columnsFrom": ["parent_community_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},

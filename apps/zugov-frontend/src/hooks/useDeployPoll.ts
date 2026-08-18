@@ -7,11 +7,12 @@ import { GovernanceTypes, PolicyType, type GovernanceType, type PollDeployConfig
 import { SET_TARGET_ABI } from "../services/policyDeploy";
 import { getSignerFromWagmiConfig } from "../services/wagmiSigner";
 import { wagmiConfig } from "../services/wagmiConfig";
+import { decodeContractError } from "../lib/decodeContractError";
 
 /** EMode enum values matching DomainObjs.Mode on-chain */
-const EMode = { QV: 0, NON_QV: 1, FULL: 2, RANKED: 3 } as const;
+export const EMode = { QV: 0, NON_QV: 1, FULL: 2, RANKED: 3 } as const;
 
-function votingMechanismToMode(mechanism: string): number {
+export function votingMechanismToMode(mechanism: string): number {
   if (mechanism === "quadratic") return EMode.QV;
   if (mechanism === "ranked") return EMode.RANKED;
   if (mechanism === "full") return EMode.FULL;
@@ -167,8 +168,7 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
 
         return { pollAddress: contracts.poll, pollId: pollId.toString(), txHash: deployPollTx.hash };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setDeployError(message);
+        setDeployError(decodeContractError(err));
         throw err;
       } finally {
         setIsDeploying(false);

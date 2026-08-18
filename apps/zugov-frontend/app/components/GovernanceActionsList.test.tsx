@@ -232,6 +232,8 @@ describe("GovernanceActionsList", () => {
         pollAddress: "0xPoll",
         pollId: "0",
         txHash: "0xTx",
+        pollStartDate: Math.floor(new Date("2026-01-01T00:00").getTime() / 1000),
+        pollEndDate: Math.floor(new Date("2026-01-08T00:00").getTime() / 1000),
       }),
     );
   });
