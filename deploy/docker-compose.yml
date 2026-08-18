@@ -166,7 +166,7 @@ services:
       # Public address of the dedicated low-stakes keypair zugov-backend signs with to
       # authenticate to this service — proves "this caller is authorized," decrypts nothing.
       # Its private key lives in deploy/.env (COORDINATOR_CALLER_PRIVATE_KEY), read by `backend`.
-      COORDINATOR_ADDRESSES: "0x336063c123227d0B33819D73f0Bd5b2c490286Af"
+      COORDINATOR_ADDRESSES: "0x7363b2d54463CC75e2d21de98a629675E0c685d3"
     # Internal only, like graph-node/ipfs above — zugov-backend reaches it over the compose
     # network by service name (http://coordinator:3001), never exposed publicly. Still bound to
     # 127.0.0.1 for host-side debugging.
