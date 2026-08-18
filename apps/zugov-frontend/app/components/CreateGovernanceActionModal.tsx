@@ -9,18 +9,11 @@ import type {
   GovernanceActionPrivacy,
   GovernanceActionTallyMechanism,
 } from "@/src/services/governanceActionApi";
-import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
-import { fetchPolls } from "@/src/services/subgraph";
-import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { useDeployPoll, getEthersSigner, votingMechanismToMode } from "@/src/hooks/useDeployPoll";
 import { deployPolicyContract } from "@/src/services/policyDeploy";
-import {
-  GovernanceTypes,
-  PolicyType,
-  type GovernanceType,
-  type SignUpPolicyType,
-  type PollDeployConfig,
-} from "@/src/config";
+import { decodeContractError } from "@/src/lib/decodeContractError";
+import { GovernanceTypes, PolicyType, type SignUpPolicyType, type PollDeployConfig } from "@/src/config";
 import {
   POLICY_TYPE_OPTIONS,
   DEFAULT_POLICY_INPUTS,
@@ -29,10 +22,17 @@ import {
   type PolicyInputState,
 } from "./PolicyArgsFields";
 
-function policyIdToType(id: number): SignUpPolicyType | undefined {
+export function policyIdToType(id: number): SignUpPolicyType | undefined {
   const entry = Object.entries(PolicyType).find(([, value]) => Number(value) === id);
   return entry?.[0] as SignUpPolicyType | undefined;
 }
+
+const TALLY_MECHANISM_OPTIONS: { value: GovernanceActionTallyMechanism; label: string }[] = [
+  { value: "simple", label: "Simple Majority" },
+  { value: "quadratic", label: "Quadratic Voting" },
+  { value: "ranked", label: "Ranked Choice" },
+  { value: "full", label: "Full Voting" },
+];
 
 interface CreateGovernanceActionModalProps {
   isOpen: boolean;
@@ -45,8 +45,7 @@ interface CreateGovernanceActionModalProps {
   /** Required to actually deploy on-chain when directDeploymentEnabled is true; null/undefined means
    * this community has no linked on-chain governance contract yet (FR-006). */
   pollDeployConfig?: PollDeployConfig | null;
-  /** Needed to build the eligibility policy picker below (allowedPolicies, subgraph access for
-   * discovering reusable existing policy instances, chainId/governanceType). */
+  /** Needed to build the eligibility policy picker below (allowedPolicies). */
   community?: Community;
 }
 
@@ -71,31 +70,26 @@ export function CreateGovernanceActionModal({
     .map(policyIdToType)
     .filter((t): t is SignUpPolicyType => !!t);
 
-  // Existing policy instances that are safe to reuse for a new poll: only from CLOSED past
-  // polls. A policy contract has a single `target` (see src/services/policyDeploy.ts) — reusing
-  // one from a still-open poll (or the community's sign-up policy) would repoint it and break
-  // that poll's/the community's ability to use it. Requires the subgraph to be indexed.
-  const subgraphUrl = community?.subgraphStatus === "ready" ? communityApi.subgraphQueryUrl(communityId) : undefined;
-  const eligibilityGovernanceType = community?.governanceType as GovernanceType | undefined;
-  const { data: pastPolls = [] } = useQuery({
-    queryKey: ["pastPollsForEligibility", communityId],
-    queryFn: () => fetchPolls(subgraphUrl!, eligibilityGovernanceType!),
-    enabled: isOpen && directDeploymentEnabled && !!subgraphUrl && !!eligibilityGovernanceType,
-  });
-  const nowSec = Date.now() / 1000;
-  const closedPolls = pastPolls.filter((p) => Number(p.endDate) <= nowSec);
+  // Each community's MACI contract only accepts a subset of tally mechanisms (see MACI.sol's
+  // supportedModes allow-list) — offering an unsupported one here reverts with UnsupportedMode()
+  // on deploy, so filter to what this community actually supports.
+  const supportedModes = community?.supportedModes ?? [];
+  const allowedTallyOptions =
+    supportedModes.length > 0
+      ? TALLY_MECHANISM_OPTIONS.filter((opt) => supportedModes.includes(votingMechanismToMode(opt.value)))
+      : TALLY_MECHANISM_OPTIONS;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [privacy] = useState<GovernanceActionPrivacy>("privacy_preserving");
   const [executionLocation] = useState<GovernanceActionExecutionLocation>("onchain");
-  const [tallyMechanism, setTallyMechanism] = useState<GovernanceActionTallyMechanism>("simple");
+  const [tallyMechanism, setTallyMechanism] = useState<GovernanceActionTallyMechanism>(
+    allowedTallyOptions[0]?.value ?? "simple",
+  );
   const [eligibleTierIds, setEligibleTierIds] = useState<string[]>([]);
   const [eligibilityPolicyType, setEligibilityPolicyType] = useState<SignUpPolicyType>(
     allowedPolicyTypes[0] ?? "FreeForAll",
   );
-  const [eligibilityMode, setEligibilityMode] = useState<"reuse" | "new">("new");
-  const [selectedExistingPolicy, setSelectedExistingPolicy] = useState("");
   const [newPolicyInputs, setNewPolicyInputs] = useState<PolicyInputState>(DEFAULT_POLICY_INPUTS);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -110,18 +104,8 @@ export function CreateGovernanceActionModal({
     setEligibleTierIds((prev) => (prev.includes(tierId) ? prev.filter((id) => id !== tierId) : [...prev, tierId]));
   };
 
-  const existingInstancesForType = closedPolls
-    .filter((p) => policyIdToType(Number(p.policyType)) === eligibilityPolicyType)
-    .reduce<{ address: string; usedInPollName: string }[]>((acc, p) => {
-      if (!acc.some((e) => e.address.toLowerCase() === p.policy.toLowerCase())) {
-        acc.push({ address: p.policy, usedInPollName: p.name });
-      }
-      return acc;
-    }, []);
-
   const newPolicyArgs = buildPolicyArgs(eligibilityPolicyType, newPolicyInputs);
-  const eligibilityPolicyReady =
-    !directDeploymentEnabled || (eligibilityMode === "reuse" ? !!selectedExistingPolicy : newPolicyArgs !== null);
+  const eligibilityPolicyReady = !directDeploymentEnabled || newPolicyArgs !== null;
 
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
   const directModeReady =
@@ -132,8 +116,6 @@ export function CreateGovernanceActionModal({
     setDescription("");
     setEligibleTierIds([]);
     setEligibilityPolicyType(allowedPolicyTypes[0] ?? "FreeForAll");
-    setEligibilityMode("new");
-    setSelectedExistingPolicy("");
     setNewPolicyInputs(DEFAULT_POLICY_INPUTS);
     setStartDate("");
     setEndDate("");
@@ -167,14 +149,9 @@ export function CreateGovernanceActionModal({
           eligibleTierIds: directEligibleTierIds,
         });
 
-        const policyAddress =
-          eligibilityMode === "reuse"
-            ? selectedExistingPolicy
-            : await (async () => {
-                if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
-                const signer = await getEthersSigner();
-                return deployPolicyContract(newPolicyArgs, signer, chainId);
-              })();
+        if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
+        const signer = await getEthersSigner();
+        const policyAddress = await deployPolicyContract(newPolicyArgs, signer, chainId);
 
         const { pollAddress, pollId, txHash } = await deployPoll({
           maciAddress: communityId,
@@ -201,6 +178,8 @@ export function CreateGovernanceActionModal({
           pollAddress,
           pollId,
           txHash,
+          pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+          pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
         });
       } else {
         await governanceActionApi.createDraft(communityId, {
@@ -216,7 +195,7 @@ export function CreateGovernanceActionModal({
       onSuccess?.();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create governance action");
+      setError(decodeContractError(err));
     } finally {
       setIsSubmitting(false);
     }
@@ -327,10 +306,12 @@ export function CreateGovernanceActionModal({
                 onChange={(e) => setTallyMechanism(e.target.value as GovernanceActionTallyMechanism)}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
               >
-                <option value="simple">Simple Majority</option>
-                <option value="quadratic">Quadratic Voting</option>
-                <option value="ranked">Ranked Choice</option>
-                <option value="full">Full Voting</option>
+                {allowedTallyOptions.length === 0 && <option value="">No supported tally mechanisms configured</option>}
+                {allowedTallyOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
                 <option value="weighted" disabled>
                   Weighted (coming soon)
                 </option>
@@ -373,11 +354,7 @@ export function CreateGovernanceActionModal({
                   <p className="text-xs text-gray-600 mb-2">Who can vote on this poll, enforced on-chain.</p>
                   <select
                     value={eligibilityPolicyType}
-                    onChange={(e) => {
-                      setEligibilityPolicyType(e.target.value as SignUpPolicyType);
-                      setEligibilityMode("new");
-                      setSelectedExistingPolicy("");
-                    }}
+                    onChange={(e) => setEligibilityPolicyType(e.target.value as SignUpPolicyType)}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg text-base text-gray-900"
                   >
                     {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
@@ -388,47 +365,11 @@ export function CreateGovernanceActionModal({
                     ))}
                   </select>
 
-                  <div className="mt-3 space-y-2">
-                    {existingInstancesForType.map((instance) => (
-                      <label
-                        key={instance.address}
-                        className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50"
-                      >
-                        <input
-                          type="radio"
-                          name="eligibility-mode"
-                          checked={eligibilityMode === "reuse" && selectedExistingPolicy === instance.address}
-                          onChange={() => {
-                            setEligibilityMode("reuse");
-                            setSelectedExistingPolicy(instance.address);
-                          }}
-                          className="w-5 h-5 text-indigo-600"
-                        />
-                        <span className="text-sm text-gray-900">
-                          Reuse existing — <span className="font-mono text-xs">{instance.address}</span> (used in &quot;
-                          {instance.usedInPollName}&quot;)
-                        </span>
-                      </label>
-                    ))}
-                    <label className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg cursor-pointer hover:bg-gray-50">
-                      <input
-                        type="radio"
-                        name="eligibility-mode"
-                        checked={eligibilityMode === "new"}
-                        onChange={() => setEligibilityMode("new")}
-                        className="w-5 h-5 text-indigo-600"
-                      />
-                      <span className="text-sm text-gray-900">Deploy a new instance</span>
-                    </label>
-                  </div>
-
-                  {eligibilityMode === "new" && (
-                    <PolicyArgsFields
-                      policyType={eligibilityPolicyType}
-                      inputs={newPolicyInputs}
-                      updateInput={(key, value) => setNewPolicyInputs((prev) => ({ ...prev, [key]: value }))}
-                    />
-                  )}
+                  <PolicyArgsFields
+                    policyType={eligibilityPolicyType}
+                    inputs={newPolicyInputs}
+                    updateInput={(key, value) => setNewPolicyInputs((prev) => ({ ...prev, [key]: value }))}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -461,15 +402,32 @@ export function CreateGovernanceActionModal({
                   <label className="block text-xs font-semibold text-gray-700 mb-1">Options * (at least 2)</label>
                   <div className="space-y-2">
                     {options.map((option, i) => (
-                      <input
-                        key={i}
-                        type="text"
-                        value={option}
-                        placeholder={`Option ${i + 1}`}
-                        onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
-                      />
+                      <div key={i} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={option}
+                          placeholder={`Option ${i + 1}`}
+                          onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900"
+                        />
+                        {options.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                            className="px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
                     ))}
+                    <button
+                      type="button"
+                      onClick={() => setOptions([...options, ""])}
+                      className="w-full px-3 py-2 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-indigo-500 hover:text-indigo-600 transition-colors font-medium"
+                    >
+                      + Add Option
+                    </button>
                   </div>
                 </div>
               </div>

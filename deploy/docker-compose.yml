@@ -23,6 +23,8 @@ services:
         condition: service_healthy
       graph-node:
         condition: service_healthy
+      coordinator:
+        condition: service_started
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/zugov
       CORS_ORIGIN: ${CORS_ORIGIN}
@@ -30,11 +32,17 @@ services:
       SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL}
       PORT: 3001
       # apps/subgraph is bundled into this image at /app/subgraph (see Dockerfile);
-      # graph-node/ipfs are reached by compose service name, not the host-bound ports.
+      # graph-node/ipfs/coordinator are reached by compose service name, not host-bound ports.
       SUBGRAPH_DIR: /app/subgraph
       GRAPH_NODE_ADMIN_URL: http://graph-node:8020
       GRAPH_NODE_IPFS_URL: http://ipfs:5001
       GRAPH_NODE_QUERY_URL: http://graph-node:8000
+      COORDINATOR_URL: http://coordinator:3001
+      # Private key for the low-stakes keypair registered in coordinator's COORDINATOR_ADDRESSES
+      # (see the coordinator service above) — proves this backend is an authorized caller.
+      # Never the coordinator's own COORDINATOR_MACI_PRIVATE_KEY, which stays inside that
+      # service only, per the constitution's privacy requirement.
+      COORDINATOR_CALLER_PRIVATE_KEY: ${COORDINATOR_CALLER_PRIVATE_KEY}
     # Bound to localhost only — the host's nginx (already handling TLS/other
     # sites on this box) reverse-proxies to this port. See deploy/nginx-api.conf.
     ports:
@@ -115,6 +123,55 @@ services:
       - "127.0.0.1:8000:8000"
       - "127.0.0.1:8020:8020"
       - "127.0.0.1:8030:8030"
+
+  coordinator-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  coordinator:
+    build:
+      context: ..
+      dockerfile: apps/coordinator/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      coordinator-redis:
+        condition: service_healthy
+    # coordinator.env holds COORDINATOR_MACI_PRIVATE_KEY — the real vote-decryption key. It must
+    # never end up in this file or deploy/.env (both are read by other services / less sensitive).
+    env_file:
+      - coordinator.env
+    environment:
+      # This platform's communities use state tree depth 10 (apps/zugov-frontend/src/
+      # constants.ts), which only has a TEST (non-ceremony) trusted setup available upstream —
+      # the real ceremony-backed zkeys published for this MACI version are depth 14, the wrong
+      # depth for this platform. Accepted for now since every community here is on Sepolia
+      # testnet (see TODO.md) — revisit before any deployment handling real value.
+      COORDINATOR_TALLY_ZKEY_NAME: VoteTally_10-1-2_test
+      COORDINATOR_MESSAGE_PROCESS_ZKEY_NAME: MessageProcessor_10-20-2_test
+      COORDINATOR_POLL_JOINING_ZKEY_NAME: PollJoining_10_test
+      COORDINATOR_POLL_JOINED_ZKEY_NAME: PollJoined_10_test
+      # apps/coordinator/hardhat.config.cjs only supports a single configured RPC network — it
+      # cannot serve multiple chains at once. Every community registered so far is on Sepolia,
+      # not Scroll Sepolia, so that's what's wired here — revisit if Scroll Sepolia communities
+      # need tallying.
+      COORDINATOR_RPC_URL: ${SEPOLIA_RPC_URL}
+      COORDINATOR_REDIS_HOST: coordinator-redis
+      COORDINATOR_REDIS_PORT: 6379
+      COORDINATOR_PORT: 3001
+      # Public address of the dedicated low-stakes keypair zugov-backend signs with to
+      # authenticate to this service — proves "this caller is authorized," decrypts nothing.
+      # Its private key lives in deploy/.env (COORDINATOR_CALLER_PRIVATE_KEY), read by `backend`.
+      COORDINATOR_ADDRESSES: "0x7363b2d54463CC75e2d21de98a629675E0c685d3"
+    # Internal only, like graph-node/ipfs above — zugov-backend reaches it over the compose
+    # network by service name (http://coordinator:3001), never exposed publicly. Still bound to
+    # 127.0.0.1 for host-side debugging.
+    ports:
+      - "127.0.0.1:3003:3001"
 
 volumes:
   postgres-data:

@@ -200,8 +200,26 @@ export const governanceActions = pgTable("governance_actions", {
   creatorAddress: text("creator_address").notNull(),
   pollAddress: text("poll_address"),
   pollId: text("poll_id"),
+  // Unix seconds. Only set once the poll is actually deployed (alongside pollAddress/pollId) —
+  // needed server-side to validate "has this poll closed" before allowing a tally trigger,
+  // without requiring a live on-chain/subgraph read for that one check.
+  pollStartDate: integer("poll_start_date"),
+  pollEndDate: integer("poll_end_date"),
   createdAt: integer("created_at").notNull(),
   formalizedAt: integer("formalized_at"),
+  // Only meaningful once pollAddress is set (i.e. the poll has actually been deployed on-chain).
+  // "not_started" until someone triggers tallying via the coordinator; "pending"/"processing"
+  // while the merge → generate → submit pipeline runs as a background task (it can take minutes
+  // to hours for a real-size poll — never run synchronously in a request).
+  tallyStatus: text("tally_status")
+    .$type<"not_started" | "pending" | "processing" | "completed" | "failed">()
+    .notNull()
+    .default("not_started"),
+  tallyError: text("tally_error"),
+  tallyRequestedAt: integer("tally_requested_at"),
+  tallyCompletedAt: integer("tally_completed_at"),
+  // JSON-stringified ITallyData from the coordinator's submit response, once completed.
+  tallyResult: text("tally_result"),
 });
 
 export type GovernanceAction = typeof governanceActions.$inferSelect;

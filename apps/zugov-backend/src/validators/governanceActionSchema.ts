@@ -15,6 +15,8 @@ export const formalizeConfirmBodySchema = z.object({
   pollAddress: z.string().min(1),
   pollId: z.string().min(1),
   txHash: z.string().min(1),
+  pollStartDate: z.number().int().nonnegative(),
+  pollEndDate: z.number().int().nonnegative(),
 });
 
 export type FormalizeConfirmBody = z.infer<typeof formalizeConfirmBodySchema>;
@@ -29,6 +31,8 @@ export const directConfirmBodySchema = createDraftBodySchema.extend({
   pollAddress: z.string().min(1),
   pollId: z.string().min(1),
   txHash: z.string().min(1),
+  pollStartDate: z.number().int().nonnegative(),
+  pollEndDate: z.number().int().nonnegative(),
 });
 
 export type DirectConfirmBody = z.infer<typeof directConfirmBodySchema>;

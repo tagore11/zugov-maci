@@ -5,7 +5,7 @@ import { Search, TrendingUp, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AuthModal } from "./components/AuthModal";
 import { EXAMPLE_COMMUNITIES } from "@/app/lib/placeholder-data";
-import { appConstants, type GovernanceType } from "@/src/config";
+import type { GovernanceType } from "@/src/config";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import * as communityApi from "@/src/services/communityApi";
 
@@ -24,8 +24,6 @@ type CommunityItem = {
 };
 
 const ONE_HOUR_SEC = 3600;
-
-const REAL_DAOS = Object.values(appConstants).flatMap(({ daos }) => Object.values(daos).filter((dao) => dao.id));
 
 function apiToItem(c: communityApi.Community): CommunityItem {
   return {
@@ -53,21 +51,14 @@ export default function Home() {
   const [isLoadingCommunities, setIsLoadingCommunities] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Static communities read their subgraph directly; backend-registered communities whose
-  // subgraph has finished indexing go through the backend's proxy (see
-  // app/community/[id]/page.tsx for the same pattern on the detail page).
-  const staticDaoIds = new Set(REAL_DAOS.map((dao) => dao.id));
-  const readyBackendCommunities = communities.filter(
-    (c) => c.subgraphStatus === "ready" && c.governanceType && !staticDaoIds.has(c.id),
-  );
-  const statsSources = [
-    ...REAL_DAOS.map((dao) => ({ id: dao.id!, subgraphUrl: dao.subgraphUrl, governanceType: dao.governanceType })),
-    ...readyBackendCommunities.map((c) => ({
-      id: c.id,
-      subgraphUrl: communityApi.subgraphQueryUrl(c.id),
-      governanceType: c.governanceType as GovernanceType,
-    })),
-  ];
+  // Backend-registered communities whose subgraph has finished indexing go through the
+  // backend's proxy (see app/community/[id]/page.tsx for the same pattern on the detail page).
+  const readyBackendCommunities = communities.filter((c) => c.subgraphStatus === "ready" && c.governanceType);
+  const statsSources = readyBackendCommunities.map((c) => ({
+    id: c.id,
+    subgraphUrl: communityApi.subgraphQueryUrl(c.id),
+    governanceType: c.governanceType as GovernanceType,
+  }));
 
   const { data: communityStats = {} } = useQuery({
     queryKey: ["communityStats", statsSources.map((s) => s.id)],

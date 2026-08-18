@@ -1,6 +1,6 @@
 {
-  "id": "fde4b9d4-3fb5-45b8-a8d4-f69119c87d1f",
-  "prevId": "795aa30f-3a5d-4ece-8e7c-21fcbe19b9f6",
+  "id": "ee371eab-57d3-428f-8820-7e702313cf04",
+  "prevId": "ba0f007b-1191-447a-9e37-ee4372187438",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -12,12 +12,6 @@
           "name": "id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true
-        },
-        "chain_id": {
-          "name": "chain_id",
-          "type": "integer",
-          "primaryKey": false,
           "notNull": true
         },
         "display_name": {
@@ -44,42 +38,11 @@
           "primaryKey": false,
           "notNull": true
         },
-        "governance_type": {
-          "name": "governance_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'maci'"
-        },
-        "allowed_policies": {
-          "name": "allowed_policies",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "supported_modes": {
-          "name": "supported_modes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sign_up_policy_type": {
-          "name": "sign_up_policy_type",
+        "parent_community_id": {
+          "name": "parent_community_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false
-        },
-        "sign_up_policy_address": {
-          "name": "sign_up_policy_address",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "state_tree_depth": {
-          "name": "state_tree_depth",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
         },
         "membership_policy": {
           "name": "membership_policy",
@@ -115,73 +78,6 @@
           "notNull": true,
           "default": false
         },
-        "coordinator_public_key": {
-          "name": "coordinator_public_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tally_processing_state_tree_depth": {
-          "name": "tally_processing_state_tree_depth",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "vote_option_tree_depth": {
-          "name": "vote_option_tree_depth",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "message_batch_size": {
-          "name": "message_batch_size",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "free_for_all_policy_factory": {
-          "name": "free_for_all_policy_factory",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "free_for_all_checker": {
-          "name": "free_for_all_checker",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "constant_voice_credit_proxy_factory": {
-          "name": "constant_voice_credit_proxy_factory",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "initial_voice_credit_amount": {
-          "name": "initial_voice_credit_amount",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "maci_deployment_block": {
-          "name": "maci_deployment_block",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subgraph_name": {
-          "name": "subgraph_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "subgraph_status": {
-          "name": "subgraph_status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -196,7 +92,17 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {},
+      "foreignKeys": {
+        "communities_parent_community_id_communities_id_fk": {
+          "name": "communities_parent_community_id_communities_id_fk",
+          "tableFrom": "communities",
+          "tableTo": "communities",
+          "columnsFrom": ["parent_community_id"],
+          "columnsTo": ["id"],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -658,6 +564,273 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.maci_governance_configs": {
+      "name": "maci_governance_configs",
+      "schema": "",
+      "columns": {
+        "community_id": {
+          "name": "community_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "contract_address": {
+          "name": "contract_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chain_id": {
+          "name": "chain_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "governance_type": {
+          "name": "governance_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'maci'"
+        },
+        "allowed_policies": {
+          "name": "allowed_policies",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "supported_modes": {
+          "name": "supported_modes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sign_up_policy_type": {
+          "name": "sign_up_policy_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sign_up_policy_address": {
+          "name": "sign_up_policy_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "state_tree_depth": {
+          "name": "state_tree_depth",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "coordinator_public_key": {
+          "name": "coordinator_public_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "tally_processing_state_tree_depth": {
+          "name": "tally_processing_state_tree_depth",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "vote_option_tree_depth": {
+          "name": "vote_option_tree_depth",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message_batch_size": {
+          "name": "message_batch_size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "free_for_all_policy_factory": {
+          "name": "free_for_all_policy_factory",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "free_for_all_checker": {
+          "name": "free_for_all_checker",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "constant_voice_credit_proxy_factory": {
+          "name": "constant_voice_credit_proxy_factory",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "initial_voice_credit_amount": {
+          "name": "initial_voice_credit_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "maci_deployment_block": {
+          "name": "maci_deployment_block",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subgraph_name": {
+          "name": "subgraph_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "subgraph_status": {
+          "name": "subgraph_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "maci_governance_configs_community_id_communities_id_fk": {
+          "name": "maci_governance_configs_community_id_communities_id_fk",
+          "tableFrom": "maci_governance_configs",
+          "tableTo": "communities",
+          "columnsFrom": ["community_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.unions": {
+      "name": "unions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "logo": {
+          "name": "logo",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "creator_address": {
+          "name": "creator_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.union_memberships": {
+      "name": "union_memberships",
+      "schema": "",
+      "columns": {
+        "union_id": {
+          "name": "union_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "community_id": {
+          "name": "community_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "invited_by_address": {
+          "name": "invited_by_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_at": {
+          "name": "requested_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "union_memberships_union_id_unions_id_fk": {
+          "name": "union_memberships_union_id_unions_id_fk",
+          "tableFrom": "union_memberships",
+          "tableTo": "unions",
+          "columnsFrom": ["union_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "union_memberships_community_id_communities_id_fk": {
+          "name": "union_memberships_community_id_communities_id_fk",
+          "tableFrom": "union_memberships",
+          "tableTo": "communities",
+          "columnsFrom": ["community_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "union_memberships_union_id_community_id_pk": {
+          "name": "union_memberships_union_id_community_id_pk",
+          "columns": ["union_id", "community_id"]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
