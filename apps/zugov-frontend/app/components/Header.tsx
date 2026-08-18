@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { PrivyConnectButton } from "./PrivyConnectButton";
 import { Search } from "lucide-react";
 
 export function Header() {
@@ -40,7 +40,7 @@ export function Header() {
             <button className="p-2 text-gray-400 hover:text-gray-600">
               <Search className="w-5 h-5" />
             </button>
-            <ConnectButton />
+            <PrivyConnectButton />
           </div>
         </div>
       </div>
