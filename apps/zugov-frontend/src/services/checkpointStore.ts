@@ -15,6 +15,9 @@ export interface TierDraft {
 export interface MACIDeploymentConfig {
   displayName: string;
   description: string;
+  // Local chapters, event teams, and contributor circles nest under a parent community
+  // (Lightpaper's "communities and sub-communities" building block).
+  parentCommunityId?: string;
   signUpPolicy: SignUpPolicyArgs;
   allowedPolicies: number[];
   supportedModes: number[];

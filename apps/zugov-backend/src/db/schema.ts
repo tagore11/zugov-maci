@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, primaryKey } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { CredentialStatus, Protocol } from "../services/identity/IdentityProvider.js";
 
 // Server-side session store: the cookie only ever holds an opaque random token (see
@@ -41,6 +41,15 @@ export const communities = pgTable("communities", {
   description: text("description"),
   logo: text("logo"),
   creatorAddress: text("creator_address").notNull(),
+  // Lightpaper's "communities and sub-communities" building block: local chapters, event
+  // teams, and contributor circles as first-class components, not a separate hierarchy
+  // bolted on top. Self-referencing, nullable — top-level communities have no parent.
+  // ON DELETE SET NULL: deleting a parent orphans its children as top-level rather than
+  // cascading the delete (a parent community disappearing shouldn't take its sub-communities
+  // with it).
+  parentCommunityId: text("parent_community_id").references((): AnyPgColumn => communities.id, {
+    onDelete: "set null",
+  }),
   governanceType: text("governance_type").notNull().default("maci"),
   allowedPolicies: text("allowed_policies").notNull(),
   supportedModes: text("supported_modes").notNull(),

@@ -110,6 +110,7 @@ export function CreateCommunityWizard() {
           <StepCommunityInfo
             initialName={state.config.displayName}
             initialDescription={state.config.description}
+            initialParentCommunityId={state.config.parentCommunityId}
             setCommunityInfo={setCommunityInfo}
             goBack={goBack}
           />

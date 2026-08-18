@@ -87,7 +87,7 @@ export interface UseCreateCommunityResult {
   state: WizardState;
   goToStep: (step: WizardStep) => void;
   goBack: () => void;
-  setCommunityInfo: (name: string, description: string) => void;
+  setCommunityInfo: (name: string, description: string, parentCommunityId?: string) => void;
   setCommunitySetup: (config: {
     membershipPolicy: MembershipPolicy;
     advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
@@ -234,10 +234,10 @@ export function useCreateCommunity(): UseCreateCommunityResult {
     });
   }, []);
 
-  const setCommunityInfo = useCallback((displayName: string, description: string) => {
+  const setCommunityInfo = useCallback((displayName: string, description: string, parentCommunityId?: string) => {
     setState((prev) => ({
       ...prev,
-      config: { ...prev.config, displayName, description },
+      config: { ...prev.config, displayName, description, parentCommunityId },
       step: "community_setup",
     }));
   }, []);
@@ -391,6 +391,7 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           id: maciAddress,
           displayName: config.displayName,
           description: config.description,
+          parentCommunityId: config.parentCommunityId,
           logo: "🏛️",
           chainId,
           creatorAddress: address as Hex,

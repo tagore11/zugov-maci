@@ -536,6 +536,114 @@ describe("POST /api/communities", () => {
       expect(res.status).toBe(503);
     });
   });
+
+  describe("parentCommunityId (communities/sub-communities)", () => {
+    const PARENT_ID = "0x7777777777777777777777777777777777777779";
+    const CHILD_ID = "0x777777777777777777777777777777777777777a";
+
+    async function registerParent(cookie: string): Promise<void> {
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id: PARENT_ID }),
+      });
+      expect(res.status).toBe(201);
+    }
+
+    it("registers a child with parentCommunityId and returns it on GET", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      await registerParent(cookie);
+
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id: CHILD_ID, parentCommunityId: PARENT_ID }),
+      });
+      expect(res.status).toBe(201);
+      const { community } = (await res.json()) as { community: { parentCommunityId: string | null } };
+      expect(community.parentCommunityId?.toLowerCase()).toBe(PARENT_ID.toLowerCase());
+
+      const getRes = await app.request(`/api/communities/${CHILD_ID}`);
+      const { community: fetched } = (await getRes.json()) as { community: { parentCommunityId: string | null } };
+      expect(fetched.parentCommunityId?.toLowerCase()).toBe(PARENT_ID.toLowerCase());
+    });
+
+    it("defaults parentCommunityId to null when not provided", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      await registerParent(cookie);
+      const { community } = (await app.request(`/api/communities/${PARENT_ID}`).then((r) => r.json())) as {
+        community: { parentCommunityId: string | null };
+      };
+      expect(community.parentCommunityId).toBeNull();
+    });
+
+    it("returns 422 when parentCommunityId equals the community's own id", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ ...FULL_COMMUNITY, id: PARENT_ID, parentCommunityId: PARENT_ID }),
+      });
+      expect(res.status).toBe(422);
+    });
+
+    it("returns 422 when parentCommunityId does not reference an existing community", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({
+          ...FULL_COMMUNITY,
+          id: CHILD_ID,
+          parentCommunityId: "0x9999999999999999999999999999999999999999",
+        }),
+      });
+      expect(res.status).toBe(422);
+    });
+  });
+});
+
+describe("GET /api/communities/:id/children", () => {
+  const PARENT_ID = "0x8888888888888888888888888888888888888803";
+  const CHILD_ID = "0x8888888888888888888888888888888888888804";
+
+  it("returns 404 for a nonexistent parent", async () => {
+    const res = await app.request(`/api/communities/${PARENT_ID}/children`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns an empty list for a community with no children", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...FULL_COMMUNITY, id: PARENT_ID }),
+    });
+    const res = await app.request(`/api/communities/${PARENT_ID}/children`);
+    expect(res.status).toBe(200);
+    const { communities: children } = (await res.json()) as { communities: unknown[] };
+    expect(children).toEqual([]);
+  });
+
+  it("lists a registered child", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...FULL_COMMUNITY, id: PARENT_ID }),
+    });
+    await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...FULL_COMMUNITY, id: CHILD_ID, parentCommunityId: PARENT_ID }),
+    });
+
+    const res = await app.request(`/api/communities/${PARENT_ID}/children`);
+    expect(res.status).toBe(200);
+    const { communities: children } = (await res.json()) as { communities: { id: string }[] };
+    expect(children).toHaveLength(1);
+    expect(children[0]!.id.toLowerCase()).toBe(CHILD_ID.toLowerCase());
+  });
 });
 
 describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1, FR-001/FR-002)", () => {

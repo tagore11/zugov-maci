@@ -10,6 +10,9 @@ export type Community = {
   description: string | null;
   logo: string | null;
   creatorAddress: string;
+  // Local chapters, event teams, and contributor circles nest under a parent community
+  // (Lightpaper's "communities and sub-communities" building block). Null for top-level.
+  parentCommunityId: string | null;
   governanceType: string;
   allowedPolicies: number[];
   supportedModes: number[];
@@ -39,6 +42,7 @@ export type RegistrationPayload = {
   id: string;
   chainId: number;
   creatorAddress: string;
+  parentCommunityId?: string;
   allowedPolicies: number[];
   supportedModes: number[];
   signUpPolicyType: SignUpPolicyType;
@@ -97,6 +101,14 @@ export async function get(id: string): Promise<Community | null> {
   if (!res.ok) throw new Error(`Failed to fetch community: ${res.status}`);
   const data = (await res.json()) as { community: Community };
   return data.community;
+}
+
+export async function listChildren(id: string): Promise<Community[]> {
+  const res = await fetch(`${BASE_URL}/api/communities/${id}/children`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error(`Failed to fetch sub-communities: ${res.status}`);
+  const data = (await res.json()) as { communities: Community[] };
+  return data.communities;
 }
 
 export async function register(payload: RegistrationPayload): Promise<Community> {

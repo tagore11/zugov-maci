@@ -71,6 +71,13 @@
       "when": 1786966415176,
       "tag": "0009_clean_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787039966638,
+      "tag": "0010_spooky_vindicator",
+      "breakpoints": true
     }
   ]
 }

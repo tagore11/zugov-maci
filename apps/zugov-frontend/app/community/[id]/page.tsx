@@ -280,6 +280,15 @@ export default function CommunityPage() {
     enabled: !!activeSubgraphUrl && !!activeGovernanceType,
   });
 
+  // Local chapters, event teams, and contributor circles nested under this community
+  // (Lightpaper's "communities and sub-communities" building block). Backend-registered
+  // communities only — the static/mock community lookup has its own affiliatedCommunities field.
+  const { data: subCommunities } = useQuery({
+    queryKey: ["subCommunities", backendCommunity?.id],
+    queryFn: () => communityApi.listChildren(backendCommunity!.id),
+    enabled: !!backendCommunity,
+  });
+
   const { data: messageCounts = {} } = useQuery({
     queryKey: ["pollMessageCounts", pollsData?.map((p) => p.id)],
     queryFn: () =>
@@ -439,6 +448,25 @@ export default function CommunityPage() {
 
             <JoinSection communityId={dc.id} connected={!!address} rpcUrl={rpcUrl} />
           </div>
+
+          {!!subCommunities?.length && (
+            <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+              <h2 className="text-lg font-semibold text-white mb-3">Sub-communities</h2>
+              <div className="flex flex-wrap gap-3">
+                {subCommunities.map((child) => (
+                  <Link
+                    key={child.id}
+                    to={`/community/${child.id}`}
+                    className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-700
+                      hover:border-purple-500 hover:bg-gray-800 transition-colors"
+                  >
+                    <span className="text-xl">{child.logo || "🏛️"}</span>
+                    <span className="font-medium text-white">{child.displayName}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
             <GovernanceActionsList communityId={dc.id} connected={!!address} />

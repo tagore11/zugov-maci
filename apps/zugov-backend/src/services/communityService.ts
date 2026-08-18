@@ -124,6 +124,14 @@ export async function get(id: string): Promise<CommunityRecord | null> {
   return rows[0] ? parseRecord(rows[0]) : null;
 }
 
+// Lightpaper's "communities and sub-communities" building block: local chapters, event teams,
+// and contributor circles nested under a parent. No pagination — sub-community counts per
+// community are expected to stay small (chapters/teams, not a general listing surface).
+export async function listChildren(parentId: string): Promise<CommunityRecord[]> {
+  const rows = await db.select().from(communities).where(eq(communities.parentCommunityId, parentId));
+  return rows.map(parseRecord);
+}
+
 /**
  * Brings `creatorAddress` back in sync with the contract's on-chain owner() after a
  * transferOwnership() call, which the community's subgraph picks up via its
@@ -203,8 +211,27 @@ export async function reconcileSignUpPolicy(community: CommunityRecord): Promise
   return { ...community, signUpPolicyType, signUpPolicyAddress: checksummedPolicyAddress };
 }
 
+export class SelfParentError extends Error {
+  constructor() {
+    super("A community cannot be its own parent");
+  }
+}
+
+export class ParentCommunityNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Parent community "${id}" not found`);
+  }
+}
+
 export async function create(data: CommunityBody): Promise<{ community: CommunityRecord; created: boolean }> {
   const now = Math.floor(Date.now() / 1000);
+
+  if (data.parentCommunityId !== undefined) {
+    if (data.parentCommunityId === data.id) throw new SelfParentError();
+    const parent = await get(data.parentCommunityId);
+    if (!parent) throw new ParentCommunityNotFoundError(data.parentCommunityId);
+  }
+
   const newRecord = {
     id: data.id,
     chainId: data.chainId,
@@ -212,6 +239,7 @@ export async function create(data: CommunityBody): Promise<{ community: Communit
     description: data.description ?? null,
     logo: data.logo ?? null,
     creatorAddress: data.creatorAddress,
+    parentCommunityId: data.parentCommunityId ?? null,
     governanceType: "maci",
     allowedPolicies: JSON.stringify(data.allowedPolicies),
     supportedModes: JSON.stringify(data.supportedModes),

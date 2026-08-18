@@ -49,6 +49,11 @@ export const communityBodySchema = z
       "HatsProtocol",
     ]),
     signUpPolicyAddress: z.string().regex(addressRegex, "Must be a 0x-prefixed 42-character hex address"),
+    // Optional: local chapters, event teams, and contributor circles nest under a parent
+    // community (Lightpaper's "communities and sub-communities" building block). Existence and
+    // self-reference are checked in communityService.create(), not here — this schema only
+    // validates shape.
+    parentCommunityId: z.string().regex(addressRegex, "Must be a 0x-prefixed 42-character hex address").optional(),
     maciDeploymentBlock: z.number().int().nonnegative(),
     stateTreeDepth: z.union([z.literal(6), z.literal(10), z.literal(14)]),
     description: z.string().max(500).optional(),

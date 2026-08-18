@@ -1,17 +1,48 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useChainId } from "wagmi";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
+import * as communityApi from "@/src/services/communityApi";
 
 interface Props {
   initialName?: string;
   initialDescription?: string;
+  initialParentCommunityId?: string;
   setCommunityInfo: UseCreateCommunityResult["setCommunityInfo"];
   goBack: UseCreateCommunityResult["goBack"];
 }
 
-export function StepCommunityInfo({ initialName = "", initialDescription = "", setCommunityInfo, goBack }: Props) {
+export function StepCommunityInfo({
+  initialName = "",
+  initialDescription = "",
+  initialParentCommunityId = "",
+  setCommunityInfo,
+  goBack,
+}: Props) {
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
+  const [parentCommunityId, setParentCommunityId] = useState(initialParentCommunityId);
   const [touched, setTouched] = useState(false);
+  const [candidateParents, setCandidateParents] = useState<communityApi.Community[]>([]);
+
+  const chainId = useChainId();
+
+  // Local chapters, event teams, and contributor circles nest under a parent community
+  // (Lightpaper's "communities and sub-communities" building block). Best-effort: an empty or
+  // failed fetch just leaves the picker empty — parent selection is optional.
+  useEffect(() => {
+    let cancelled = false;
+    communityApi
+      .list(1, chainId)
+      .then(({ communities }) => {
+        if (!cancelled) setCandidateParents(communities);
+      })
+      .catch(() => {
+        if (!cancelled) setCandidateParents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId]);
 
   const nameError = touched && name.trim().length === 0 ? "Community name is required" : undefined;
   const canProceed = name.trim().length > 0 && name.trim().length <= 80;
@@ -19,7 +50,7 @@ export function StepCommunityInfo({ initialName = "", initialDescription = "", s
   const handleNext = () => {
     setTouched(true);
     if (!canProceed) return;
-    setCommunityInfo(name.trim(), description.trim());
+    setCommunityInfo(name.trim(), description.trim(), parentCommunityId || undefined);
   };
 
   return (
@@ -60,6 +91,30 @@ export function StepCommunityInfo({ initialName = "", initialDescription = "", s
         />
         <p className="mt-1 text-xs text-gray-500">{description.length}/500</p>
       </div>
+
+      {candidateParents.length > 0 && (
+        <div>
+          <label className="block text-sm font-medium text-gray-300 mb-1">
+            Parent community <span className="text-gray-500">(optional)</span>
+          </label>
+          <select
+            value={parentCommunityId}
+            onChange={(e) => setParentCommunityId(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-white
+              focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
+          >
+            <option value="">None — top-level community</option>
+            {candidateParents.map((parent) => (
+              <option key={parent.id} value={parent.id}>
+                {parent.displayName}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            Nest this as a local chapter, event team, or contributor circle under an existing community.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-3 pt-2">
         <button

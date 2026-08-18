@@ -52,6 +52,16 @@ communitiesRouter.get("/:id", async (c) => {
   return c.json({ community: reconciled });
 });
 
+communitiesRouter.get("/:id/children", async (c) => {
+  const id = c.req.param("id");
+  const community = await communityService.get(id);
+  if (!community) {
+    return c.json({ error: "Community not found" }, 404);
+  }
+  const children = await communityService.listChildren(id);
+  return c.json({ communities: children });
+});
+
 // specs/002 FR-002/FR-013: the registering wallet MUST have an active SIWE session, and for the
 // "manual" (register-existing-contract) source specifically, that session wallet MUST match the
 // contract's on-chain owner() before the registration is accepted. The wizard source is exempt
@@ -90,8 +100,18 @@ communitiesRouter.post("/", requireAuth, async (c) => {
     }
   }
 
-  const { community, created } = await communityService.create(data);
-  return c.json({ community }, created ? 201 : 200);
+  try {
+    const { community, created } = await communityService.create(data);
+    return c.json({ community }, created ? 201 : 200);
+  } catch (err) {
+    if (
+      err instanceof communityService.SelfParentError ||
+      err instanceof communityService.ParentCommunityNotFoundError
+    ) {
+      return c.json({ error: err.message }, 422);
+    }
+    throw err;
+  }
 });
 
 communitiesRouter.patch("/:id", requireAuth, async (c) => {
