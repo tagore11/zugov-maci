@@ -71,7 +71,14 @@ USER node
 WORKDIR /maci
 COPY --chown=node:node --from=builder /builder/ ./
 
-RUN pnpm run download-zkeys:test
+# zkeys are NOT downloaded here anymore. MessageProcessor/VoteTally zkeys alone total 1GB+,
+# and downloading them from a third-party upstream MACI S3 bucket meant every single build
+# re-fetched all of it (slow) from a copy never actually verified to match what this
+# platform's frontend/circuit setup uses. deploy/docker-compose.yml now bind-mounts the
+# known-correct repo-root zkeys/ directory instead (gitignored, populated once via rsync from
+# a machine that already has it right — see that file's `coordinator` service comment for the
+# exact command). Local dev / CI still use `pnpm run download-zkeys:test` directly (see
+# apps/coordinator/package.json, .github/workflows/coordinator.yml) — unaffected by this.
 
 # coordinator directory
 WORKDIR /maci/apps/coordinator

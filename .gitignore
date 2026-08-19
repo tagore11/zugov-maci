@@ -6,6 +6,12 @@ packages/cli/maci_keys.tar.gz
 *.zkey
 *.r1cs
 *.sym
+# apps/zugov-frontend/public/*.wasm ships fine (nothing above matches *.wasm), but its paired
+# proving key needs an explicit carve-out from the blanket *.zkey rule above, or a fresh
+# checkout (exactly what CI does) never has it — voters' in-browser poll-joining proof
+# generation needs both files together; shipping the .wasm without the .zkey silently breaks
+# it (the missing file's request falls through to the SPA's index.html instead of a real 404).
+!apps/zugov-frontend/public/PollJoining_10_test.0.zkey
 
 
 solc

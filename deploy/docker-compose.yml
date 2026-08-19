@@ -156,10 +156,10 @@ services:
       COORDINATOR_MESSAGE_PROCESS_ZKEY_NAME: MessageProcessor_10-20-2_test
       COORDINATOR_POLL_JOINING_ZKEY_NAME: PollJoining_10_test
       COORDINATOR_POLL_JOINED_ZKEY_NAME: PollJoined_10_test
-      # Where the Dockerfile's `pnpm run download-zkeys:test` step actually wrote them
-      # (cwd /maci at download time) relative to `start:prod`'s cwd (/maci/apps/coordinator).
-      # Without this, file.service.ts's path.resolve(COORDINATOR_ZKEY_PATH) receives
-      # undefined and /v1/proof/generate fails before it ever reads a zkey.
+      # Where the zkeys-data volume below is mounted (/maci/zkeys), relative to `start:prod`'s
+      # cwd (/maci/apps/coordinator). Without this, file.service.ts's
+      # path.resolve(COORDINATOR_ZKEY_PATH) receives undefined and /v1/proof/generate fails
+      # before it ever reads a zkey.
       COORDINATOR_ZKEY_PATH: ../../zkeys
       # Absolute path the Dockerfile's runner stage downloads the rapidsnark prover to.
       COORDINATOR_RAPIDSNARK_EXE: /home/node/rapidsnark/build/prover
@@ -187,6 +187,21 @@ services:
     # 127.0.0.1 for host-side debugging.
     ports:
       - "127.0.0.1:3003:3001"
+    # MessageProcessor/VoteTally zkeys (1GB+) used to be downloaded from upstream MACI's S3
+    # bucket into the image at build time (apps/coordinator/Dockerfile) — slow on every
+    # single build, a build-time dependency on that third-party bucket, and never actually
+    # verified to be byte-identical to the zkeys this platform's frontend/circuit setup
+    # actually uses (repo-root zkeys/, gitignored — see apps/coordinator/.env.example's
+    # COORDINATOR_ZKEY_PATH default). Bind-mounted from this same relative path instead — the
+    # known-correct copy — so build and deploy no longer touch zkeys at all.
+    # One-time setup on a fresh host (or if /opt/zugov/zkeys is ever lost), run from a machine
+    # that already has a correct repo-root zkeys/ folder (e.g. after local circuit setup):
+    #   rsync -avz --progress zkeys/ <deploy-user>@<deploy-host>:/opt/zugov/zkeys/
+    # No download, no docker command — /opt/zugov is this same repo checked out on the host
+    # (see .github/workflows/deploy-backend.yml), and zkeys/ is gitignored there too, so
+    # `git reset --hard origin/main` on every deploy never touches it.
+    volumes:
+      - ../zkeys:/maci/zkeys
 
 volumes:
   postgres-data:
