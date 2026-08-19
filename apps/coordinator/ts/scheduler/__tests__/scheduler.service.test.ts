@@ -15,7 +15,10 @@ const scheduledPoll: IScheduledPoll = {
   maciAddress: "0x0",
   pollId: "5",
   mode: EMode.NON_QV,
-  chain: ESupportedChains.OptimismSepolia,
+  // Must be a chain with a configured RPC url (see ts/common/chain.ts's
+  // getConfiguredRpcUrl) since getPollFinalizationData() resolves a real signer via
+  // getRpcUrl(chain).
+  chain: ESupportedChains.Sepolia,
   endDate: 1752534000,
   deploymentBlockNumber: 1,
   merged: false,

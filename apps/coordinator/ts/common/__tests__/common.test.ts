@@ -81,9 +81,28 @@ describe("common", () => {
       );
     });
 
-    test("should throw when COORDINATOR_RPC_URL is not set", async () => {
-      delete process.env.COORDINATOR_RPC_URL;
+    test("should throw when the requested chain has no RPC configured", async () => {
+      delete process.env.COORDINATOR_SEPOLIA_RPC_URL;
+      delete process.env.COORDINATOR_SCROLL_SEPOLIA_RPC_URL;
       await expect(() => getRpcUrl(ESupportedChains.OptimismSepolia)).rejects.toThrow(
+        ErrorCodes.COORDINATOR_RPC_URL_NOT_SET.toString(),
+      );
+    });
+
+    test("should return each configured chain's own RPC url, not another chain's", async () => {
+      process.env.COORDINATOR_SEPOLIA_RPC_URL = "https://example-sepolia.test";
+      process.env.COORDINATOR_SCROLL_SEPOLIA_RPC_URL = "https://example-scroll-sepolia.test";
+
+      await expect(getRpcUrl(ESupportedChains.Sepolia)).resolves.toBe("https://example-sepolia.test");
+      await expect(getRpcUrl(ESupportedChains.ScrollSepolia)).resolves.toBe("https://example-scroll-sepolia.test");
+    });
+
+    test("should reject with a chain-specific error, never falling back to another chain's url, when a chain has no RPC configured", async () => {
+      process.env.COORDINATOR_SEPOLIA_RPC_URL = "https://example-sepolia.test";
+      delete process.env.COORDINATOR_SCROLL_SEPOLIA_RPC_URL;
+
+      await expect(() => getRpcUrl(ESupportedChains.ScrollSepolia)).rejects.toThrow(ESupportedChains.ScrollSepolia);
+      await expect(() => getRpcUrl(ESupportedChains.ScrollSepolia)).rejects.toThrow(
         ErrorCodes.COORDINATOR_RPC_URL_NOT_SET.toString(),
       );
     });

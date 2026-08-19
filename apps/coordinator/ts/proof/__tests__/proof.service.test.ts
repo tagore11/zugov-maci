@@ -43,7 +43,9 @@ describe("ProofGeneratorService", () => {
   const defaultDeploymentService = {
     setHre: jest.fn(),
     getDeployer: jest.fn(() => Promise.resolve({})),
-    getContract: jest.fn(() => Promise.resolve(mockContract)),
+    getContract: jest.fn<Promise<typeof mockContract>, [{ signer?: { getAddress: () => Promise<string> } }]>(() =>
+      Promise.resolve(mockContract),
+    ),
   };
   const coordinatorPublicKey = getCoordinatorKeypair().publicKey.asContractParam();
 
@@ -55,7 +57,10 @@ describe("ProofGeneratorService", () => {
       poll: 1,
       maciContractAddress: zeroAddress,
       mode: EMode.NON_QV,
-      chain: ESupportedChains.OptimismSepolia,
+      // Must be a chain with a configured RPC url (see ts/common/chain.ts's
+      // getConfiguredRpcUrl) since generate() resolves a real signer via getRpcUrl(chain)
+      // when no sessionKeyAddress/approval are given.
+      chain: ESupportedChains.Sepolia,
     };
   });
 
@@ -103,5 +108,19 @@ describe("ProofGeneratorService", () => {
 
     expect(data.processProofs).toHaveLength(1);
     expect(data.tallyProofs).toHaveLength(1);
+  });
+
+  test("should pass the request-scoped signer into the Poll contract lookup", async () => {
+    const service = new ProofGeneratorService(fileService, sessionKeysService);
+
+    await service.generate(defaultProofArgs);
+
+    // A real ethers Signer resolved for defaultProofArgs.chain must be passed through —
+    // omitting it would silently fall back to Deployment's default hardhat-network deployer
+    // instead of the chain this request actually targets (see research.md Decision 2).
+    const [[getContractArgs]] = defaultDeploymentService.getContract.mock.calls;
+
+    expect(getContractArgs.signer).toBeDefined();
+    expect(typeof getContractArgs.signer?.getAddress).toBe("function");
   });
 });

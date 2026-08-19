@@ -100,6 +100,11 @@ export class ProofGeneratorService {
       const pollContract = await this.deployment.getContract<Poll>({
         name: EContracts.Poll,
         address: pollData.address,
+        // Without this, getContract() falls back to hardhat's default-network deployer
+        // (hardhat.config.cjs's single "localhost" network) instead of the chain this
+        // request actually targets — see specs/009-coordinator-multi-chain-rpc/research.md
+        // Decision 2.
+        signer,
       });
 
       const publicKeyOnChain = await pollContract.coordinatorPublicKey();
