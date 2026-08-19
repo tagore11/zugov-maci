@@ -2,17 +2,37 @@
 
 ## ZuGov / Union communities follow-ups (from 2026-08-18 eng review)
 
-### Events (one-time/recurring) as a first-class concept
+### Events (one-time/recurring) as a first-class concept — backend implementation
 
-**What:** Communities can organize events (one-time or recurring). Only the structural constraint is captured here — no entity built yet.
+**What:** Full schema + API locked by the 2026-08-19 `/plan-eng-review` (18 decisions, including an outside-voice pass): `events`, `venues`, `eventRsvps` tables anchored to `communities.id`, a new `canCreateEvents` tier permission, RSVP-only in v1 (check-in deferred to the Contribution layer TODO below), recurring events as independent rows sharing an optional `seriesId` (no RRULE engine), venue as its own reusable entity gated on `canManageMembership`, event edit/cancel as creator-OR-`canManageMembership` (not creator-only — the outside voice caught that the original creator-only design broke ENGINEERING.md's own "authorization is one reusable pattern" rule), a transactional `duplicate()` endpoint (capped at 52) plus a series-scoped bulk-cancel endpoint, and a paginated list endpoint matching `communities.ts`'s existing convention.
 
-**Why:** Named during the union-communities architecture review as part of why community structure needs to be built right, but has no concrete requirements yet to design against.
+**Why:** No longer "unscoped" — this review fully designed it, including a cross-model outside-voice pass that caught 9 real gaps the interactive review alone missed (admin override, venue-creation permission, read-visibility, series lifecycle, batch-size cap, pagination, others noted in the review's findings).
 
-**Context:** Whoever picks this up must anchor events to `communities.id` the same way `parentCommunityId` and `unionMemberships` already do — never to a `maciGovernanceConfigs` field. This is the one hard constraint the review locked in: events (like unions and parent/child) live at the identity/structural layer, independent of whichever governance tool (MACI today) a community has configured.
+**Context:** Backend-only. The outside voice flagged that Events is P3 while two P1/P2 items (wallet funding, MerkleProof factory deploy) directly block the live Sept 9 pilot, and this ships zero resident-facing value without a frontend pass — founder's explicit call was to proceed anyway as deliberate backend groundwork, with frontend tracked as its own separate TODO (below) rather than silently deferred.
 
-**Effort:** Unscoped — no entity design exists yet
+**Effort:** L (3 new tables, ~11 routes, full test coverage per the review's test plan at `~/.gstack/projects/znurznurznur-maci/isasertkaya-main-eng-review-test-plan-20260819-081939.md`)
 **Priority:** P3
-**Depends on:** Identity/governance table split (this review) landing first
+**Depends on:** None — hard constraint (anchor to `communities.id`, never `maciGovernanceConfigs`) already satisfied by the identity/governance split, which has landed.
+
+### Events frontend (calendar/list/create UI)
+
+**What:** Calendar/list view, create-event modal, RSVP button, venue picker — the UI layer for the Events backend above.
+
+**Why:** The backend ships with zero resident-facing value until this lands — flagged by the outside-voice pass during the 2026-08-19 eng review as a real sequencing gap, tracked explicitly rather than left implicit.
+
+**Effort:** M (several new frontend files: calendar/list page, create-event form, RSVP button, venue picker)
+**Priority:** P2 (higher than the backend's own P3 once the backend actually ships — dead API surface with no UI is worse than no API at all)
+**Depends on:** Events backend (above) landing first
+
+### Venue deletion + venueId invariant fix
+
+**What:** Add `DELETE /venues/:id`, guarded against orphaning events (reject if events still reference it, or require a `locationText` backfill first).
+
+**Why:** `events.venueId` is `ON DELETE SET NULL`, and the `venueId`/`locationText` "exactly one" invariant from the Events review is enforced only at the Zod validator layer, not the DB — a naive venue delete would silently leave events with neither field set (no location at all). Currently unreachable (no delete route exists in v1), so this is a documented landmine, not a live bug — caught by the outside-voice pass during the 2026-08-19 eng review.
+
+**Effort:** S (one route + an orphan guard)
+**Priority:** P3
+**Depends on:** None, but should land before or alongside whoever next touches venue deletion
 
 ### Nested `{ identity, governance }` API response shape
 

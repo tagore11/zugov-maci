@@ -7,6 +7,8 @@ import { membershipRouter } from "./routes/membership.js";
 import { myMembershipsRouter } from "./routes/memberships.js";
 import { governanceActionsRouter } from "./routes/governanceActions.js";
 import { unionsRouter } from "./routes/unions.js";
+import { venuesRouter } from "./routes/venues.js";
+import { eventsRouter } from "./routes/events.js";
 
 export const app = new Hono();
 
@@ -32,6 +34,8 @@ app.route("/api/auth", authRouter);
 app.route("/api/communities", communitiesRouter);
 app.route("/api/communities", membershipRouter);
 app.route("/api/communities", governanceActionsRouter);
+app.route("/api/communities", venuesRouter);
+app.route("/api/communities", eventsRouter);
 app.route("/api/memberships", myMembershipsRouter);
 app.route("/api/unions", unionsRouter);
 app.route("/api/credentials", credentialsRouter);

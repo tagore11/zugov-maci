@@ -60,6 +60,23 @@ unionMemberships (many-to-many, communities <-> unions)
 membershipTiers / memberships / joinRequests — per-community role and membership state
 governanceActions / governanceActionSponsors — polls/proposals and their co-sponsorship
 sessions / credentials — SIWE sessions and Zupass/zkID identity verification results
+
+venues (identity/structure layer, anchored to a community — not governance)
+  id text PK, communityId FK -> communities.id (CASCADE), name, address?, mapUrl?, createdAt
+
+events (identity/structure layer — never references maciGovernanceConfigs)
+  id text PK, communityId FK -> communities.id (CASCADE)
+  venueId FK -> venues.id (SET NULL) XOR locationText — exactly one, enforced at the
+    validator, not the DB
+  startAt / endAt (multi-day is computed from these, never stored), seriesId? (recurring
+    events are independent rows sharing one seriesId, not an RRULE-expanded row)
+  kind "talk"|"workshop"|"social"|"meeting"|"other", creatorAddress
+  status "active"|"cancelled" + cancelledAt — soft-cancel, mirrors unionMemberships
+  index on (communityId, startAt)
+
+eventRsvps (RSVP is intent only — any signed-in wallet, no membership check)
+  PK (eventId, walletAddress); status "active"|"cancelled" + cancelledAt — soft-cancel,
+  cancel-then-re-RSVP flips the same row back to active rather than duplicating it
 ```
 
 ## Core Architectural Principles
@@ -123,10 +140,15 @@ just treat them as historical record:
 
 ## Decisions Log
 
-| Date       | Decision                                                                                            | Rationale                                                                                                                                                                                                                               |
-| ---------- | --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 2026-08-18 | Split `communities` into identity/structure vs. pluggable `maciGovernanceConfigs`                   | A community's identity should be able to exist before any governance tool is deployed/configured — enables the identity-first wizard flow and supports future non-MACI governance backends without touching the identity schema.        |
-| 2026-08-18 | `communities.id` no longer guaranteed to be a deployed contract address                             | Wizard-created communities get a server-generated UUID at identity-creation time, before deployment starts. `maciGovernanceConfigs.contractAddress` (nullable) is the only field guaranteed to hold the real on-chain address.          |
-| 2026-08-18 | Union communities: peer/federation relationship, consent-gated, distinct from `parentCommunityId`   | Two independent communities can federate without either governing the other. Invite requires `canManageMembership` on the inviting community; accept/decline requires the same on the invited community, never the inviter.             |
-| 2026-08-18 | Structural relationships (parent/child, unions) never require governance to be configured           | An ungoverned community identity is still a full participant in the app's structural features — visible in listings, can found/join unions, can be a parent or child. Governance is strictly additive, never a structural prerequisite. |
-| 2026-08-18 | Read API stays flat with a `governanceConfigured` flag, not a nested `{identity, governance}` shape | No frontend read-site changes needed for the identity/governance split itself; a nested shape is logged as a deferred TODO, not built now.                                                                                              |
+| Date       | Decision                                                                                                                   | Rationale                                                                                                                                                                                                                                       |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 2026-08-18 | Split `communities` into identity/structure vs. pluggable `maciGovernanceConfigs`                                          | A community's identity should be able to exist before any governance tool is deployed/configured — enables the identity-first wizard flow and supports future non-MACI governance backends without touching the identity schema.                |
+| 2026-08-18 | `communities.id` no longer guaranteed to be a deployed contract address                                                    | Wizard-created communities get a server-generated UUID at identity-creation time, before deployment starts. `maciGovernanceConfigs.contractAddress` (nullable) is the only field guaranteed to hold the real on-chain address.                  |
+| 2026-08-18 | Union communities: peer/federation relationship, consent-gated, distinct from `parentCommunityId`                          | Two independent communities can federate without either governing the other. Invite requires `canManageMembership` on the inviting community; accept/decline requires the same on the invited community, never the inviter.                     |
+| 2026-08-18 | Structural relationships (parent/child, unions) never require governance to be configured                                  | An ungoverned community identity is still a full participant in the app's structural features — visible in listings, can found/join unions, can be a parent or child. Governance is strictly additive, never a structural prerequisite.         |
+| 2026-08-18 | Read API stays flat with a `governanceConfigured` flag, not a nested `{identity, governance}` shape                        | No frontend read-site changes needed for the identity/governance split itself; a nested shape is logged as a deferred TODO, not built now.                                                                                                      |
+| 2026-08-19 | Events/venues/RSVPs live in the identity/structure layer, anchored to `communities.id`, never `maciGovernanceConfigs`      | Matches the identity/governance separation principle — an ungoverned community can still host events. Validated against sola.day's own live product, which also has no governance coupling.                                                     |
+| 2026-08-19 | Recurring events are independent rows sharing a `seriesId`, not an RRULE-expanded single row                               | "Boring by default" — sola.day's own API has no recurrence params either. `duplicate()` generates N rows in one DB transaction (capped at 52) so a mid-batch failure leaves zero rows persisted, not a partial series.                          |
+| 2026-08-19 | Event edit/cancel/duplicate: creator OR `isAuthorized(communityId, wallet)`, not creator-only                              | Outside-voice review finding — creator-only broke the "authorization is one reusable pattern" principle; `isAuthorized` already implements exactly this creator-OR-permission shape, so events reuse it rather than inventing a parallel check. |
+| 2026-08-19 | RSVP is intent only, open to any signed-in wallet — no membership check                                                    | Matches sola.day's own event/RSVP model; attendance/check-in is a separate, deliberately deferred TODO, not built now.                                                                                                                          |
+| 2026-08-19 | New `canCreateEvents` tier permission (default `true`) gates event creation; venue creation stays on `canManageMembership` | "Anyone can propose an event" is the default posture per the locked review, but venues (a shared physical resource) stay admin-gated — the two are deliberately different permission levels, not the same check reused twice.                   |

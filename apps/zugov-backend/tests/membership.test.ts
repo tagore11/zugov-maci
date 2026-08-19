@@ -150,6 +150,48 @@ describe("Tier mutation authority (FR-008, FR-011)", () => {
   });
 });
 
+// Regression coverage (2026-08-19 eng review, outside-voice finding): hasTierPermission's
+// SELECT was widened to add canCreateEvents alongside the pre-existing
+// canCreateGovernanceActions/canVote — this asserts the widened SELECT still returns correct
+// values for the ORIGINAL two permissions, not just the new one, so a future permission
+// addition following this same pattern doesn't silently regress the ones already in use.
+describe("hasTierPermission (regression: widened for canCreateEvents)", () => {
+  it("returns correct values for canVote, canCreateGovernanceActions, and canCreateEvents on the same tier", async () => {
+    const { hasTierPermission } = await import("../src/services/membershipService.js");
+
+    const creatorCookie = await getAuthCookie();
+    const { community } = await registerIdentity(creatorCookie);
+
+    // DEFAULT_TIER (this file's "Regular" fixture): canVote true, canCreateGovernanceActions
+    // false, canCreateEvents unset in the fixture -> schema default true.
+    const memberAccount = privateKeyToAccount(`0x${"44".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: memberCookie },
+    });
+    expect(joinRes.status).toBe(200);
+
+    await expect(hasTierPermission(community.id, memberAccount.address, "canVote")).resolves.toBe(true);
+    await expect(hasTierPermission(community.id, memberAccount.address, "canCreateGovernanceActions")).resolves.toBe(
+      false,
+    );
+    await expect(hasTierPermission(community.id, memberAccount.address, "canCreateEvents")).resolves.toBe(true);
+  });
+
+  it("returns false for every permission on a wallet with no membership at all", async () => {
+    const { hasTierPermission } = await import("../src/services/membershipService.js");
+
+    const creatorCookie = await getAuthCookie();
+    const { community } = await registerIdentity(creatorCookie);
+    const strangerAddress = privateKeyToAccount(`0x${"55".repeat(32)}`).address;
+
+    await expect(hasTierPermission(community.id, strangerAddress, "canVote")).resolves.toBe(false);
+    await expect(hasTierPermission(community.id, strangerAddress, "canCreateGovernanceActions")).resolves.toBe(false);
+    await expect(hasTierPermission(community.id, strangerAddress, "canCreateEvents")).resolves.toBe(false);
+  });
+});
+
 describe("POST /api/communities/:id/join (FR-009 duplicate prevention)", () => {
   it("returns 409 when the wallet already holds a membership (the creator is auto-enrolled)", async () => {
     const cookie = await getAuthCookie();
