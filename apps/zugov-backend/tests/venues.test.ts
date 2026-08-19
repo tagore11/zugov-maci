@@ -150,6 +150,92 @@ describe("POST /api/communities/:id/venues", () => {
   });
 });
 
+async function createVenue(cookie: string, communityId: string, name = "The Hub"): Promise<string> {
+  const res = await app.request(`/api/communities/${communityId}/venues`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ name }),
+  });
+  const { venue } = (await res.json()) as { venue: { id: string } };
+  return venue.id;
+}
+
+describe("DELETE /api/communities/:id/venues/:venueId", () => {
+  it("returns 401 without authentication", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const venueId = await createVenue(cookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/venues/${venueId}`, { method: "DELETE" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for a member without canManageMembership", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(creatorCookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const venueId = await createVenue(creatorCookie, communityId);
+
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    await app.request(`/api/communities/${communityId}/join`, { method: "POST", headers: { Cookie: outsiderCookie } });
+
+    const res = await app.request(`/api/communities/${communityId}/venues/${venueId}`, {
+      method: "DELETE",
+      headers: { Cookie: outsiderCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 for a nonexistent venue", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+
+    const res = await app.request(`/api/communities/${communityId}/venues/nonexistent`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("returns 409 when an event still references the venue", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const venueId = await createVenue(cookie, communityId);
+
+    const now = Math.floor(Date.now() / 1000);
+    await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ title: "Morning Yoga", venueId, startAt: now + 3600, endAt: now + 7200 }),
+    });
+
+    const res = await app.request(`/api/communities/${communityId}/venues/${venueId}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(409);
+
+    const listRes = await app.request(`/api/communities/${communityId}/venues`);
+    const { venues } = (await listRes.json()) as { venues: { id: string }[] };
+    expect(venues.some((v) => v.id === venueId)).toBe(true);
+  });
+
+  it("deletes a venue with no referencing events", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const venueId = await createVenue(cookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/venues/${venueId}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+
+    const listRes = await app.request(`/api/communities/${communityId}/venues`);
+    const { venues } = (await listRes.json()) as { venues: unknown[] };
+    expect(venues).toEqual([]);
+  });
+});
+
 describe("GET /api/communities/:id/venues", () => {
   it("does not require authentication", async () => {
     const cookie = await authCookieFor(CREATOR);

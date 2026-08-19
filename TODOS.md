@@ -44,16 +44,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Venue deletion + venueId invariant fix
-
-**What:** Add `DELETE /venues/:id`, guarded against orphaning events (reject if events still reference it, or require a `locationText` backfill first).
-
-**Why:** `events.venueId` is `ON DELETE SET NULL`, and the `venueId`/`locationText` "exactly one" invariant from the Events review is enforced only at the Zod validator layer, not the DB — a naive venue delete would silently leave events with neither field set (no location at all). Currently unreachable (no delete route exists in v1), so this is a documented landmine, not a live bug — caught by the outside-voice pass during the 2026-08-19 eng review.
-
-**Effort:** S (one route + an orphan guard)
-**Priority:** P3
-**Depends on:** None, but should land before or alongside whoever next touches venue deletion
-
 ### Nested `{ identity, governance }` API response shape
 
 **What:** Expose the `communities`/`maciGovernanceConfigs` split explicitly in API responses, instead of the flat-merged shape (+ `governanceConfigured` flag) locked in this review's Issue 3.

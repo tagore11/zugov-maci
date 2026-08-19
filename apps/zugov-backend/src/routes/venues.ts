@@ -40,3 +40,22 @@ venuesRouter.get("/:id/venues", async (c) => {
   const venues = await venueService.list(communityId);
   return c.json({ venues });
 });
+
+venuesRouter.delete("/:id/venues/:venueId", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  const venueId = c.req.param("venueId");
+
+  const session = await getSession(c);
+  if (!(await isAuthorized(communityId, session.address!))) {
+    return c.json({ error: "Not authorized to delete a venue for this community" }, 403);
+  }
+
+  try {
+    await venueService.remove(venueId, communityId);
+    return c.json({ ok: true });
+  } catch (err) {
+    if (err instanceof venueService.VenueNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof venueService.VenueInUseError) return c.json({ error: err.message }, 409);
+    throw err;
+  }
+});
