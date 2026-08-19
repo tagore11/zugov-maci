@@ -19,6 +19,12 @@ env:
   COORDINATOR_RAPIDSNARK_EXE: ${{ vars.COORDINATOR_RAPIDSNARK_EXE }}
   COORDINATOR_ZKEY_PATH: "../../zkeys"
   COORDINATOR_RPC_URL: "http://localhost:8545"
+  # CI runs a single local hardhat fork (see "Run hardhat fork" step below) — both
+  # per-chain vars point at it, matching COORDINATOR_RPC_URL, since ts/common/chain.ts's
+  # getRpcUrl() resolves per-chain and no longer falls back to COORDINATOR_RPC_URL for
+  # real chains (Sepolia/Scroll Sepolia).
+  COORDINATOR_SEPOLIA_RPC_URL: "http://localhost:8545"
+  COORDINATOR_SCROLL_SEPOLIA_RPC_URL: "http://localhost:8545"
   COORDINATOR_ADDRESSES: ${{ vars.COORDINATOR_ADDRESSES }}
   COORDINATOR_ALLOWED_ORIGINS: ${{ vars.COORDINATOR_ALLOWED_ORIGINS }}
   COORDINATOR_REDIS_HOST: ${{ vars.COORDINATOR_REDIS_HOST }}
