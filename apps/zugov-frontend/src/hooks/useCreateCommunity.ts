@@ -58,6 +58,7 @@ import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZ
 export type WizardStep =
   | "community_info"
   | "community_setup"
+  | "eligibility"
   | "network_check"
   | "review"
   | "deploying"
@@ -516,6 +517,7 @@ export interface UseCreateCommunityResult {
 const STEP_ORDER: WizardStep[] = [
   "community_info",
   "community_setup",
+  "eligibility",
   "network_check",
   "review",
   "deploying",
@@ -671,10 +673,13 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
           stateTreeDepth: STATE_TREE_DEPTH,
         },
         identityCommunityId: identityId,
-        // Off-chain-only is now a real, intentional end state (2026-08-19 review, D2) — the
-        // wizard lands on success right after identity creation. Deploying governance is an
-        // explicit opt-in from there, not an automatic next step.
-        step: "success",
+        // Off-chain-only is still a real, intentional end state (2026-08-19 community-creation-
+        // rework review, D2) — deploying governance stays an explicit opt-in from the success
+        // screen, not an automatic next step. Lands on "eligibility" first, not "success"
+        // directly (2026-08-19 eligibility-followups review, D2) — the identity (and its tiers)
+        // is now real and persisted, which is the earliest point eligibility rules can target a
+        // tier at all.
+        step: "eligibility",
       }));
     },
     [state.config, state.identityCommunityId, siwe],

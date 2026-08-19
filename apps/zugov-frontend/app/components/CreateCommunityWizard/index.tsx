@@ -3,6 +3,7 @@ import { usePrivy } from "@privy-io/react-auth";
 import { useCreateCommunity, DEFAULT_ADVANCED_CONFIG, type WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 import { StepCommunitySetup } from "./StepCommunitySetup";
+import { StepEligibility } from "./StepEligibility";
 import { StepReview } from "./StepReview";
 import { StepNetworkCheck } from "./StepNetworkCheck";
 import { StepDeploying } from "./StepDeploying";
@@ -13,6 +14,7 @@ import { useSiwe } from "@/src/hooks/useSiwe";
 const STEP_LABELS: Record<WizardStep, string> = {
   community_info: "Community Info",
   community_setup: "Community Setup",
+  eligibility: "Eligibility",
   network_check: "Network Check",
   review: "Review",
   deploying: "Deploying",
@@ -23,7 +25,10 @@ const STEP_LABELS: Record<WizardStep, string> = {
 // Only the identity-creation steps get a numbered progress bar — network_check/review/deploying
 // are now reached from a separate, optional "deploy governance" opt-in on the success screen
 // (2026-08-19 community-creation-rework review, D2), not a continuation of the same sequence.
-const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup"];
+// "eligibility" is identity-layer too, same tier as community_info/community_setup, not
+// governance (2026-08-19 eligibility-followups review, D2) — counted here, not treated as
+// optional-and-separate like the governance-deploy steps.
+const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup", "eligibility"];
 
 export function CreateCommunityWizard() {
   const { address } = useAccount();
@@ -142,6 +147,14 @@ export function CreateCommunityWizard() {
             initialTiers={state.config.tiers}
             setCommunitySetup={setCommunitySetup}
             goBack={goBack}
+          />
+        )}
+
+        {state.step === "eligibility" && state.identityCommunityId && (
+          <StepEligibility
+            communityId={state.identityCommunityId}
+            goBack={goBack}
+            onContinue={() => goToStep("success")}
           />
         )}
 
