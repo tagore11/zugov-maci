@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "apps/zugov-backend/**"
+      - "apps/coordinator/**"
       - "deploy/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -33,9 +34,8 @@ jobs:
           # room for drizzle-kit migrate/compose up/image prune before the SSH session is killed
           # (see run 32031989077: build succeeded, "Run Command Timeout" hit right after image
           # export — docker compose up -d never ran, so the new image was built but not deployed).
-          # Raised again to 45m: `docker compose up -d` also builds `coordinator` on its first
-          # run (its image doesn't exist yet on the host), and that build alone takes ~8m on top
-          # of backend's build+migrate, which blew through the 25m limit (run 32065939043).
+          # Raised again to 45m: building `coordinator` alone takes ~8m on top of backend's
+          # build+migrate, which blew through the 25m limit (run 32065939043).
           command_timeout: 45m
           script: |
             set -euo pipefail
@@ -44,6 +44,12 @@ jobs:
             git reset --hard origin/main
             cd deploy
             docker compose build backend
+            # Explicit — `docker compose up -d` alone only builds a service's image the first
+            # time it has no image at all; after that it silently keeps running whatever image
+            # already exists even when apps/coordinator's source changed, so env-var-only
+            # changes (docker-compose.yml) would appear to deploy while actual code changes
+            # never did. Always rebuild explicitly instead of relying on that first-run behavior.
+            docker compose build coordinator
             docker compose run --rm backend node_modules/.bin/drizzle-kit migrate
             docker compose up -d
             # graph-node-config.toml is bind-mounted — compose only recreates a container when
