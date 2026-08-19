@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { StepCommunitySetup } from "./StepCommunitySetup";
 
 // Regression test for a real bug found in eng review: this step is remounted on wizard
@@ -68,5 +68,26 @@ describe("StepCommunitySetup — restores state across Back navigation", () => {
 
     expect(screen.getByDisplayValue("Resident")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Organizer")).toBeInTheDocument();
+  });
+});
+
+// specs/010 US8: voting mechanism must be a real, interactive control — not hardcoded text —
+// with only MACI actually selectable (research.md #8).
+describe("StepCommunitySetup — voting mechanism selector", () => {
+  it("renders MACI selectable and the other families visibly present but disabled", () => {
+    render(<StepCommunitySetup setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /advanced settings/i }));
+
+    const select = screen.getByDisplayValue("MACI") as HTMLSelectElement;
+    expect(select.tagName).toBe("SELECT");
+    expect(select.value).toBe("maci");
+
+    const tokenWeightedOption = screen.getByRole("option", { name: /token-weighted/i }) as HTMLOptionElement;
+    expect(tokenWeightedOption.disabled).toBe(true);
+    const offchainOption = screen.getByRole("option", { name: /off-chain/i }) as HTMLOptionElement;
+    expect(offchainOption.disabled).toBe(true);
+
+    const maciOption = screen.getByRole("option", { name: "MACI" }) as HTMLOptionElement;
+    expect(maciOption.disabled).toBe(false);
   });
 });

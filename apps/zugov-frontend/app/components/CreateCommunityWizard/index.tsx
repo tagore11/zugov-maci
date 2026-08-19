@@ -127,6 +127,7 @@ export function CreateCommunityWizard() {
             initialName={state.config.displayName}
             initialDescription={state.config.description}
             initialParentCommunityId={state.config.parentCommunityId}
+            initialCategory={state.config.category}
             setCommunityInfo={setCommunityInfo}
             goBack={goBack}
           />
@@ -153,6 +154,7 @@ export function CreateCommunityWizard() {
             config={deployConfig}
             membershipDescription={membershipDescription}
             roleLabels={roleLabels}
+            category={state.config.category}
             deploy={deploy}
             goBack={() => goToStep("network_check")}
           />

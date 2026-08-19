@@ -33,6 +33,23 @@ export const GovernanceTypes = {
   MACI: "maci",
 } as const;
 
+// Mirrors the constitution's "Mechanism families" list (Technical Stack & Constraints). Only
+// `maci` has a working adapter today — `tokenWeighted`/`offchain` are listed so the community
+// creation wizard's voting-mechanism step is a real, honest selector (Constitution Principle I:
+// "a community selects its mechanism family at creation time") without pretending those two are
+// usable yet (Principle V: no speculative features — no new adapter is implemented here,
+// specs/010 research.md #8).
+export const MECHANISM_FAMILIES = [
+  {
+    value: "maci",
+    label: "MACI",
+    description: "Private, collusion-resistant voting using zero-knowledge proofs.",
+    enabled: true,
+  },
+  { value: "tokenWeighted", label: "Token-weighted", description: "ERC-20 voting power, on-chain.", enabled: false },
+  { value: "offchain", label: "Off-chain", description: "Snapshot-style, signed message aggregation.", enabled: false },
+] as const;
+
 /** Numeric string matching the on-chain DomainObjs.Policy enum */
 export const PolicyType = {
   ERC20: "0",

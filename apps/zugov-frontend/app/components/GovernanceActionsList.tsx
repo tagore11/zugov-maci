@@ -12,6 +12,7 @@ import type {
 import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
 import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { useNow } from "@/src/hooks/useNow";
 import { deployPolicyContract } from "@/src/services/policyDeploy";
 import { GovernanceTypes, appConstants, type SignUpPolicyType } from "@/src/config";
 import { Poll__factory } from "@/src/poll-factory-shim";
@@ -36,6 +37,7 @@ const VOTE_REASON_LABELS: Record<VoteEligibilityReason, string> = {
   tier_lacks_voting_rights: "Your current tier doesn't grant voting rights.",
   tier_not_eligible_for_action: "Your tier isn't eligible for this governance action.",
   not_formalized: "This governance action hasn't formalized yet.",
+  poll_not_started: "Voting hasn't opened for this poll yet.",
   poll_closed: "Voting has closed for this poll.",
 };
 
@@ -124,6 +126,7 @@ function DeployPollPrompt({
         txHash,
         pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
         pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+        options: options.filter((o) => o.trim() !== ""),
       });
       onDeployed();
     } catch (err) {
@@ -223,12 +226,13 @@ const TALLY_MECHANISM_TO_MODE: Record<GovernanceActionTallyMechanism, PollMode> 
   weighted: "1",
 };
 
-/** Builds the SubgraphPoll shape VoteModal (unmodified, per specs/005 plan.md) expects, from a
- * live on-chain read of the deployed Poll contract's `voteOptions()` count — there is no subgraph
- * for backend-registered communities, and the poll's option *labels* aren't recoverable once
- * deployed (the Poll contract only exposes the count, not the label strings). VoteModal already
- * falls back to "Option 1"/"Option 2"... placeholders when `options` is null, so this is a
- * correct, real ballot — just without custom option labels. */
+/** Builds the SubgraphPoll shape VoteModal expects, from a live on-chain read of the deployed
+ * Poll contract's `voteOptions()` count — there is no subgraph for backend-registered
+ * communities. Option *labels* are read from the governance action's own persisted `options`
+ * (specs/010 research.md #1 — collected at deploy time and stored server-side, since the Poll
+ * contract itself only exposes the option count, never the label strings). VoteModal still falls
+ * back to "Option 1"/"Option 2"... placeholders for the rare case `options` is null (e.g. actions
+ * formalized before this column existed). */
 async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: string): Promise<SubgraphPoll> {
   if (!action.pollAddress) throw new Error("Governance action has no deployed poll");
   const provider = new JsonRpcProvider(rpcUrl);
@@ -240,10 +244,10 @@ async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: strin
     pollId: action.pollId ?? "0",
     name: action.title,
     metadata: action.description,
-    startDate: "",
-    endDate: "",
+    startDate: action.pollStartDate?.toString() ?? "",
+    endDate: action.pollEndDate?.toString() ?? "",
     voteOptions: voteOptions.toString(),
-    options: null,
+    options: action.options,
     mode: TALLY_MECHANISM_TO_MODE[action.tallyMechanism],
     policyType: "",
     policy: "",
@@ -256,6 +260,7 @@ function TallySection({ communityId, action }: { communityId: string; action: Go
   const queryClient = useQueryClient();
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
+  const now = useNow();
 
   const { data: status } = useQuery({
     queryKey: ["tallyStatus", communityId, action.id],
@@ -270,7 +275,7 @@ function TallySection({ communityId, action }: { communityId: string; action: Go
   const isClosed =
     !!action.pollStartDate &&
     !!action.pollEndDate &&
-    computePollStatus(action.pollStartDate, action.pollEndDate) === "closed";
+    computePollStatus(action.pollStartDate, action.pollEndDate, now / 1000) === "closed";
   if (!action.pollAddress || !isClosed) return null;
 
   const handleTally = async () => {
@@ -325,6 +330,7 @@ function FormalizedActionRow({
   });
   const [votingPoll, setVotingPoll] = useState<SubgraphPoll | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const now = useNow();
 
   const rpcUrl =
     community?.governanceConfigured && community.chainId !== null
@@ -366,8 +372,8 @@ function FormalizedActionRow({
       <p className="text-xs text-gray-500">Formalized{action.pollAddress ? ` — poll ${action.pollAddress}` : ""}</p>
       {action.pollStartDate && action.pollEndDate && (
         <p className="text-xs">
-          <span className={pollStatusClass(computePollStatus(action.pollStartDate, action.pollEndDate))}>
-            {pollStatusLabel(computePollStatus(action.pollStartDate, action.pollEndDate))}
+          <span className={pollStatusClass(computePollStatus(action.pollStartDate, action.pollEndDate, now / 1000))}>
+            {pollStatusLabel(computePollStatus(action.pollStartDate, action.pollEndDate, now / 1000))}
           </span>
           <span className="text-gray-500">
             {" "}
@@ -383,6 +389,7 @@ function FormalizedActionRow({
           poll={votingPoll}
           maciAddress={community.contractAddress}
           rpcUrl={rpcUrl}
+          subgraphUrl={communityApi.subgraphQueryUrl(communityId)}
           governanceType={GovernanceTypes.MACI}
           onClose={() => setVotingPoll(null)}
           onSuccess={() => setVotingPoll(null)}

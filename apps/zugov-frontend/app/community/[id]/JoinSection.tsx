@@ -91,6 +91,12 @@ export function JoinSection({
     return (
       <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
         Signed up — you&apos;re now registered to vote in this community&apos;s MACI state tree.
+        {membership?.tierLabel && (
+          <>
+            {" "}
+            Your role: <span className="font-semibold">{membership.tierLabel}</span>.
+          </>
+        )}
       </div>
     );
   }

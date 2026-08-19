@@ -1,46 +1,19 @@
-import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useAccount, useChainId } from "wagmi";
 import { Header } from "../../components/Header";
-import {
-  Users,
-  FileText,
-  MessageSquare,
-  Plus,
-  Calendar,
-  CheckCircle,
-  XCircle,
-  ChevronDown,
-  ChevronUp,
-  ArrowLeft,
-} from "lucide-react";
-import { getStoredVote } from "@/src/lib/voteStorage";
-import { computePollStatus, pollStatusLabel, pollStatusClass, pollStatusBadgeClass } from "@/src/lib/pollStatus";
-import { CreateProposalModal } from "../../components/CreateProposalModal";
-import { COMMUNITY_DATA, COMMUNITY_PROPOSALS, FORUM_POSTS } from "@/app/lib/placeholder-data";
+import { Users, FileText, ArrowLeft } from "lucide-react";
+import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
+import { useNow } from "@/src/hooks/useNow";
+import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { appConstants, type GovernanceType } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
 import { UnionsSection } from "./UnionsSection";
 import { GovernanceActionsList } from "../../components/GovernanceActionsList";
 import { EventsSection } from "../../components/EventsSection";
-import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
-
-const COMMUNITY_LOOKUP: Record<
-  string,
-  {
-    name: string;
-    description: string;
-    summary: string;
-    logo: string;
-    members: number;
-    category: string;
-    affiliatedCommunities: Array<{ id: string; name: string; logo: string }>;
-  }
-> = COMMUNITY_DATA;
 
 function InfoRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
@@ -63,22 +36,14 @@ function formatRelativeTime(unixSec: number): string {
 
 export default function CommunityPage() {
   const params = useParams();
-  const [showCreateProposal, setShowCreateProposal] = useState(false);
-  const [activeTab, setActiveTab] = useState<"proposals" | "forum">("proposals");
-  const [proposals, setProposals] = useState(COMMUNITY_PROPOSALS);
-  const [expandedProposal, setExpandedProposal] = useState<string | null>(null);
-
   const { address } = useAccount();
   const chainId = useChainId();
 
-  // Try static lookup first, then backend for backend-registered communities
-  const staticCommunity = COMMUNITY_LOOKUP[params.id ?? ""];
   const { data: backendCommunity, isLoading: isCommunityLoading } = useQuery({
     queryKey: ["community", params.id],
     queryFn: () => communityApi.get(params.id!),
-    enabled: !staticCommunity && !!params.id,
+    enabled: !!params.id,
   });
-  const community = staticCommunity;
   const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
 
   // Backend-registered communities go through the backend's transparent proxy once their
@@ -87,8 +52,6 @@ export default function CommunityPage() {
   const backendSubgraphReady = backendCommunity?.subgraphStatus === "ready";
   const activeSubgraphUrl = backendSubgraphReady ? communityApi.subgraphQueryUrl(backendCommunity!.id) : undefined;
   const activeGovernanceType = backendCommunity?.governanceType as GovernanceType | undefined;
-
-  const queryClient = useQueryClient();
 
   const {
     data: membersData,
@@ -111,8 +74,7 @@ export default function CommunityPage() {
   });
 
   // Local chapters, event teams, and contributor circles nested under this community
-  // (Lightpaper's "communities and sub-communities" building block). Backend-registered
-  // communities only — the static/mock community lookup has its own affiliatedCommunities field.
+  // (Lightpaper's "communities and sub-communities" building block).
   const { data: subCommunities } = useQuery({
     queryKey: ["subCommunities", backendCommunity?.id],
     queryFn: () => communityApi.listChildren(backendCommunity!.id),
@@ -151,9 +113,9 @@ export default function CommunityPage() {
     enabled: !!pollsData?.length && !!activeGovernanceType && !!address,
   });
 
-  const memberCount = membersData ?? community?.members ?? 0;
+  const memberCount = membersData ?? 0;
 
-  const now = Date.now() / 1000;
+  const now = useNow() / 1000;
   const mappedPolls = pollsData?.map((poll) => ({
     id: poll.id,
     title: poll.name,
@@ -166,22 +128,8 @@ export default function CommunityPage() {
     startDate: new Date(Number(poll.startDate) * 1000).toISOString(),
     endDate: new Date(Number(poll.endDate) * 1000).toISOString().slice(0, 10),
   }));
-  // Static demo communities fall back to seeded/local-storage placeholder proposals when no
-  // subgraph data has loaded yet; backend-registered communities never use this fallback (see
-  // the backend-fetched render branch below), so as not to show fake data under a "ready" state.
-  const displayProposals: typeof COMMUNITY_PROPOSALS = mappedPolls ?? proposals;
-
-  useEffect(() => {
-    if (pollsData) return;
-    const storedProposals = localStorage.getItem(`proposals_${params.id}`);
-    if (storedProposals) {
-      const userProposals = JSON.parse(storedProposals);
-      setProposals([...COMMUNITY_PROPOSALS, ...userProposals]);
-    }
-  }, [params.id, pollsData]);
-
   // Loading state while fetching from backend
-  if (!community && isCommunityLoading) {
+  if (isCommunityLoading) {
     return (
       <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
@@ -196,7 +144,7 @@ export default function CommunityPage() {
   }
 
   // Render backend-fetched community page
-  if (!community && backendCommunity) {
+  if (backendCommunity) {
     const dc = backendCommunity;
     const policyNames = dc.allowedPolicies
       .map((id) => ALLOWED_POLICIES.find((p) => p.id === String(id))?.name ?? id)
@@ -353,7 +301,7 @@ export default function CommunityPage() {
     );
   }
 
-  if (!community && !backendCommunity) {
+  if (!backendCommunity) {
     return (
       <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
@@ -370,309 +318,4 @@ export default function CommunityPage() {
       </div>
     );
   }
-
-  return (
-    <div className="min-h-screen bg-gray-950 text-foreground">
-      <Header />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground mb-6 transition-colors"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="text-sm font-medium">Back to Communities</span>
-        </Link>
-
-        {/* Community Header */}
-        <div className="bg-gray-900 rounded-xl border border-gray-700 p-8 mb-6">
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-start gap-4">
-              <div className="text-5xl">{community.logo}</div>
-              <div>
-                <h1 className="text-3xl font-bold text-foreground mb-2">{community.name}</h1>
-                <span className="inline-block px-3 py-1 text-sm font-medium bg-accent/20 text-accent-hover rounded">
-                  {community.category}
-                </span>
-              </div>
-            </div>
-            <button
-              onClick={() => setShowCreateProposal(true)}
-              className="flex items-center gap-2 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-              Create Proposal
-            </button>
-          </div>
-
-          {/* Summary & Description */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-foreground mb-2">Summary</h2>
-            <p className="text-gray-300 mb-4">{community.summary}</p>
-            <h2 className="text-lg font-semibold text-foreground mb-2">Description</h2>
-            <p className="text-gray-400">{community.description}</p>
-          </div>
-
-          {/* Stats */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
-              <Users className="w-6 h-6 text-accent mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{memberCount.toLocaleString()}</p>
-              <p className="text-sm text-gray-400">Members</p>
-            </div>
-            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
-              <FileText className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{displayProposals.length}</p>
-              <p className="text-sm text-gray-400">Proposals</p>
-            </div>
-            <div className="text-center p-4 bg-gray-800/40 rounded-lg">
-              <MessageSquare className="w-6 h-6 text-accent-hover mx-auto mb-2" />
-              <p className="text-2xl font-bold text-foreground">{FORUM_POSTS.length}</p>
-              <p className="text-sm text-gray-400">Forum Posts</p>
-            </div>
-          </div>
-
-          {/* Affiliated Communities */}
-          {community.affiliatedCommunities && community.affiliatedCommunities.length > 0 && (
-            <div>
-              <h2 className="text-lg font-semibold text-foreground mb-3">Affiliated Communities</h2>
-              <div className="flex flex-wrap gap-3">
-                {community.affiliatedCommunities.map((affiliated) => (
-                  <Link
-                    key={affiliated.id}
-                    to={`/community/${affiliated.id}`}
-                    className="flex items-center gap-2 px-4 py-2 bg-gray-800/40 border border-gray-700 rounded-lg hover:bg-gray-800 transition-colors"
-                  >
-                    <span className="text-xl">{affiliated.logo}</span>
-                    <span className="font-medium text-foreground">{affiliated.name}</span>
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Tabs */}
-        <div className="bg-gray-900 rounded-xl border border-gray-700 overflow-hidden">
-          <div className="border-b border-gray-700 flex">
-            <button
-              onClick={() => setActiveTab("proposals")}
-              className={`flex-1 px-6 py-4 font-semibold transition-colors ${
-                activeTab === "proposals"
-                  ? "text-accent-hover border-b-2 border-accent bg-accent/10"
-                  : "text-gray-400 hover:text-foreground hover:bg-gray-800"
-              }`}
-            >
-              Proposals
-            </button>
-            <button
-              onClick={() => setActiveTab("forum")}
-              className={`flex-1 px-6 py-4 font-semibold transition-colors ${
-                activeTab === "forum"
-                  ? "text-accent-hover border-b-2 border-accent bg-accent/10"
-                  : "text-gray-400 hover:text-foreground hover:bg-gray-800"
-              }`}
-            >
-              Forum
-            </button>
-          </div>
-
-          <div className="p-6">
-            {activeTab === "proposals" && (
-              <div className="space-y-4">
-                {displayProposals.map((proposal: any) => {
-                  const storedVote = address ? getStoredVote(proposal.id, address) : null;
-                  const pollData = pollsData?.find((p) => p.id === proposal.id);
-                  const pollOptions = pollData?.options?.length
-                    ? pollData.options
-                    : pollData
-                      ? Array.from({ length: Number(pollData.voteOptions) }, (_, i) => `Option ${i + 1}`)
-                      : null;
-                  const voteLabel =
-                    storedVote && pollOptions
-                      ? storedVote.type === "simple"
-                        ? (pollOptions[storedVote.optionIndex] ?? `Option ${storedVote.optionIndex + 1}`)
-                        : storedVote.rankedOptions.join(" > ")
-                      : null;
-                  return (
-                    <div key={proposal.id} className="border border-gray-700 rounded-lg overflow-hidden">
-                      <div
-                        className="p-4 hover:bg-gray-800/60 transition-colors cursor-pointer"
-                        onClick={() => setExpandedProposal(expandedProposal === proposal.id ? null : proposal.id)}
-                      >
-                        <div className="flex items-start justify-between mb-3">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-3 mb-2">
-                              <h3 className="font-semibold text-lg text-foreground">{proposal.title}</h3>
-                              {expandedProposal === proposal.id ? (
-                                <ChevronUp className="w-5 h-5 text-gray-400" />
-                              ) : (
-                                <ChevronDown className="w-5 h-5 text-gray-400" />
-                              )}
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                              <span
-                                className={`px-2 py-1 text-xs font-medium rounded ${pollStatusBadgeClass(proposal.status)}`}
-                              >
-                                {pollStatusLabel(proposal.status).toUpperCase()}
-                              </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded">
-                                {proposal.type.toUpperCase()}
-                              </span>
-                              <span className="px-2 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded">
-                                {proposal.privacy.toUpperCase()}
-                              </span>
-                              {proposal.eligible ? (
-                                <span className="px-2 py-1 text-xs font-medium bg-green-900/30 text-green-300 rounded flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3" />
-                                  ELIGIBLE
-                                </span>
-                              ) : (
-                                <span className="px-2 py-1 text-xs font-medium bg-red-900/30 text-red-300 rounded flex items-center gap-1">
-                                  <XCircle className="w-3 h-3" />
-                                  NOT ELIGIBLE
-                                </span>
-                              )}
-                              {proposal.votingMechanism && (
-                                <span className="px-2 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded">
-                                  {proposal.votingMechanism.toUpperCase()}
-                                </span>
-                              )}
-                              {proposal.weighted && (
-                                <span className="px-2 py-1 text-xs font-medium bg-yellow-900/30 text-yellow-300 rounded">
-                                  WEIGHTED
-                                </span>
-                              )}
-                              {storedVote && (
-                                <span className="px-2 py-1 text-xs font-medium bg-emerald-900/30 text-emerald-300 rounded flex items-center gap-1">
-                                  <CheckCircle className="w-3 h-3" />
-                                  VOTED
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between text-sm text-gray-400">
-                          <div className="flex items-center gap-4">
-                            <span className="flex items-center gap-1">
-                              <Users className="w-4 h-4" />
-                              {proposal.votes} votes
-                            </span>
-                            <span className="flex items-center gap-1">
-                              <Calendar className="w-4 h-4" />
-                              {proposal.status === "not_started"
-                                ? `Starts ${new Date(proposal.startDate).toLocaleDateString()}`
-                                : proposal.status === "closed"
-                                  ? `Ended ${proposal.endDate}`
-                                  : `Ends ${proposal.endDate}`}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Expanded Details */}
-                      {expandedProposal === proposal.id && (
-                        <div className="px-4 pb-4 border-t border-gray-700 bg-gray-800/40">
-                          <div className="pt-4 space-y-4">
-                            {voteLabel && (
-                              <div className="flex items-center gap-2 p-3 bg-emerald-900/20 border border-emerald-700/40 rounded-lg">
-                                <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                                <div>
-                                  <span className="text-xs font-medium text-emerald-300 uppercase tracking-wide">
-                                    Your vote
-                                  </span>
-                                  <p className="text-sm font-semibold text-emerald-200">{voteLabel}</p>
-                                </div>
-                              </div>
-                            )}
-
-                            {proposal.description && (
-                              <div>
-                                <h4 className="font-semibold text-foreground mb-2">Description</h4>
-                                <p className="text-gray-300">{proposal.description}</p>
-                              </div>
-                            )}
-
-                            {proposal.eligibility && (
-                              <div>
-                                <h4 className="font-semibold text-foreground mb-2">Eligibility Criteria</h4>
-                                <p className="text-gray-300">{proposal.eligibility}</p>
-                              </div>
-                            )}
-
-                            {proposal.options && proposal.options.length > 0 && (
-                              <div>
-                                <h4 className="font-semibold text-foreground mb-2">Voting Options</h4>
-                                <div className="space-y-2">
-                                  {proposal.options.map((option: string, idx: number) => (
-                                    <div
-                                      key={idx}
-                                      className="flex items-center gap-3 p-3 bg-gray-900 border border-gray-700 rounded-lg"
-                                    >
-                                      <div className="w-8 h-8 flex items-center justify-center bg-accent/20 text-accent-hover rounded-full font-semibold text-sm">
-                                        {idx + 1}
-                                      </div>
-                                      <span className="text-foreground">{option}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {proposal.startDate && proposal.endDate && (
-                              <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                  <h4 className="font-semibold text-foreground mb-1">Start Date</h4>
-                                  <p className="text-gray-300">{new Date(proposal.startDate).toLocaleString()}</p>
-                                </div>
-                                <div>
-                                  <h4 className="font-semibold text-foreground mb-1">End Date</h4>
-                                  <p className="text-gray-300">{new Date(proposal.endDate).toLocaleString()}</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {activeTab === "forum" && (
-              <div className="space-y-4">
-                {FORUM_POSTS.map((post) => (
-                  <div
-                    key={post.id}
-                    className="p-4 border border-gray-700 rounded-lg hover:bg-gray-800/60 transition-colors cursor-pointer"
-                  >
-                    <h3 className="font-semibold text-lg text-foreground mb-2">{post.title}</h3>
-                    <div className="flex items-center justify-between text-sm text-gray-400">
-                      <span>{post.author}</span>
-                      <div className="flex items-center gap-4">
-                        <span className="flex items-center gap-1">
-                          <MessageSquare className="w-4 h-4" />
-                          {post.replies} replies
-                        </span>
-                        <span>{post.timestamp}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-
-      <CreateProposalModal
-        isOpen={showCreateProposal}
-        onClose={() => setShowCreateProposal(false)}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["polls", params.id] })}
-        communityId={params.id as string}
-        existingPollAddress={pollsData?.[0]?.id ?? null}
-      />
-    </div>
-  );
 }

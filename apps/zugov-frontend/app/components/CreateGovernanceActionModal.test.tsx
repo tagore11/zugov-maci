@@ -58,7 +58,6 @@ function renderWithProviders(ui: React.ReactElement) {
 async function fillCommonFields() {
   fireEvent.change(screen.getByLabelText(/Title/), { target: { value: "Fund the garden" } });
   fireEvent.change(screen.getByLabelText(/Description/), { target: { value: "Details here" } });
-  fireEvent.click(screen.getByText("Voter"));
 }
 
 beforeEach(() => {
@@ -77,7 +76,7 @@ describe("CreateGovernanceActionModal", () => {
   it("renders non-executable axis options as visible but disabled", async () => {
     renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
 
-    await waitFor(() => expect(screen.getByText("Voter")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Every voting-capable tier/)).toBeInTheDocument());
 
     const publicRadio = screen.getByText("Public").closest("div")!.parentElement!.querySelector("input")!;
     expect(publicRadio).toBeDisabled();
@@ -90,15 +89,30 @@ describe("CreateGovernanceActionModal", () => {
     const weightedOption = screen.getByRole("option", { name: /Weighted/ }) as HTMLOptionElement;
     expect(weightedOption.disabled).toBe(true);
 
-    // only voting-capable tiers are offered as eligible
+    // only voting-capable tiers are mentioned as eligible
     expect(screen.queryByText("Guest")).not.toBeInTheDocument();
+  });
+
+  it("auto-derives eligibleTierIds from every voting-capable tier, without a manual picker (specs/010 US7, FR-014)", async () => {
+    createDraftMock.mockResolvedValue({ governanceAction: {} });
+    renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
+
+    await waitFor(() => expect(screen.getByText("Voter", { exact: false })).toBeInTheDocument());
+    // No checkbox/tier picker exists — only voting-tier data appears as read-only explanatory text.
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+
+    await fillCommonFields();
+    fireEvent.click(screen.getByText("Create Draft"));
+
+    await waitFor(() => expect(createDraftMock).toHaveBeenCalled());
+    expect(createDraftMock).toHaveBeenCalledWith("0xabc", expect.objectContaining({ eligibleTierIds: ["tier-voter"] }));
   });
 
   it("surfaces a 403 rejection instead of silently succeeding", async () => {
     createDraftMock.mockRejectedValue(new Error("Not authorized to create governance actions"));
     renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
 
-    await waitFor(() => expect(screen.getByText("Voter")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/Every voting-capable tier/)).toBeInTheDocument());
 
     await fillCommonFields();
     fireEvent.click(screen.getByText("Create Draft"));

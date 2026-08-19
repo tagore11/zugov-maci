@@ -9,6 +9,8 @@ const EVENT_KIND = z.enum(["talk", "workshop", "social", "meeting", "other"]);
 
 // venueId/locationText: exactly one, enforced here (2026-08-19 review, A3) — not a DB
 // constraint. endAt must be after startAt (2026-08-19 review, T1 validation-edges finding).
+// startAt must be in the future (specs/010 US3, FR-009) — a past start date is confusing to
+// attendees and signals a broken product.
 const createEventSchema = z
   .object({
     title: z.string().min(1).max(120),
@@ -22,7 +24,8 @@ const createEventSchema = z
   .refine((data) => !!data.venueId !== !!data.locationText, {
     message: "Provide exactly one of venueId or locationText",
   })
-  .refine((data) => data.endAt > data.startAt, { message: "endAt must be after startAt" });
+  .refine((data) => data.endAt > data.startAt, { message: "endAt must be after startAt" })
+  .refine((data) => data.startAt > Math.floor(Date.now() / 1000), { message: "startAt must be in the future" });
 
 const updateEventSchema = z
   .object({
@@ -40,6 +43,10 @@ const updateEventSchema = z
   .refine((data) => data.startAt === undefined || data.endAt === undefined || data.endAt > data.startAt, {
     message: "endAt must be after startAt",
   });
+// No startAt-in-future check here (unlike createEventSchema): the edit modal always resends the
+// event's existing startAt on every PATCH, including edits to already-past events (e.g. fixing a
+// typo in a concluded event's title) — enforcing it here would break legitimate edits. FR-009's
+// actual bug report is about *creating* events in the past, not editing them.
 
 const duplicateEventSchema = z.object({
   count: z.number().int().min(1).max(52),

@@ -75,10 +75,17 @@ export class DraftPathDisabledError extends Error {
   }
 }
 
-type ViewableGovernanceAction = Omit<GovernanceAction, "eligibleTierIds"> & { eligibleTierIds: string[] };
+type ViewableGovernanceAction = Omit<GovernanceAction, "eligibleTierIds" | "options"> & {
+  eligibleTierIds: string[];
+  options: string[] | null;
+};
 
 function deserialize(row: GovernanceAction): ViewableGovernanceAction {
-  return { ...row, eligibleTierIds: JSON.parse(row.eligibleTierIds) as string[] };
+  return {
+    ...row,
+    eligibleTierIds: JSON.parse(row.eligibleTierIds) as string[],
+    options: row.options ? (JSON.parse(row.options) as string[]) : null,
+  };
 }
 
 async function getSponsorCount(governanceActionId: string): Promise<number> {
@@ -303,7 +310,14 @@ export async function authorizeFormalize(communityId: string, actionId: string):
 export async function confirmFormalize(
   communityId: string,
   actionId: string,
-  result: { pollAddress: string; pollId: string; txHash: string; pollStartDate: number; pollEndDate: number },
+  result: {
+    pollAddress: string;
+    pollId: string;
+    txHash: string;
+    pollStartDate: number;
+    pollEndDate: number;
+    options?: string[];
+  },
 ): Promise<ViewableGovernanceAction> {
   await assertReadyToFormalize(communityId, actionId);
 
@@ -319,6 +333,7 @@ export async function confirmFormalize(
       pollEndDate: result.pollEndDate,
       eligibleTierIds: JSON.stringify(eligibleTierIds),
       formalizedAt: now,
+      ...(result.options ? { options: JSON.stringify(result.options) } : {}),
     })
     .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
     .returning();
@@ -347,6 +362,7 @@ export async function confirmDirect(
     txHash: string;
     pollStartDate: number;
     pollEndDate: number;
+    options?: string[];
   },
 ): Promise<ViewableGovernanceAction> {
   if (!(await getDirectDeploymentEnabled(communityId))) {
@@ -376,6 +392,7 @@ export async function confirmDirect(
       pollId: body.pollId,
       pollStartDate: body.pollStartDate,
       pollEndDate: body.pollEndDate,
+      options: body.options ? JSON.stringify(body.options) : null,
       createdAt: now,
       formalizedAt: now,
     })
@@ -388,6 +405,7 @@ export type VoteEligibilityReason =
   | "tier_lacks_voting_rights"
   | "tier_not_eligible_for_action"
   | "not_formalized"
+  | "poll_not_started"
   | "poll_closed";
 
 export async function checkVoteEligibility(
@@ -399,6 +417,9 @@ export async function checkVoteEligibility(
   if (action.status !== "formalized") return { eligible: false, reason: "not_formalized" };
 
   const now = Math.floor(Date.now() / 1000);
+  if (action.pollStartDate !== null && now < action.pollStartDate) {
+    return { eligible: false, reason: "poll_not_started" };
+  }
   if (action.pollEndDate !== null && now >= action.pollEndDate) {
     return { eligible: false, reason: "poll_closed" };
   }

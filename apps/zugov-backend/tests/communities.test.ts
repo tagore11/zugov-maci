@@ -694,6 +694,50 @@ describe("GET /api/communities/:id/children", () => {
   });
 });
 
+describe("category (specs/010 US5, FR-011/FR-012)", () => {
+  it("round-trips a valid category through creation and GET", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { res, community } = await registerIdentity(cookie, { category: "network_state" });
+    expect(res.status).toBe(201);
+
+    const getRes = await app.request(`/api/communities/${community.id}`);
+    const { community: fetched } = (await getRes.json()) as { community: { category: string | null } };
+    expect(fetched.category).toBe("network_state");
+  });
+
+  it("defaults to null when no category is provided", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const getRes = await app.request(`/api/communities/${community.id}`);
+    const { community: fetched } = (await getRes.json()) as { community: { category: string | null } };
+    expect(fetched.category).toBeNull();
+  });
+
+  it("returns 422 for an invalid category value", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const res = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...IDENTITY_BODY, source: "wizard", category: "not-a-real-category" }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("round-trips a category update via PATCH", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie, { category: "social" });
+
+    const patchRes = await app.request(`/api/communities/${community.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ category: "regional" }),
+    });
+    expect(patchRes.status).toBe(200);
+    const { community: updated } = (await patchRes.json()) as { community: { category: string | null } };
+    expect(updated.category).toBe("regional");
+  });
+});
+
 describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1, FR-001/FR-002)", () => {
   const NON_ADMIN = privateKeyToAccount(`0x${"88".repeat(32)}`);
 

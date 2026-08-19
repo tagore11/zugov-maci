@@ -91,8 +91,12 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   if (!isOpen) return null;
 
   const hasEndAfterStart = !startAt || !endAt || new Date(endAt).getTime() > new Date(startAt).getTime();
+  // Only enforced on create — editing an already-past event (e.g. fixing a typo in a concluded
+  // event's title) must stay possible, matching updateEventSchema's own scope on the backend.
+  const hasFutureStart = isEdit || !startAt || new Date(startAt).getTime() > Date.now();
   const hasLocation = locationMode === "venue" ? !!venueId : locationText.trim().length > 0;
-  const canSubmit = title.trim().length > 0 && !!startAt && !!endAt && hasEndAfterStart && hasLocation;
+  const canSubmit =
+    title.trim().length > 0 && !!startAt && !!endAt && hasEndAfterStart && hasFutureStart && hasLocation;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,6 +235,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             </div>
           </div>
           {!hasEndAfterStart && <p className="text-xs text-error">End time must be after the start time.</p>}
+          {!hasFutureStart && <p className="text-xs text-error">Start time must be in the future.</p>}
 
           <div>
             <span className="block text-sm font-semibold text-foreground mb-2">Location *</span>

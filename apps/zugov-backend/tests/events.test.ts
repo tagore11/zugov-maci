@@ -193,6 +193,14 @@ describe("POST /api/communities/:id/events", () => {
     expect(res.status).toBe(422);
   });
 
+  it("returns 422 when startAt is in the past (specs/010 US3, FR-009)", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+
+    const { res } = await createEvent(cookie, communityId, { startAt: NOW - DAY, endAt: NOW - DAY + 3600 });
+    expect(res.status).toBe(422);
+  });
+
   it("returns 422 when venueId references a venue from a different community", async () => {
     const cookie = await authCookieFor(CREATOR);
     const communityId = await registerCommunity(cookie);
@@ -302,6 +310,24 @@ describe("PATCH /api/communities/:id/events/:eventId", () => {
       body: JSON.stringify({ title: "Should Fail" }),
     });
     expect(res.status).toBe(403);
+  });
+
+  it("allows editing a now-past event's title (regression: updateEventSchema has no startAt-in-future check)", async () => {
+    // specs/010 US3: createEventSchema rejects a past startAt, but updateEventSchema deliberately
+    // does not — the edit modal always resends the event's existing startAt on every PATCH, so
+    // enforcing it here would break legitimate edits to events that have since concluded.
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event } = await createEvent(cookie, communityId, { startAt: NOW + 60, endAt: NOW + 3660 });
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      // A past startAt in the patch body — same shape the edit modal sends once real time has
+      // passed the event's original (once-future) start date.
+      body: JSON.stringify({ title: "Retitled After the Fact", startAt: NOW - DAY, endAt: NOW - DAY + 3600 }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("returns 409 when editing a cancelled event", async () => {

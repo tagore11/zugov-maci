@@ -364,6 +364,37 @@ describe("POST /api/communities/:id/governance-actions/:actionId/formalize/confi
     expect(body.governanceAction.status).toBe("formalized");
     expect(body.governanceAction.pollAddress).toBe("0xPoll");
   });
+
+  it("persists the poll's option labels (specs/010 US1, FR-001/FR-002)", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    const { governanceAction } = (await createRes.json()) as { governanceAction: { id: string } };
+
+    const res = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          pollAddress: "0xPoll",
+          pollId: "0",
+          txHash: "0xTx",
+          pollStartDate: 1000,
+          pollEndDate: 2000,
+          options: ["Fund the greenhouse", "Fund the library"],
+        }),
+      },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { governanceAction: { options: string[] | null } };
+    expect(body.governanceAction.options).toEqual(["Fund the greenhouse", "Fund the library"]);
+  });
 });
 
 describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility (US3, FR-010/FR-011)", () => {
@@ -500,6 +531,39 @@ describe("GET /api/communities/:id/governance-actions/:actionId/vote-eligibility
     expect(body.reason).toBe("poll_closed");
   });
 
+  it("returns poll_not_started before the poll's start date", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/governance-actions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Creator"]] }),
+    });
+    const { governanceAction } = (await createRes.json()) as { governanceAction: { id: string } };
+
+    await app.request(`/api/communities/${communityId}/governance-actions/${governanceAction.id}/formalize/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: Math.floor(Date.now() / 1000) + 3600,
+        pollEndDate: Math.floor(Date.now() / 1000) + 7200,
+      }),
+    });
+
+    const res = await app.request(
+      `/api/communities/${communityId}/governance-actions/${governanceAction.id}/vote-eligibility`,
+      { headers: { Cookie: creatorCookie } },
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { eligible: boolean; reason?: string };
+    expect(body.eligible).toBe(false);
+    expect(body.reason).toBe("poll_not_started");
+  });
+
   it("returns 401 without authentication", async () => {
     const res = await app.request("/api/communities/0xdead/governance-actions/0xdead/vote-eligibility");
     expect(res.status).toBe(401);
@@ -607,6 +671,30 @@ describe("POST /api/communities/:id/governance-actions/direct/confirm (specs/007
     });
     const getBody = (await getRes.json()) as { sponsorCount: number };
     expect(getBody.sponsorCount).toBe(0);
+  });
+
+  it("persists the poll's option labels (specs/010 US1, FR-001/FR-002)", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/governance-actions/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+        options: ["Yes", "No"],
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { governanceAction } = (await confirmRes.json()) as { governanceAction: { options: string[] | null } };
+    expect(governanceAction.options).toEqual(["Yes", "No"]);
   });
 
   it("returns 403 and leaves no record when directDeploymentEnabled is false", async () => {

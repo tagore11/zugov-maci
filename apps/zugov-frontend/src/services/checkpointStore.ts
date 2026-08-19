@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
 import type { SignUpPolicyArgs } from "@/src/config";
+import type { CommunityCategory } from "@/src/services/communityApi";
 
 export type DeployPhase = "deploy_sign_up_policy" | "deploy_maci" | "set_target" | "save_community";
 
@@ -18,6 +19,8 @@ export interface MACIDeploymentConfig {
   // Local chapters, event teams, and contributor circles nest under a parent community
   // (Lightpaper's "communities and sub-communities" building block).
   parentCommunityId?: string;
+  // Creator-selected community type tag, independent of voting mechanism — specs/010 US5.
+  category?: CommunityCategory;
   signUpPolicy: SignUpPolicyArgs;
   allowedPolicies: number[];
   supportedModes: number[];

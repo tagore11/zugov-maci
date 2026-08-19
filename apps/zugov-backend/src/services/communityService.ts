@@ -325,6 +325,7 @@ export async function createIdentity(
     creatorAddress: data.creatorAddress,
     parentCommunityId: data.parentCommunityId ?? null,
     membershipPolicy: data.membershipPolicy,
+    category: data.category ?? null,
     tierChangesRequireVote: data.tierChangesRequireVote,
     createdAt: now,
     registeredAt: now,
@@ -428,6 +429,7 @@ export interface CommunityUpdatePatch {
   description?: string;
   logo?: string;
   membershipPolicy?: "open" | "approval";
+  category?: "residency" | "regional" | "network_state" | "social";
   tierChangesRequireVote?: boolean;
   defaultTierLabel?: string;
   cosponsorshipThreshold?: number;
@@ -448,6 +450,7 @@ export async function update(id: string, patch: CommunityUpdatePatch): Promise<C
   if (patch.description !== undefined) dbPatch.description = patch.description;
   if (patch.logo !== undefined) dbPatch.logo = patch.logo;
   if (patch.membershipPolicy !== undefined) dbPatch.membershipPolicy = patch.membershipPolicy;
+  if (patch.category !== undefined) dbPatch.category = patch.category;
   if (patch.tierChangesRequireVote !== undefined) dbPatch.tierChangesRequireVote = patch.tierChangesRequireVote;
   if (patch.cosponsorshipThreshold !== undefined) dbPatch.cosponsorshipThreshold = patch.cosponsorshipThreshold;
   if (patch.directDeploymentEnabled !== undefined) dbPatch.directDeploymentEnabled = patch.directDeploymentEnabled;

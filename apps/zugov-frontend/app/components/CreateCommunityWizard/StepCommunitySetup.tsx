@@ -7,7 +7,7 @@ import {
   type PolicyInputState,
 } from "@/app/components/PolicyArgsFields";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
-import { type SignUpPolicyType, type SignUpPolicyArgs } from "@/src/config";
+import { type SignUpPolicyType, type SignUpPolicyArgs, MECHANISM_FAMILIES } from "@/src/config";
 import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import { RESIDENT_ORGANIZER_TIERS } from "@/src/hooks/useCreateCommunity";
@@ -78,6 +78,9 @@ export function StepCommunitySetup({
   goBack,
 }: Props) {
   const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>(initialMembershipPolicy ?? "open");
+  // Only "maci" has a working backend today (research.md #8) — the other options are shown,
+  // disabled, so this is an honest selector rather than static text pretending to be one.
+  const [mechanism, setMechanism] = useState<string>("maci");
   // Pre-filled with the Resident/Organizer preset, fully editable (2026-08-19
   // community-creation-rework review, D3) — matches today's actual default so nothing changes
   // for a creator who clicks straight through, but they can now rename, adjust permissions on,
@@ -200,10 +203,23 @@ export function StepCommunitySetup({
         {advancedOpen && (
           <div className="px-4 pb-4 space-y-5 border-t border-gray-700 pt-4">
             <div>
-              <div className="text-sm font-medium text-gray-300">Voting mechanism</div>
-              <p className="text-xs text-gray-500 mt-1">
-                MACI — private, collusion-resistant voting using zero-knowledge proofs. Deploy it now or skip for now
-                and add it later from the community's settings.
+              <label className="block text-sm font-medium text-gray-300 mb-1">Voting mechanism</label>
+              <select
+                value={mechanism}
+                onChange={(e) => setMechanism(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-foreground
+                  focus:outline-none focus:ring-2 focus:ring-accent text-sm"
+              >
+                {MECHANISM_FAMILIES.map((family) => (
+                  <option key={family.value} value={family.value} disabled={!family.enabled}>
+                    {family.label}
+                    {!family.enabled ? " (coming soon)" : ""}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {MECHANISM_FAMILIES.find((f) => f.value === mechanism)?.description} Deploy it now or skip for now and
+                add it later from the community's settings.
               </p>
             </div>
 

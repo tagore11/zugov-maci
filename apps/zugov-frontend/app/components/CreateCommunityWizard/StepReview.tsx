@@ -2,11 +2,14 @@ import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import type { UseDeployGovernanceResult, DeployGovernanceConfig } from "@/src/hooks/useCreateCommunity";
+import type { CommunityCategory } from "@/src/services/communityApi";
+import { categoryLabelFor } from "@/src/lib/communityDisplay";
 
 interface Props {
   config: DeployGovernanceConfig;
   membershipDescription: string;
   roleLabels: string[];
+  category?: CommunityCategory;
   deploy: UseDeployGovernanceResult;
   goBack: () => void;
 }
@@ -23,7 +26,7 @@ const POLICY_TYPE_LABELS: Record<string, string> = {
   HatsProtocol: "Hats Protocol",
 };
 
-export function StepReview({ config, membershipDescription, roleLabels, deploy, goBack }: Props) {
+export function StepReview({ config, membershipDescription, roleLabels, category, deploy, goBack }: Props) {
   const { address } = useAccount();
   const [showTechnical, setShowTechnical] = useState(false);
 
@@ -51,6 +54,7 @@ export function StepReview({ config, membershipDescription, roleLabels, deploy, 
 
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 divide-y divide-gray-700 text-sm">
         <Row label="Community name" value={config.displayName} />
+        <Row label="Category" value={categoryLabelFor({ category: category ?? null }) || "None"} />
         <Row label="Who can join" value={membershipDescription} />
         <Row label="Roles" value={roleLabels.join(", ") || "–"} />
       </div>

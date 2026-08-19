@@ -17,6 +17,10 @@ export const formalizeConfirmBodySchema = z.object({
   txHash: z.string().min(1),
   pollStartDate: z.number().int().nonnegative(),
   pollEndDate: z.number().int().nonnegative(),
+  // The poll's option labels, collected by the deploy-poll UI and already sent on-chain as Poll
+  // metadata — persisted here too since the subgraph isn't available for every community (specs/010
+  // research.md #1). Optional so a caller that somehow omits it doesn't hard-fail the confirm step.
+  options: z.array(z.string()).min(2).optional(),
 });
 
 export type FormalizeConfirmBody = z.infer<typeof formalizeConfirmBodySchema>;
@@ -33,6 +37,7 @@ export const directConfirmBodySchema = createDraftBodySchema.extend({
   txHash: z.string().min(1),
   pollStartDate: z.number().int().nonnegative(),
   pollEndDate: z.number().int().nonnegative(),
+  options: z.array(z.string()).min(2).optional(),
 });
 
 export type DirectConfirmBody = z.infer<typeof directConfirmBodySchema>;

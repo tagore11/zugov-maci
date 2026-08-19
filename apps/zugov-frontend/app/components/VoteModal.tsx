@@ -1,8 +1,13 @@
 import { useState } from "react";
 import { X, GripVertical, CheckCircle } from "lucide-react";
 import { useAccount } from "wagmi";
+import { useQuery } from "@tanstack/react-query";
 import { useVote } from "@/src/hooks/useVote";
+import { useNow } from "@/src/hooks/useNow";
+import { useMaci } from "@/src/context/MaciContext";
 import { saveVote, getStoredVote } from "@/src/lib/voteStorage";
+import { computePollStatus } from "@/src/lib/pollStatus";
+import { fetchHasVoted } from "@/src/services/subgraph";
 import type { GovernanceType } from "@/src/config";
 import type { SubgraphPoll } from "@/src/services/subgraph";
 
@@ -10,14 +15,25 @@ interface VoteModalProps {
   poll: SubgraphPoll;
   maciAddress: string;
   rpcUrl: string;
+  subgraphUrl: string;
   governanceType: GovernanceType;
   onClose: () => void;
   onSuccess: () => void;
 }
 
-export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, onSuccess }: VoteModalProps) {
+export function VoteModal({
+  poll,
+  maciAddress,
+  rpcUrl,
+  subgraphUrl,
+  governanceType,
+  onClose,
+  onSuccess,
+}: VoteModalProps) {
   const { address } = useAccount();
   const { isVoting, voteError, castVote } = useVote(governanceType);
+  const { maciKeypair } = useMaci();
+  const now = useNow();
 
   const options = poll.options?.length
     ? poll.options
@@ -25,7 +41,18 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
 
   const isRanked = poll.mode === "3";
 
+  // Only used to restore the in-progress selection UI on reopen — NOT the "have I voted" source
+  // of truth (that's fetchHasVoted below, since this only lives in the browser that cast it).
   const storedVote = address ? getStoredVote(poll.id, address) : null;
+
+  const pollStatus = computePollStatus(poll.startDate, poll.endDate, now / 1000);
+
+  const [pubKeyX, pubKeyY] = maciKeypair?.publicKey.raw ?? [null, null];
+  const { data: hasVoted } = useQuery({
+    queryKey: ["hasVoted", poll.id, pubKeyX?.toString(), pubKeyY?.toString()],
+    queryFn: () => fetchHasVoted(subgraphUrl, governanceType, poll.id, pubKeyX!, pubKeyY!),
+    enabled: pubKeyX !== null && pubKeyY !== null,
+  });
 
   const [selectedOption, setSelectedOption] = useState<number | null>(() =>
     storedVote?.type === "simple" ? storedVote.optionIndex : null,
@@ -101,7 +128,13 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
     onSuccess();
   };
 
-  const canSubmit = isRanked ? true : selectedOption !== null;
+  const canSubmit = (isRanked ? true : selectedOption !== null) && pollStatus === "active";
+  const pollStatusMessage =
+    pollStatus === "not_started"
+      ? "Voting hasn't opened for this poll yet."
+      : pollStatus === "closed"
+        ? "Voting has closed for this poll."
+        : null;
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
@@ -114,10 +147,16 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
         </div>
 
         <div className="p-6">
-          {storedVote && (
+          {hasVoted && (
             <div className="flex items-center gap-2 text-sm text-amber-400 mb-4 p-3 bg-amber-900/20 border border-amber-700/40 rounded-lg">
               <CheckCircle className="w-4 h-4 flex-shrink-0" />
               You already cast a vote on this poll. You can recast it below.
+            </div>
+          )}
+
+          {pollStatusMessage && (
+            <div className="text-sm text-gray-400 mb-4 p-3 bg-gray-800/60 border border-gray-700 rounded-lg">
+              {pollStatusMessage}
             </div>
           )}
 
@@ -197,7 +236,7 @@ export function VoteModal({ poll, maciAddress, rpcUrl, governanceType, onClose, 
               disabled={!canSubmit || isVoting}
               className="flex-1 px-4 py-2 bg-accent text-white rounded-lg font-medium hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isVoting ? "Submitting..." : storedVote ? "Recast Vote" : "Cast Vote"}
+              {isVoting ? "Submitting..." : hasVoted ? "Recast Vote" : "Cast Vote"}
             </button>
           </div>
         </div>
