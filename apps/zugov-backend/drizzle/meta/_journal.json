@@ -120,6 +120,13 @@
       "when": 1787130540708,
       "tag": "0016_silly_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1787141808601,
+      "tag": "0017_aspiring_lionheart",
+      "breakpoints": true
     }
   ]
 }

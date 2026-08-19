@@ -164,6 +164,12 @@ export const membershipTiers = pgTable("membership_tiers", {
   // (matched to how pop-up-city events actually work — see review's sola.day research) is the
   // out-of-the-box behavior; a community can restrict it per-tier without a migration.
   canCreateEvents: boolean("can_create_events").notNull().default(true),
+  // Eligibility-adapters review (2026-08-19): breaks ties when a wallet's holdings satisfy
+  // multiple eligibilityRules groups at once (e.g. an ERC20 balance clearing both a "Resident"
+  // and a higher "OG" threshold) — the group targeting the highest-rank tier wins, regardless
+  // of group order in the ruleset. Default 0 for every existing tier; only meaningful once a
+  // community actually defines tier-targeting eligibility rules.
+  rank: integer("rank").notNull().default(0),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -189,6 +195,12 @@ export const joinRequests = pgTable("join_requests", {
   communityId: text("community_id").notNull(),
   walletAddress: text("wallet_address").notNull(),
   status: text("status").$type<"pending" | "approved" | "rejected">().notNull(),
+  // Eligibility-adapters review (2026-08-19), outside-voice finding D7: the wallet's eligibility
+  // (and resolved tier) is evaluated once, at submission time — not re-evaluated at approval
+  // time, matching how the instant-join path already treats eligibility as a submission-time
+  // gate. Nullable: requests submitted before this column existed, or a defensive fallback to
+  // defaultTierId if something upstream failed to set it.
+  tierId: text("tier_id"),
   createdAt: integer("created_at").notNull(),
   resolvedAt: integer("resolved_at"),
 });
@@ -352,3 +364,54 @@ export const eventRsvps = pgTable(
 
 export type EventRsvp = typeof eventRsvps.$inferSelect;
 export type NewEventRsvp = typeof eventRsvps.$inferInsert;
+
+// Eligibility adapters (2026-08-19 /plan-eng-review) — identity/structural layer, anchored to
+// communities.id, never governance-gated (same reasoning as venues/events: "who can join this
+// community" is independent of whether/which governance tool is configured). One ruleset per
+// community; absence of a row means "Open" (always eligible) — identical to every existing
+// community's real current behavior, so no migration/backfill was needed to introduce this.
+// ON DELETE CASCADE: a ruleset with no community behind it is meaningless.
+export const eligibilityRulesets = pgTable("eligibility_rulesets", {
+  id: text("id").primaryKey(),
+  communityId: text("community_id")
+    .notNull()
+    .unique()
+    .references(() => communities.id, { onDelete: "cascade" }),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+export type EligibilityRuleset = typeof eligibilityRulesets.$inferSelect;
+export type NewEligibilityRuleset = typeof eligibilityRulesets.$inferInsert;
+
+// Composition is Disjunctive Normal Form (DNF): rules sharing the same groupIndex are AND-ed
+// together; distinct groupIndex values are OR-ed. A wallet is eligible if ANY group's rules all
+// pass. Deliberately flat (no separate groups table, no recursive tree) — covers every
+// realistic eligibility scenario without a recursive data model or evaluator; a full nested
+// AND/OR/NOT tree is explicitly out of scope for this pass (see TODOS.md).
+//
+// targetTierId: which membership tier a wallet is granted if THIS GROUP is the one that ends up
+// winning (see membershipTiers.rank for how ties between multiple passing groups resolve).
+// Nullable — a group with no target tier just gates access without tier-assignment (falls back
+// to the community's defaultTierId). No ON DELETE behavior set (defaults to Postgres's
+// NO ACTION): membershipService.deleteTier's existing TierInUseError guard is extended to block
+// deleting a tier that's any rule's targetTierId, so this FK should never actually be hit by a
+// real delete attempt — it exists as a defense-in-depth backstop, not the primary guard.
+//
+// config: JSON-stringified, shape depends on `mechanism` (matches every other JSON-as-text
+// column in this file — allowedPolicies, eligibleTierIds, options, tallyResult — not jsonb).
+// ON DELETE CASCADE on rulesetId: a rule with no ruleset behind it is meaningless.
+export const eligibilityRules = pgTable("eligibility_rules", {
+  id: text("id").primaryKey(),
+  rulesetId: text("ruleset_id")
+    .notNull()
+    .references(() => eligibilityRulesets.id, { onDelete: "cascade" }),
+  groupIndex: integer("group_index").notNull(),
+  mechanism: text("mechanism").$type<"open" | "tier" | "erc20_token">().notNull(),
+  config: text("config").notNull(),
+  targetTierId: text("target_tier_id").references(() => membershipTiers.id),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type EligibilityRule = typeof eligibilityRules.$inferSelect;
+export type NewEligibilityRule = typeof eligibilityRules.$inferInsert;

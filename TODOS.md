@@ -1,5 +1,67 @@
 # TODOS
 
+## ZuGov / Eligibility adapters follow-ups (from 2026-08-19 `/plan-eng-review`)
+
+### 8 deferred eligibility adapters (MerkleProof, EAS, GitcoinPassport, Zupass, Semaphore, AnonAadhaar, HatsProtocol, ERC20Votes)
+
+**What:** The eligibility-adapters system shipped with exactly 3 adapters (Open, Tier, ERC20Token — chosen to prove off-chain/on-chain/hybrid-via-composition, not driven by current Sepolia deployment status). The other 8 MACI policy types each get their own adapter, one mechanism-registry entry + one Zod config schema branch each — additive once the core pattern exists, no changes needed to the evaluator itself.
+
+**Why:** Full breadth wasn't needed to lock the core abstraction (adapter interface, DNF composition, rank-based tier resolution, enforcement call site) — each remaining adapter is small, isolated work once that foundation exists.
+
+**Effort:** S each (one adapter + one schema branch)
+**Priority:** P2
+**Depends on:** Eligibility adapters core (done, 2026-08-19)
+
+### Frontend eligibility-ruleset builder UI (creation-time + post-creation)
+
+**What:** Backend ships `POST`/`GET /communities/:id/eligibility-ruleset` with zero resident-facing value until a UI exists — a creator needs to compose AND/OR groups, pick mechanisms, set per-group tier targets, at community creation OR later from the edit page. Same sequencing shape as the Events feature's own frontend follow-up.
+
+**Why:** Dead API surface with no UI is worse than no API at all — flagged explicitly rather than left implicit.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Eligibility adapters core (done, 2026-08-19)
+
+### Proof-based mechanism re-verification UX (Zupass/Semaphore/AnonAadhaar)
+
+**What:** These mechanisms can't be silently re-checked by the system — eligibility requires the user to actively submit a fresh proof, unlike a token-balance check the system can re-verify passively at any time. Needs a real answer once these adapters ship: grace period? re-prove-on-next-visit prompt? something else?
+
+**Why:** Flagged explicitly during the 2026-08-19 review as a genuinely different enforcement model from the 3 adapters that shipped — the adapter interface is shaped so it won't need to change later, but the actual UX is real, deferred work.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** At least one proof-based adapter (above) shipping first
+
+### Existing-member re-check sweep after a ruleset change
+
+**What:** Today, a ruleset edit grandfathers every existing member indefinitely (2026-08-19 review, D3 — no resident should lose access from an admin's config edit they never saw happen). A later, explicit re-check mechanism (admin-triggered, or a scheduled sweep) that can flag members who'd now fail the current ruleset is real, deliberately deferred work.
+
+**Why:** D3's grandfather behavior is permanent by default unless this lands — worth tracking so it doesn't quietly become "no admin can ever tighten eligibility and have it mean anything for existing members."
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Eligibility adapters core (done, 2026-08-19)
+
+### Flash-loan/flash-mint gaming risk on balance-snapshot adapters (ERC20Token, later ERC20Votes)
+
+**What:** A point-in-time `balanceOf()` read (or, later, `ERC20Votes` snapshot) can be gamed with a flash loan/flash mint executed immediately before the eligibility check, then reversed. More consequential here than a one-time vote-weight snapshot elsewhere in the app, since this determines actual membership/tier grant, not just a single vote's weight.
+
+**Why:** Caught during the 2026-08-19 eligibility-adapters review's outside-voice pass — accepted as a documented, not-solved risk for the initial pass (proper on-chain infrastructure hardening happens before public launch per the founder's own framing), but needs a real mitigation (minimum holding duration, block-delay, or a snapshot-based read) before any high-stakes production use.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
+### Tier-adapter self-reference/cycle documentation
+
+**What:** A group requiring "already holds Tier X" to unlock Tier X itself (or a two-group cycle) isn't detected anywhere today — it's a config-time footgun, not a crash (a self-referential rule is simply always false, fails closed). Worth real creator-facing documentation once the ruleset-builder UI exists.
+
+**Why:** Flagged during the 2026-08-19 review's outside-voice pass; not blocking since it fails safely, but a creator hitting it with no explanation is a real, avoidable confusion.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Frontend eligibility-ruleset builder UI (above)
+
 ## ZuGov / Union communities follow-ups (from 2026-08-18 eng review)
 
 ### Events (one-time/recurring) as a first-class concept — backend implementation

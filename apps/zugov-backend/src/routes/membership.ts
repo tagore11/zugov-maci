@@ -8,6 +8,7 @@ import {
   TierInUseError,
   DuplicateJoinError,
   RequestNotFoundError,
+  NotEligibleError,
 } from "../services/membershipService.js";
 
 export const membershipRouter = new Hono();
@@ -105,6 +106,9 @@ membershipRouter.post("/:id/join", requireAuth, async (c) => {
   } catch (err) {
     if (err instanceof DuplicateJoinError) {
       return c.json({ error: err.message }, 409);
+    }
+    if (err instanceof NotEligibleError) {
+      return c.json({ error: err.message }, 403);
     }
     throw err;
   }

@@ -246,3 +246,187 @@ describe("GET /api/communities/:id/join-requests", () => {
     expect(res.status).toBe(403);
   });
 });
+
+// Eligibility-adapters review (2026-08-19) coverage.
+describe("POST /:id/join — eligibility gating", () => {
+  it("regression: with no eligibility ruleset configured (D4), the joiner lands in the community's default tier — same as before this feature existed", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const joinerAccount = privateKeyToAccount(`0x${"aa".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; tierLabel?: string };
+    expect(body.status).toBe("approved");
+    expect(body.tierLabel).toBe("Regular");
+  });
+
+  it("returns 403 with the adapter's reason when the wallet fails the community's eligibility ruleset", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const setRulesetRes = await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: community.defaultTierId } }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const joinerAccount = privateKeyToAccount(`0x${"bb".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/not yet a member/i);
+  });
+
+  it("an eligible wallet resolving to a non-default tier lands in that tier on the instant-join (open policy) path", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const vipTierRes = await app.request(`/api/communities/${community.id}/tiers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DEFAULT_TIER, label: "VIP" }),
+    });
+    const vipTier = ((await vipTierRes.json()) as { tier: { id: string } }).tier;
+
+    const setRulesetRes = await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "open", config: {}, targetTierId: vipTier.id }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const joinerAccount = privateKeyToAccount(`0x${"cc".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; tierLabel?: string };
+    expect(body.tierLabel).toBe("VIP");
+  });
+
+  it("an eligible wallet resolving to a non-default tier lands in that tier on the pending-then-approve (approval policy) path (D7)", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie, { membershipPolicy: "approval" });
+
+    const vipTierRes = await app.request(`/api/communities/${community.id}/tiers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DEFAULT_TIER, label: "VIP" }),
+    });
+    const vipTier = ((await vipTierRes.json()) as { tier: { id: string } }).tier;
+
+    const setRulesetRes = await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "open", config: {}, targetTierId: vipTier.id }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const joinerAccount = privateKeyToAccount(`0x${"dd".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(joinRes.status).toBe(200);
+    const joinBody = (await joinRes.json()) as { status: string };
+    expect(joinBody.status).toBe("pending");
+
+    const listRes = await app.request(`/api/communities/${community.id}/join-requests`, {
+      headers: { Cookie: cookie },
+    });
+    const { requests } = (await listRes.json()) as { requests: { id: string; walletAddress: string }[] };
+    const request = requests.find((r) => r.walletAddress.toLowerCase() === joinerAccount.address.toLowerCase());
+    expect(request).toBeTruthy();
+
+    const approveRes = await app.request(`/api/communities/${community.id}/join-requests/${request!.id}/approve`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+    expect(approveRes.status).toBe(200);
+
+    const membershipRes = await app.request(`/api/communities/${community.id}/membership`, {
+      headers: { Cookie: joinerCookie },
+    });
+    const membershipBody = (await membershipRes.json()) as { status: string; tierLabel?: string };
+    expect(membershipBody.status).toBe("member");
+    expect(membershipBody.tierLabel).toBe("VIP");
+  });
+
+  it("membershipPolicy: approval still runs eligibility BEFORE creating the pending request (D2 ordering) — an ineligible wallet gets 403, not a pending request", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie, { membershipPolicy: "approval" });
+
+    const setRulesetRes = await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: community.defaultTierId } }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const joinerAccount = privateKeyToAccount(`0x${"ee".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(403);
+
+    const listRes = await app.request(`/api/communities/${community.id}/join-requests`, {
+      headers: { Cookie: cookie },
+    });
+    const { requests } = (await listRes.json()) as { requests: unknown[] };
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("DELETE /:id/tiers/:tierId — eligibility rule guard (D8)", () => {
+  it("returns 409 when the tier is targeted by an eligibility rule", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const targetTierRes = await app.request(`/api/communities/${community.id}/tiers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DEFAULT_TIER, label: "Targeted" }),
+    });
+    const targetTier = ((await targetTierRes.json()) as { tier: { id: string } }).tier;
+
+    const setRulesetRes = await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "open", config: {}, targetTierId: targetTier.id }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const deleteRes = await app.request(`/api/communities/${community.id}/tiers/${targetTier.id}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(deleteRes.status).toBe(409);
+    const body = (await deleteRes.json()) as { error: string };
+    expect(body.error).toMatch(/targeted by an eligibility rule/i);
+  });
+});
