@@ -86,7 +86,6 @@ export function CreateGovernanceActionModal({
   const [tallyMechanism, setTallyMechanism] = useState<GovernanceActionTallyMechanism>(
     allowedTallyOptions[0]?.value ?? "simple",
   );
-  const [eligibleTierIds, setEligibleTierIds] = useState<string[]>([]);
   const [eligibilityPolicyType, setEligibilityPolicyType] = useState<SignUpPolicyType>(
     allowedPolicyTypes[0] ?? "FreeForAll",
   );
@@ -100,10 +99,6 @@ export function CreateGovernanceActionModal({
 
   if (!isOpen) return null;
 
-  const toggleTier = (tierId: string) => {
-    setEligibleTierIds((prev) => (prev.includes(tierId) ? prev.filter((id) => id !== tierId) : [...prev, tierId]));
-  };
-
   const newPolicyArgs = buildPolicyArgs(eligibilityPolicyType, newPolicyInputs);
   const eligibilityPolicyReady = !directDeploymentEnabled || newPolicyArgs !== null;
 
@@ -114,7 +109,6 @@ export function CreateGovernanceActionModal({
   const resetForm = () => {
     setTitle("");
     setDescription("");
-    setEligibleTierIds([]);
     setEligibilityPolicyType(allowedPolicyTypes[0] ?? "FreeForAll");
     setNewPolicyInputs(DEFAULT_POLICY_INPUTS);
     setStartDate("");
@@ -126,8 +120,8 @@ export function CreateGovernanceActionModal({
     e.preventDefault();
     setError(null);
 
-    if (!directDeploymentEnabled && eligibleTierIds.length === 0) {
-      setError("Select at least one eligible tier.");
+    if (!directDeploymentEnabled && votingTiers.length === 0) {
+      setError("This community has no voting-capable tiers yet.");
       return;
     }
 
@@ -180,15 +174,20 @@ export function CreateGovernanceActionModal({
           txHash,
           pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
           pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+          options: options.filter((o) => o.trim() !== ""),
         });
       } else {
+        // Mirrors the direct-deploy branch above (specs/010 research.md #11): this poll's real
+        // eligibility gate is the on-chain policy chosen later, at deploy time (DeployPollPrompt)
+        // — not chosen yet here — so every voting-capable tier is recorded automatically rather
+        // than asking the user to guess eligibility before that policy exists.
         await governanceActionApi.createDraft(communityId, {
           title,
           description,
           privacy,
           executionLocation,
           tallyMechanism,
-          eligibleTierIds,
+          eligibleTierIds: votingTiers.map((t) => t.id),
         });
       }
       resetForm();
@@ -323,26 +322,11 @@ export function CreateGovernanceActionModal({
 
             {!directDeploymentEnabled && (
               <div>
-                <label className="block text-sm font-semibold text-foreground mb-3">Eligible Tiers *</label>
-                <div className="space-y-2">
-                  {votingTiers.length === 0 && (
-                    <p className="text-sm text-gray-500">No voting-capable tiers exist in this community yet.</p>
-                  )}
-                  {votingTiers.map((tier) => (
-                    <label
-                      key={tier.id}
-                      className="flex items-center gap-3 p-3 border border-gray-700 rounded-lg cursor-pointer hover:bg-gray-800/60"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={eligibleTierIds.includes(tier.id)}
-                        onChange={() => toggleTier(tier.id)}
-                        className="w-5 h-5 rounded text-accent"
-                      />
-                      <span className="text-foreground">{tier.label}</span>
-                    </label>
-                  ))}
-                </div>
+                <p className="text-sm text-gray-400">
+                  Every voting-capable tier ({votingTiers.map((t) => t.label).join(", ") || "none yet"}) will be able to
+                  vote once this poll is deployed — the actual eligibility gate is the on-chain policy chosen at deploy
+                  time.
+                </p>
               </div>
             )}
 

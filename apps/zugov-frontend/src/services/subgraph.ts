@@ -56,6 +56,13 @@ const QUERIES = {
       }
     }
   `,
+  GET_HAS_VOTED: `
+    query GetHasVoted($pollId: Bytes!, $publicKey: [BigInt!]!) {
+      votes(where: { poll: $pollId, publicKey: $publicKey }, first: 1) {
+        id
+      }
+    }
+  `,
 };
 
 /** Numeric string matching the on-chain Mode enum: QV=0, NON_QV=1, FULL=2, RANKED=3 */
@@ -175,4 +182,27 @@ export async function fetchIsJoinedPoll(
   }
 
   throw new Error(`fetchIsJoinedPoll: unsupported governance type "${governanceType}"`);
+}
+
+/**
+ * Checks whether a member has already voted on a poll, by looking for a `Vote` matching their
+ * registered MACI public key — never reads `Vote.data` (the encrypted message), only existence,
+ * so vote content stays opaque (Constitution Principle III).
+ */
+export async function fetchHasVoted(
+  url: string,
+  governanceType: GovernanceType,
+  pollId: string,
+  pubKeyX: bigint,
+  pubKeyY: bigint,
+): Promise<boolean> {
+  if (governanceType === GovernanceTypes.MACI) {
+    const data = await querySubgraph<{ votes: { id: string }[] }>(url, QUERIES.GET_HAS_VOTED, {
+      pollId,
+      publicKey: [pubKeyX.toString(), pubKeyY.toString()],
+    });
+    return data.votes.length > 0;
+  }
+
+  throw new Error(`fetchHasVoted: unsupported governance type "${governanceType}"`);
 }

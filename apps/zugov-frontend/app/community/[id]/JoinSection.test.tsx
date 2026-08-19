@@ -104,6 +104,18 @@ describe("JoinSection", () => {
     expect(getStateIndexMock).toHaveBeenCalledWith("hash123");
   });
 
+  it("renders the member's role/tier label alongside the signed-up status (specs/010 US2, FR-008)", async () => {
+    maciKeypairMock = { publicKey: { hash: () => "hash123" } };
+    getStateIndexMock.mockResolvedValue(1n);
+    getMembershipStatusMock.mockResolvedValue({ status: "member", tierLabel: "Admin" });
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+  });
+
   it("shows a Join button when the on-chain state index is 0 (not yet registered)", async () => {
     maciKeypairMock = { publicKey: { hash: () => "hash123" } };
     getStateIndexMock.mockResolvedValue(0n);

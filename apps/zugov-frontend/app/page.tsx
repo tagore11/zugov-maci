@@ -5,49 +5,21 @@ import { Search, TrendingUp, Users, FileText } from "lucide-react";
 import { Link } from "react-router-dom";
 import { AuthModal } from "./components/AuthModal";
 import { CreateCommunityModal } from "./components/CreateCommunityModal";
-import { EXAMPLE_COMMUNITIES } from "@/app/lib/placeholder-data";
 import type { GovernanceType } from "@/src/config";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import * as communityApi from "@/src/services/communityApi";
+import { communityToItem, unionToItem, type DiscoveryItem } from "@/src/lib/communityDisplay";
 
-type CommunityItem = {
-  id: string;
-  name: string;
-  description: string;
-  logo: string;
-  members: number;
-  proposals: number;
-  category: string;
-  createdAt?: number;
-  signUpPolicyType?: string | null;
-  subgraphStatus?: communityApi.Community["subgraphStatus"];
-  governanceType?: string;
-};
+type CommunityItem = DiscoveryItem;
 
 const ONE_HOUR_SEC = 3600;
-
-function apiToItem(c: communityApi.Community): CommunityItem {
-  return {
-    id: c.id,
-    name: c.displayName,
-    description: c.description ?? "",
-    logo: c.logo ?? "🏛️",
-    members: 0,
-    proposals: 0,
-    category: "MACI",
-    createdAt: c.createdAt,
-    signUpPolicyType: c.signUpPolicyType,
-    subgraphStatus: c.subgraphStatus,
-    governanceType: c.governanceType ?? undefined,
-  };
-}
 
 export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [communities, setCommunities] = useState<CommunityItem[]>([...EXAMPLE_COMMUNITIES]);
+  const [communities, setCommunities] = useState<CommunityItem[]>([]);
   const [filteredCommunities, setFilteredCommunities] = useState<CommunityItem[]>(communities);
   const [hasMore, setHasMore] = useState(false);
   const [isLoadingCommunities, setIsLoadingCommunities] = useState(true);
@@ -82,9 +54,17 @@ export default function Home() {
     setIsLoadingCommunities(true);
     try {
       const { communities: items, hasMore: more } = await communityApi.list(page);
-      const converted = items.map(apiToItem);
+      const converted = items.map(communityToItem);
       if (reset) {
-        setCommunities([...EXAMPLE_COMMUNITIES, ...converted]);
+        // Unions are communities too (ENGINEERING.md's structural-participation decision) — merge
+        // them into the same discovery list instead of leaving them only on the separate /unions
+        // page. Fetched once on reset (page 1 only); unions are typically far fewer than
+        // communities, so a separate paginated merge isn't warranted yet.
+        const unionItems = await communityApi
+          .listAllUnions(1)
+          .then(({ unions }) => unions.map(unionToItem))
+          .catch(() => []);
+        setCommunities([...converted, ...unionItems]);
       } else {
         setCommunities((prev) => [...prev, ...converted]);
       }
@@ -251,7 +231,7 @@ export default function Home() {
               return (
                 <Link
                   key={community.id}
-                  to={`/community/${community.id}`}
+                  to={community.isUnion ? `/unions/${community.id}` : `/community/${community.id}`}
                   className="bg-gray-900 rounded-lg border border-gray-700 p-6 hover:border-accent transition-colors"
                 >
                   <div className="flex items-start gap-4 mb-4">
@@ -266,12 +246,27 @@ export default function Home() {
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="inline-block px-2 py-1 text-xs font-medium text-accent-hover border border-accent/40 rounded-[8px]">
-                          {community.category}
-                        </span>
-                        <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-800 text-gray-400 rounded-[8px]">
-                          {community.signUpPolicyType ?? "Unknown sign-up policy"}
-                        </span>
+                        {community.isUnion ? (
+                          <span className="inline-block px-2 py-1 text-xs font-medium text-accent-hover border border-accent/40 rounded-[8px]">
+                            Union
+                          </span>
+                        ) : (
+                          <>
+                            {community.category && (
+                              <span className="inline-block px-2 py-1 text-xs font-medium text-accent-hover border border-accent/40 rounded-[8px]">
+                                {community.category}
+                              </span>
+                            )}
+                            {community.governanceBadge && (
+                              <span className="inline-block px-2 py-1 text-xs font-medium text-accent-hover border border-accent/40 rounded-[8px]">
+                                {community.governanceBadge}
+                              </span>
+                            )}
+                            <span className="inline-block px-2 py-1 text-xs font-medium bg-gray-800 text-gray-400 rounded-[8px]">
+                              {community.signUpPolicyType ?? "Unknown sign-up policy"}
+                            </span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -282,13 +277,16 @@ export default function Home() {
                     <div className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
                       <span>
-                        {(communityStats[community.id]?.members ?? community.members).toLocaleString()} members
+                        {(communityStats[community.id]?.members ?? community.members).toLocaleString()}{" "}
+                        {community.isUnion ? "communities" : "members"}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <FileText className="w-4 h-4" />
-                      <span>{communityStats[community.id]?.proposals ?? community.proposals} proposals</span>
-                    </div>
+                    {!community.isUnion && (
+                      <div className="flex items-center gap-1">
+                        <FileText className="w-4 h-4" />
+                        <span>{communityStats[community.id]?.proposals ?? community.proposals} proposals</span>
+                      </div>
+                    )}
                   </div>
                 </Link>
               );

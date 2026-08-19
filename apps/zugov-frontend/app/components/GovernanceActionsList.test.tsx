@@ -25,6 +25,7 @@ vi.mock("@/src/services/membershipApi", () => ({
 const communityGetMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   get: (...args: unknown[]) => communityGetMock(...args),
+  subgraphQueryUrl: (id: string) => `http://mock-subgraph/${id}`,
 }));
 
 const deployPollMock = vi.fn();
@@ -234,6 +235,7 @@ describe("GovernanceActionsList", () => {
         txHash: "0xTx",
         pollStartDate: Math.floor(new Date("2026-01-01T00:00").getTime() / 1000),
         pollEndDate: Math.floor(new Date("2026-01-08T00:00").getTime() / 1000),
+        options: ["Yes", "No"],
       }),
     );
   });

@@ -58,6 +58,11 @@ export const communities = pgTable("communities", {
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
   tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
   defaultTierId: text("default_tier_id"),
+  // Creator-selected community type tag (Residency/Regional/Network State/Social), shown on the
+  // community explorer's filter chips. Nullable: communities created before this column existed
+  // have no value, and the explorer's "All" filter still includes them. Unrelated to governance —
+  // never conflate with governanceType/subgraphStatus (see the landing page's governance badge).
+  category: text("category").$type<"residency" | "regional" | "network_state" | "social">(),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
   directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
   createdAt: integer("created_at").notNull(),
@@ -211,6 +216,11 @@ export const governanceActions = pgTable("governance_actions", {
   // without requiring a live on-chain/subgraph read for that one check.
   pollStartDate: integer("poll_start_date"),
   pollEndDate: integer("poll_end_date"),
+  // JSON-stringified string[] of the poll's option labels, written alongside pollAddress/pollId
+  // at deploy-confirm time. A read-optimized copy of data also sent on-chain as Poll metadata —
+  // not available uniformly via the subgraph (some communities have none), so this column is the
+  // only source guaranteed to be present for every deployed poll's vote screen.
+  options: text("options"),
   createdAt: integer("created_at").notNull(),
   formalizedAt: integer("formalized_at"),
   // Only meaningful once pollAddress is set (i.e. the poll has actually been deployed on-chain).

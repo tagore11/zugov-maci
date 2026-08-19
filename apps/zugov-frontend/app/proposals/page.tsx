@@ -1,7 +1,10 @@
 import { Header } from "../components/Header";
-import { Calendar, Users, CheckCircle, XCircle, Clock } from "lucide-react";
-import { ALL_PROPOSALS } from "@/app/lib/placeholder-data";
+import { FileText } from "lucide-react";
 
+// No cross-community proposal listing API exists yet (governance actions are only fetched
+// per-community). This page previously rendered entirely fabricated proposals — shows a real
+// empty state instead of misleading visitors with fake data (specs/010 US9, FR-018). Browse a
+// specific community's page for its real governance actions.
 export default function ProposalsPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-foreground">
@@ -13,103 +16,10 @@ export default function ProposalsPage() {
           <p className="text-gray-400">Browse and vote on proposals across all communities</p>
         </div>
 
-        {/* Filters */}
-        <div className="bg-gray-900 rounded-lg border border-gray-700 p-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
-              <option>All Status</option>
-              <option>Active</option>
-              <option>Closed</option>
-            </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
-              <option>All Types</option>
-              <option>Onchain</option>
-              <option>Offchain</option>
-            </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
-              <option>All Communities</option>
-              <option>ZuKas Residency</option>
-              <option>ZuAfrique</option>
-              <option>Zuitzerland</option>
-              <option>EDGE City</option>
-            </select>
-            <select className="px-4 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent">
-              <option>All Eligibility</option>
-              <option>Eligible Only</option>
-              <option>Not Eligible</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Proposals List */}
-        <div className="space-y-4">
-          {ALL_PROPOSALS.map((proposal) => (
-            <div
-              key={proposal.id}
-              className="bg-gray-900 rounded-xl border border-gray-700 p-6 hover:border-gray-600 transition-colors"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="text-2xl">{proposal.communityLogo}</span>
-                    <span className="text-sm font-medium text-gray-400">{proposal.community}</span>
-                  </div>
-                  <h3 className="font-semibold text-xl text-foreground mb-3">{proposal.title}</h3>
-                  <div className="flex flex-wrap gap-2">
-                    <span
-                      className={`px-3 py-1 text-xs font-medium rounded-full ${
-                        proposal.status === "active" ? "bg-green-900/30 text-green-300" : "bg-gray-800 text-gray-400"
-                      }`}
-                    >
-                      {proposal.status === "active" ? (
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          ACTIVE
-                        </span>
-                      ) : (
-                        "CLOSED"
-                      )}
-                    </span>
-                    <span className="px-3 py-1 text-xs font-medium bg-blue-900/30 text-blue-300 rounded-full">
-                      {proposal.type.toUpperCase()}
-                    </span>
-                    <span className="px-3 py-1 text-xs font-medium bg-accent/20 text-accent-hover rounded-full">
-                      {proposal.privacy.toUpperCase()}
-                    </span>
-                    {proposal.eligible ? (
-                      <span className="px-3 py-1 text-xs font-medium bg-green-900/30 text-green-300 rounded-full flex items-center gap-1">
-                        <CheckCircle className="w-3 h-3" />
-                        ELIGIBLE TO VOTE
-                      </span>
-                    ) : (
-                      <span className="px-3 py-1 text-xs font-medium bg-red-900/30 text-red-300 rounded-full flex items-center gap-1">
-                        <XCircle className="w-3 h-3" />
-                        NOT ELIGIBLE
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-4 border-t border-gray-700">
-                <div className="flex items-center gap-6 text-sm text-gray-400">
-                  <span className="flex items-center gap-2">
-                    <Users className="w-4 h-4" />
-                    {proposal.votes.toLocaleString()} votes
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <Calendar className="w-4 h-4" />
-                    Ends {proposal.endDate}
-                  </span>
-                </div>
-                {proposal.eligible && proposal.status === "active" && (
-                  <button className="px-6 py-2 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors">
-                    Vote Now
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+        <div className="text-center py-16 bg-gray-900 rounded-lg border border-gray-700">
+          <FileText className="w-10 h-10 text-gray-600 mx-auto mb-3" />
+          <p className="text-gray-300 font-medium mb-1">Cross-community proposal browsing isn&apos;t available yet</p>
+          <p className="text-gray-500 text-sm">Visit a specific community's page to see its governance actions.</p>
         </div>
       </main>
     </div>

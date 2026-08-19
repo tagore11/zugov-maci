@@ -3,6 +3,8 @@ import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
+export type CommunityCategory = "residency" | "regional" | "network_state" | "social";
+
 // Flat merged shape (Architecture Issue 3) — identity fields are always present; governance
 // fields are null until governanceConfigured is true. A community's identity can exist before
 // any governance tool is configured (Architecture 1A/1B), so callers must check
@@ -17,6 +19,9 @@ export type Community = {
   // (Lightpaper's "communities and sub-communities" building block). Null for top-level.
   parentCommunityId: string | null;
   membershipPolicy: MembershipPolicy;
+  // Creator-selected community type, independent of governance — see app/page.tsx's
+  // governanceBadge for why this must never be conflated with governance status.
+  category: CommunityCategory | null;
   tierChangesRequireVote: boolean;
   directDeploymentEnabled: boolean;
   defaultTierId: string | null;
@@ -50,6 +55,7 @@ export type IdentityPayload = {
   logo?: string;
   parentCommunityId?: string;
   membershipPolicy: MembershipPolicy;
+  category?: CommunityCategory;
   tierChangesRequireVote: boolean;
   tiers: TierDraft[];
   defaultTierLabel: string;
@@ -75,7 +81,10 @@ export type ManualRegistrationPayload = Omit<IdentityPayload, "source"> &
   GovernancePayload & { id: string; source: "manual" };
 
 export type CommunityUpdatePayload = Partial<
-  Pick<IdentityPayload, "displayName" | "description" | "logo" | "membershipPolicy" | "tierChangesRequireVote"> & {
+  Pick<
+    IdentityPayload,
+    "displayName" | "description" | "logo" | "membershipPolicy" | "category" | "tierChangesRequireVote"
+  > & {
     defaultTierLabel: string;
   }
 > & {

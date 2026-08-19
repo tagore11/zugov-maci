@@ -26,6 +26,7 @@ export interface GovernanceAction {
   pollId: string | null;
   pollStartDate: number | null;
   pollEndDate: number | null;
+  options: string[] | null;
   createdAt: number;
   formalizedAt: number | null;
   tallyStatus: TallyStatus;
@@ -106,7 +107,14 @@ export async function authorizeFormalize(communityId: string, actionId: string):
 export async function confirmFormalize(
   communityId: string,
   actionId: string,
-  input: { pollAddress: string; pollId: string; txHash: string; pollStartDate: number; pollEndDate: number },
+  input: {
+    pollAddress: string;
+    pollId: string;
+    txHash: string;
+    pollStartDate: number;
+    pollEndDate: number;
+    options?: string[];
+  },
 ): Promise<{ governanceAction: GovernanceAction }> {
   const res = await fetch(
     `${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/formalize/confirm`,
@@ -147,6 +155,7 @@ export async function confirmDirect(
     txHash: string;
     pollStartDate: number;
     pollEndDate: number;
+    options?: string[];
   },
 ): Promise<{ governanceAction: GovernanceAction }> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/confirm`, {
@@ -182,6 +191,7 @@ export type VoteEligibilityReason =
   | "tier_lacks_voting_rights"
   | "tier_not_eligible_for_action"
   | "not_formalized"
+  | "poll_not_started"
   | "poll_closed";
 
 export async function checkVoteEligibility(

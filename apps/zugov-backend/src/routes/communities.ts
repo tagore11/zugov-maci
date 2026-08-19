@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { communityRegistrationBodySchema, attachGovernanceBodySchema } from "../validators/communitySchema.js";
+import {
+  communityRegistrationBodySchema,
+  attachGovernanceBodySchema,
+  communityCategorySchema,
+} from "../validators/communitySchema.js";
 import * as communityService from "../services/communityService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
@@ -20,6 +24,7 @@ const communityUpdateSchema = z.object({
   description: z.string().max(500).optional(),
   logo: z.string().optional(),
   membershipPolicy: z.enum(["open", "approval"]).optional(),
+  category: communityCategorySchema.optional(),
   tierChangesRequireVote: z.boolean().optional(),
   defaultTierLabel: z.string().min(1).optional(),
   cosponsorshipThreshold: z.number().int().min(0).optional(),

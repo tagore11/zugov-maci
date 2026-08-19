@@ -496,7 +496,12 @@ export interface UseCreateCommunityResult {
   deploy: UseDeployGovernanceResult;
   goToStep: (step: WizardStep) => void;
   goBack: () => void;
-  setCommunityInfo: (name: string, description: string, parentCommunityId?: string) => void;
+  setCommunityInfo: (
+    name: string,
+    description: string,
+    parentCommunityId?: string,
+    category?: communityApi.CommunityCategory,
+  ) => void;
   setCommunitySetup: (config: {
     membershipPolicy: MembershipPolicy;
     tiers: TierDraft[];
@@ -593,13 +598,21 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
     });
   }, []);
 
-  const setCommunityInfo = useCallback((displayName: string, description: string, parentCommunityId?: string) => {
-    setState((prev) => ({
-      ...prev,
-      config: { ...prev.config, displayName, description, parentCommunityId },
-      step: "community_setup",
-    }));
-  }, []);
+  const setCommunityInfo = useCallback(
+    (
+      displayName: string,
+      description: string,
+      parentCommunityId?: string,
+      category?: communityApi.CommunityCategory,
+    ) => {
+      setState((prev) => ({
+        ...prev,
+        config: { ...prev.config, displayName, description, parentCommunityId, category },
+        step: "community_setup",
+      }));
+    },
+    [],
+  );
 
   const setCommunitySetup = useCallback(
     async (config: {
@@ -622,6 +635,7 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
               () =>
                 communityApi.update(state.identityCommunityId as string, {
                   membershipPolicy: config.membershipPolicy,
+                  category: state.config.category,
                   tierChangesRequireVote: false,
                   defaultTierLabel: config.defaultTierLabel,
                 }),
@@ -634,6 +648,7 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
                 displayName: state.config.displayName,
                 description: state.config.description,
                 parentCommunityId: state.config.parentCommunityId,
+                category: state.config.category,
                 membershipPolicy: config.membershipPolicy,
                 tierChangesRequireVote: false,
                 tiers: config.tiers,
