@@ -1,16 +1,14 @@
 import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
-import { useCreateCommunity } from "@/src/hooks/useCreateCommunity";
-import type { WizardStep } from "@/src/hooks/useCreateCommunity";
+import { useCreateCommunity, DEFAULT_ADVANCED_CONFIG, type WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 import { StepCommunitySetup } from "./StepCommunitySetup";
 import { StepReview } from "./StepReview";
 import { StepNetworkCheck } from "./StepNetworkCheck";
 import { StepDeploying } from "./StepDeploying";
 import { StepSuccess } from "./StepSuccess";
-import { getPendingCheckpoint, clearPendingCheckpoint } from "@/src/services/checkpointStore";
 import { SiweGate } from "@/app/components/SiweGate";
-import type { Hex } from "viem";
+import { useSiwe } from "@/src/hooks/useSiwe";
 
 const STEP_LABELS: Record<WizardStep, string> = {
   community_info: "Community Info",
@@ -22,30 +20,30 @@ const STEP_LABELS: Record<WizardStep, string> = {
   error: "Error",
 };
 
-const VISIBLE_STEPS: WizardStep[] = [
-  "community_info",
-  "community_setup",
-  "network_check",
-  "review",
-  "deploying",
-  "success",
-];
+// Only the identity-creation steps get a numbered progress bar — network_check/review/deploying
+// are now reached from a separate, optional "deploy governance" opt-in on the success screen
+// (2026-08-19 community-creation-rework review, D2), not a continuation of the same sequence.
+const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup"];
 
 export function CreateCommunityWizard() {
   const { address } = useAccount();
   const { login } = usePrivy();
+  // One shared instance, passed to both SiweGate and useCreateCommunity — a session invalidated
+  // by an AuthError partway through (withAuthRetry's signOut()) is reflected in the gate
+  // immediately instead of the gate's own stale copy still believing isAuthenticated: true
+  // (2026-08-19 community-creation-rework review, D4).
+  const siwe = useSiwe();
   const {
     state,
+    deploy,
     goToStep,
     goBack,
     setCommunityInfo,
     setCommunitySetup,
-    startNetworkCheck,
-    startDeployment,
-    retryDeployment,
-    saveCommunity,
+    resumeCheckpoint,
+    dismissCheckpoint,
     reset,
-  } = useCreateCommunity();
+  } = useCreateCommunity(siwe);
 
   if (!address) {
     return (
@@ -62,25 +60,35 @@ export function CreateCommunityWizard() {
     );
   }
 
-  const currentIdx = VISIBLE_STEPS.indexOf(state.step);
-  const checkpoint = getPendingCheckpoint(address as Hex);
+  const showProgress = PROGRESS_STEPS.includes(state.step);
+  const currentIdx = PROGRESS_STEPS.indexOf(state.step);
+
+  const membershipDescription =
+    state.config.membershipPolicy === "approval"
+      ? "Organizers approve new residents before they can join."
+      : "Anyone can join instantly.";
+  const roleLabels = (state.config.tiers ?? []).map((t) => t.label);
+  const deployConfig = state.config.displayName
+    ? {
+        displayName: state.config.displayName,
+        signUpPolicy: state.config.signUpPolicy ?? DEFAULT_ADVANCED_CONFIG.signUpPolicy,
+        allowedPolicies: state.config.allowedPolicies ?? DEFAULT_ADVANCED_CONFIG.allowedPolicies,
+        supportedModes: state.config.supportedModes ?? DEFAULT_ADVANCED_CONFIG.supportedModes,
+      }
+    : undefined;
 
   return (
-    <SiweGate message="Sign in to register your community globally">
+    <SiweGate message="Sign in to register your community globally" siwe={siwe}>
       <div className="space-y-5">
         {/* Recovery banner */}
-        {state.step === "community_info" && checkpoint && (
+        {state.step === "community_info" && state.pendingCheckpoint && (
           <div className="rounded-lg border border-yellow-600/50 bg-yellow-900/20 p-3 text-sm text-yellow-300 flex items-center justify-between gap-3">
             <span>You have an unfinished community creation.</span>
             <div className="flex gap-2 shrink-0">
-              <button type="button" onClick={() => goToStep("deploying")} className="underline hover:text-yellow-200">
+              <button type="button" onClick={resumeCheckpoint} className="underline hover:text-yellow-200">
                 Resume
               </button>
-              <button
-                type="button"
-                onClick={() => clearPendingCheckpoint(address as Hex)}
-                className="text-yellow-500 hover:text-yellow-400"
-              >
+              <button type="button" onClick={dismissCheckpoint} className="text-yellow-500 hover:text-yellow-400">
                 Dismiss
               </button>
             </div>
@@ -88,11 +96,11 @@ export function CreateCommunityWizard() {
         )}
 
         {/* Step progress */}
-        {state.step !== "deploying" && state.step !== "success" && state.step !== "error" && (
+        {showProgress && (
           <div className="flex items-center gap-1">
-            {VISIBLE_STEPS.filter((s) => s !== "deploying" && s !== "success" && s !== "error").map((step, idx) => {
+            {PROGRESS_STEPS.map((step, idx) => {
               const isActive = step === state.step;
-              const isDone = VISIBLE_STEPS.indexOf(state.step) > idx;
+              const isDone = currentIdx > idx;
               return (
                 <div key={step} className="flex items-center gap-1 flex-1">
                   <div
@@ -100,7 +108,6 @@ export function CreateCommunityWizard() {
                       isDone ? "bg-accent" : isActive ? "bg-accent-hover" : "bg-gray-700"
                     }`}
                   />
-                  {idx < 3 && <div className="w-0.5" />}
                 </div>
               );
             })}
@@ -108,9 +115,9 @@ export function CreateCommunityWizard() {
         )}
 
         {/* Step label */}
-        {state.step !== "deploying" && state.step !== "success" && state.step !== "error" && (
+        {showProgress && (
           <p className="text-xs text-gray-500">
-            Step {currentIdx + 1} of {VISIBLE_STEPS.length} — {STEP_LABELS[state.step]}
+            Step {currentIdx + 1} of {PROGRESS_STEPS.length} — {STEP_LABELS[state.step]}
           </p>
         )}
 
@@ -131,27 +138,36 @@ export function CreateCommunityWizard() {
             initialSignUpPolicy={state.config.signUpPolicy}
             initialPolicies={state.config.allowedPolicies}
             initialModes={state.config.supportedModes}
+            initialTiers={state.config.tiers}
             setCommunitySetup={setCommunitySetup}
             goBack={goBack}
           />
         )}
 
         {state.step === "network_check" && (
-          <StepNetworkCheck
-            registryStatus={state.registryStatus}
-            startNetworkCheck={startNetworkCheck}
-            goBack={goBack}
-            goToReview={() => goToStep("review")}
+          <StepNetworkCheck deploy={deploy} goBack={() => goToStep("success")} goToReview={() => goToStep("review")} />
+        )}
+
+        {state.step === "review" && deployConfig && (
+          <StepReview
+            config={deployConfig}
+            membershipDescription={membershipDescription}
+            roleLabels={roleLabels}
+            deploy={deploy}
+            goBack={() => goToStep("network_check")}
           />
         )}
 
-        {state.step === "review" && <StepReview state={state} startDeployment={startDeployment} goBack={goBack} />}
+        {(state.step === "deploying" || state.step === "error") && <StepDeploying deploy={deploy} />}
 
-        {(state.step === "deploying" || state.step === "error") && (
-          <StepDeploying state={state} retryDeployment={retryDeployment} saveCommunity={saveCommunity} />
+        {state.step === "success" && (
+          <StepSuccess
+            communityId={state.identityCommunityId}
+            governanceConfigured={deploy.state.isDeployed}
+            onDeployNow={() => goToStep("network_check")}
+            reset={reset}
+          />
         )}
-
-        {state.step === "success" && <StepSuccess communityId={state.deployedCommunityId} reset={reset} />}
       </div>
     </SiweGate>
   );

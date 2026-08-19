@@ -33,9 +33,19 @@ vi.mock("./useZuGovRegistry", () => ({
   }),
 }));
 
-vi.mock("./useSiwe", () => ({
-  useSiwe: () => ({ signIn: vi.fn() }),
-}));
+// The wizard now requires a shared useSiwe() instance to be passed in (2026-08-19
+// community-creation-rework review, D4) rather than calling the hook internally — build one
+// mock instance and pass it explicitly at every renderHook() call site below.
+function makeMockSiwe() {
+  return {
+    isAuthenticated: true,
+    address: "0x1111111111111111111111111111111111111111",
+    isSigning: false,
+    error: null,
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+  };
+}
 
 vi.mock("@/src/services/checkpointStore", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/checkpointStore")>(
@@ -44,6 +54,7 @@ vi.mock("@/src/services/checkpointStore", async () => {
   return {
     ...actual,
     getPendingCheckpoint: () => null,
+    findAnyPendingCheckpoint: () => null,
     savePendingCheckpoint: vi.fn(),
     clearPendingCheckpoint: vi.fn(),
   };
@@ -91,12 +102,15 @@ describe("RESIDENT_ORGANIZER_TIERS", () => {
 
 describe("useCreateCommunity wizard flow", () => {
   it("starts at community_info, not the removed mechanism step", () => {
-    const { result } = renderHook(() => useCreateCommunity());
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
     expect(result.current.state.step).toBe("community_info");
   });
 
-  it("community_info -> community_setup, then community_setup -> network_check with defaults applied", async () => {
-    const { result } = renderHook(() => useCreateCommunity());
+  // 2026-08-19 community-creation-rework review, D2: off-chain-only is now a real, intentional
+  // end state — the wizard lands on the success screen right after identity creation, not on
+  // network_check. Deploying governance becomes an explicit opt-in from there.
+  it("community_info -> community_setup, then community_setup -> success (off-chain-only) with defaults applied", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "Pop-up city residency");
@@ -105,10 +119,15 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.config.displayName).toBe("Zukas");
 
     await act(async () => {
-      await result.current.setCommunitySetup({ membershipPolicy: "open" });
+      await result.current.setCommunitySetup({
+        membershipPolicy: "open",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
     });
 
-    expect(result.current.state.step).toBe("network_check");
+    expect(result.current.state.step).toBe("success");
+    expect(result.current.deploy.state.isDeployed).toBe(false);
     expect(result.current.state.config.membershipPolicy).toBe("open");
     expect(result.current.state.config.tiers).toEqual(RESIDENT_ORGANIZER_TIERS);
     expect(result.current.state.config.defaultTierLabel).toBe("Resident");
@@ -118,21 +137,14 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.config.supportedModes).toEqual([1]);
   });
 
-  it("approval-required membership policy is preserved through to network_check, not silently reset to open", async () => {
-    const { result } = renderHook(() => useCreateCommunity());
-
-    act(() => {
-      result.current.setCommunityInfo("Zukas", "");
-    });
-    await act(async () => {
-      await result.current.setCommunitySetup({ membershipPolicy: "approval" });
-    });
-
-    expect(result.current.state.config.membershipPolicy).toBe("approval");
-  });
-
-  it("Advanced settings, when provided, override the zero-config defaults", async () => {
-    const { result } = renderHook(() => useCreateCommunity());
+  // Creation-time tier editing (D3) — a creator can rename/replace the Resident/Organizer
+  // preset instead of being stuck with it; the identity is created with whatever they submit.
+  it("submits creator-edited tiers, not the hardcoded preset, when the resident customizes them", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
+    const customTiers = [
+      { label: "Neighbor", canVote: true, canCreateGovernanceActions: false, canManageMembership: false },
+      { label: "Steward", canVote: true, canCreateGovernanceActions: true, canManageMembership: true },
+    ];
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");
@@ -140,6 +152,66 @@ describe("useCreateCommunity wizard flow", () => {
     await act(async () => {
       await result.current.setCommunitySetup({
         membershipPolicy: "open",
+        tiers: customTiers,
+        defaultTierLabel: "Neighbor",
+      });
+    });
+
+    expect(result.current.state.config.tiers).toEqual(customTiers);
+    expect(result.current.state.config.defaultTierLabel).toBe("Neighbor");
+  });
+
+  it("goToStep(network_check) from the success screen enters the opt-in deploy flow", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+    await act(async () => {
+      await result.current.setCommunitySetup({
+        membershipPolicy: "open",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
+    });
+    expect(result.current.state.step).toBe("success");
+
+    act(() => {
+      result.current.goToStep("network_check");
+    });
+    expect(result.current.state.step).toBe("network_check");
+    // The same identity created above is what governance will attach to — not a new one.
+    expect(result.current.state.identityCommunityId).toBeDefined();
+  });
+
+  it("approval-required membership policy is preserved through to success, not silently reset to open", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+    await act(async () => {
+      await result.current.setCommunitySetup({
+        membershipPolicy: "approval",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
+    });
+
+    expect(result.current.state.config.membershipPolicy).toBe("approval");
+  });
+
+  it("Advanced settings, when provided, override the zero-config defaults", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+    await act(async () => {
+      await result.current.setCommunitySetup({
+        membershipPolicy: "open",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
         advanced: {
           signUpPolicy: { type: "MerkleProof", merkleRoot: "0xabc" },
           allowedPolicies: [2],
@@ -155,25 +227,33 @@ describe("useCreateCommunity wizard flow", () => {
 
   it("setCommunitySetup creates the identity once and updates (not re-creates) it on re-submission after Back", async () => {
     const communityApi = await import("@/src/services/communityApi");
-    const { result } = renderHook(() => useCreateCommunity());
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");
     });
     await act(async () => {
-      await result.current.setCommunitySetup({ membershipPolicy: "open" });
+      await result.current.setCommunitySetup({
+        membershipPolicy: "open",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
     });
     const firstIdentityId = result.current.state.identityCommunityId;
     expect(firstIdentityId).toBeDefined();
     expect(communityApi.registerIdentity).toHaveBeenCalledTimes(1);
 
     act(() => {
-      result.current.goBack();
+      result.current.goToStep("community_setup");
     });
     expect(result.current.state.step).toBe("community_setup");
 
     await act(async () => {
-      await result.current.setCommunitySetup({ membershipPolicy: "approval" });
+      await result.current.setCommunitySetup({
+        membershipPolicy: "approval",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
     });
 
     expect(result.current.state.identityCommunityId).toBe(firstIdentityId);
@@ -184,8 +264,41 @@ describe("useCreateCommunity wizard flow", () => {
     );
   });
 
+  // The direct verification of the originally-reported bug (2026-08-19 community-creation-rework
+  // review, D4): a session expiring mid-flow must invalidate the SHARED siwe instance (so
+  // SiweGate visibly re-prompts) rather than silently popping a fresh wallet-signature request.
+  // withAuthRetry's own fail-fast-on-AuthError behavior is unit-tested in useCreateCommunity.test.ts;
+  // this test instead verifies the wiring — that the wizard actually passes signOut from the
+  // SAME shared instance callers get, not an internal one of its own.
+  it("invalidates the shared siwe session (not a silent retry) when identity creation hits an expired session", async () => {
+    const communityApi = await import("@/src/services/communityApi");
+    vi.mocked(communityApi.registerIdentity).mockRejectedValueOnce(new communityApi.AuthError());
+
+    const siwe = makeMockSiwe();
+    const { result } = renderHook(() => useCreateCommunity(siwe));
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+
+    await act(async () => {
+      await expect(
+        result.current.setCommunitySetup({
+          membershipPolicy: "open",
+          tiers: RESIDENT_ORGANIZER_TIERS,
+          defaultTierLabel: "Resident",
+        }),
+      ).rejects.toBeInstanceOf(communityApi.AuthError);
+    });
+
+    expect(siwe.signOut).toHaveBeenCalledTimes(1);
+    expect(siwe.signIn).not.toHaveBeenCalled();
+    // Still on community_setup — no silent progression past a failed, unauthenticated request.
+    expect(result.current.state.step).toBe("community_setup");
+  });
+
   it("goBack from community_setup returns to community_info", () => {
-    const { result } = renderHook(() => useCreateCommunity());
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");

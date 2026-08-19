@@ -45,12 +45,20 @@ export interface PendingDeploymentCheckpoint {
 
 const PENDING_PREFIX = "pending_deployment_";
 
-export function savePendingCheckpoint(wallet: Hex, checkpoint: PendingDeploymentCheckpoint): void {
-  localStorage.setItem(`${PENDING_PREFIX}${wallet.toLowerCase()}`, JSON.stringify(checkpoint));
+// Keyed by wallet AND community (not wallet alone) so a wallet can have two off-chain
+// communities each mid-deploy without one's checkpoint clobbering the other's — either by a
+// stale resume reading the wrong one, or by two tabs writing phase updates for different
+// communities to the same slot (2026-08-19 community-creation-rework review, D5).
+function checkpointKey(wallet: Hex, communityId: string): string {
+  return `${PENDING_PREFIX}${wallet.toLowerCase()}_${communityId}`;
 }
 
-export function getPendingCheckpoint(wallet: Hex): PendingDeploymentCheckpoint | null {
-  const raw = localStorage.getItem(`${PENDING_PREFIX}${wallet.toLowerCase()}`);
+export function savePendingCheckpoint(wallet: Hex, communityId: string, checkpoint: PendingDeploymentCheckpoint): void {
+  localStorage.setItem(checkpointKey(wallet, communityId), JSON.stringify(checkpoint));
+}
+
+export function getPendingCheckpoint(wallet: Hex, communityId: string): PendingDeploymentCheckpoint | null {
+  const raw = localStorage.getItem(checkpointKey(wallet, communityId));
   if (!raw) return null;
   try {
     return JSON.parse(raw) as PendingDeploymentCheckpoint;
@@ -59,6 +67,28 @@ export function getPendingCheckpoint(wallet: Hex): PendingDeploymentCheckpoint |
   }
 }
 
-export function clearPendingCheckpoint(wallet: Hex): void {
-  localStorage.removeItem(`${PENDING_PREFIX}${wallet.toLowerCase()}`);
+export function clearPendingCheckpoint(wallet: Hex, communityId: string): void {
+  localStorage.removeItem(checkpointKey(wallet, communityId));
+}
+
+/** Finds any pending checkpoint for this wallet, regardless of which community it belongs to —
+ * used only by the wizard's recovery banner, which runs before any specific community is in
+ * view (a fresh community_info screen has no communityId to look up yet). Every other call site
+ * already knows which community it cares about and should use getPendingCheckpoint instead. */
+export function findAnyPendingCheckpoint(
+  wallet: Hex,
+): { communityId: string; checkpoint: PendingDeploymentCheckpoint } | null {
+  const prefix = `${PENDING_PREFIX}${wallet.toLowerCase()}_`;
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(prefix)) continue;
+    const raw = localStorage.getItem(key);
+    if (!raw) continue;
+    try {
+      return { communityId: key.slice(prefix.length), checkpoint: JSON.parse(raw) as PendingDeploymentCheckpoint };
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }

@@ -2,17 +2,16 @@ import { useEffect, useState } from "react";
 import { useChainId, useSwitchChain } from "wagmi";
 import { sepolia } from "wagmi/chains";
 import { appConstants } from "@/src/config";
-import type { RegistryStatus } from "@/src/hooks/useZuGovRegistry";
-import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
+import type { UseDeployGovernanceResult } from "@/src/hooks/useCreateCommunity";
 
 interface Props {
-  registryStatus: RegistryStatus | undefined;
-  startNetworkCheck: UseCreateCommunityResult["startNetworkCheck"];
-  goBack: UseCreateCommunityResult["goBack"];
+  deploy: UseDeployGovernanceResult;
+  goBack: () => void;
   goToReview: () => void;
 }
 
-export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, goToReview }: Props) {
+export function StepNetworkCheck({ deploy, goBack, goToReview }: Props) {
+  const registryStatus = deploy.state.registryStatus;
   const chainId = useChainId();
   const chainConstants = appConstants[chainId as keyof typeof appConstants];
   const networkName = chainConstants?.chain.name ?? `Chain ${chainId}`;
@@ -20,7 +19,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
   const [switchError, setSwitchError] = useState<string | undefined>();
 
   useEffect(() => {
-    void startNetworkCheck();
+    void deploy.startNetworkCheck();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleSwitchToSepolia() {
@@ -29,7 +28,7 @@ export function StepNetworkCheck({ registryStatus, startNetworkCheck, goBack, go
       await switchChainAsync({ chainId: sepolia.id });
       // The wallet's chainId change doesn't retrigger the registry check on its own —
       // re-run it against the network we just switched to.
-      void startNetworkCheck();
+      void deploy.startNetworkCheck();
     } catch (err) {
       setSwitchError(err instanceof Error ? err.message : "Failed to switch network");
     }

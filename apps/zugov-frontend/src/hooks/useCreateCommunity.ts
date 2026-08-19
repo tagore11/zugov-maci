@@ -5,7 +5,7 @@ import type { Hex } from "viem";
 import { MACI__factory } from "@maci-protocol/contracts/typechain-types";
 import { generateEmptyBallotRoots } from "@maci-protocol/sdk";
 import { PublicKey } from "@maci-protocol/domainobjs";
-import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type PollDeployConfig } from "@/src/config";
+import { FIXED_POLL_DEPLOY_CONSTANTS, appConstants, type PollDeployConfig, type SignUpPolicyArgs } from "@/src/config";
 import { STATE_TREE_DEPTH } from "@/src/constants";
 import { deployPolicyContract, SET_TARGET_ABI } from "@/src/services/policyDeploy";
 import { getSignerFromWagmiConfig } from "@/src/services/wagmiSigner";
@@ -14,6 +14,7 @@ import {
   savePendingCheckpoint,
   getPendingCheckpoint,
   clearPendingCheckpoint,
+  findAnyPendingCheckpoint,
   type DeployPhase,
   type MACIDeploymentConfig,
   type MembershipPolicy,
@@ -28,6 +29,8 @@ import {
 // Frozen: this is a shared module-level default, not a per-call fresh object. Every community
 // creation reads the same reference — mutating it (e.g. accidentally in a future edit) would
 // silently corrupt the default tiers for every subsequent wizard run in the same session.
+// Still the starting point offered to a creator in the tier-editor step (2026-08-19
+// community-creation-rework review, D3) — now editable rather than fixed.
 export const RESIDENT_ORGANIZER_TIERS: TierDraft[] = Object.freeze([
   Object.freeze({ label: "Resident", canCreateGovernanceActions: false, canVote: true, canManageMembership: false }),
   Object.freeze({ label: "Organizer", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }),
@@ -37,7 +40,8 @@ export const RESIDENT_ORGANIZER_TIERS: TierDraft[] = Object.freeze([
 // sign-up policy actually deployed on Sepolia today (see TODOS.md: MerkleProof factory isn't
 // deployed yet), and NON_QV is the simplest, most broadly understandable voting style. Frozen
 // for the same reason as RESIDENT_ORGANIZER_TIERS above — this is a shared reference, not a
-// fresh object per call.
+// fresh object per call. Also the default used for a standalone "Deploy governance now" flow
+// (edit page) where there's no Advanced-settings UI to collect a custom choice from.
 const DEFAULT_ADVANCED_CONFIG: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes"> =
   Object.freeze({
     signUpPolicy: Object.freeze({ type: "FreeForAll" }),
@@ -45,6 +49,7 @@ const DEFAULT_ADVANCED_CONFIG: Pick<MACIDeploymentConfig, "signUpPolicy" | "allo
     supportedModes: Object.freeze([1]),
   }) as Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
 
+export { DEFAULT_ADVANCED_CONFIG };
 export type { DeployPhase };
 import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
@@ -70,65 +75,9 @@ export interface DeploymentSummary {
   chainName: string;
 }
 
-export interface WizardState {
-  step: WizardStep;
-  config: Partial<MACIDeploymentConfig>;
-  registryStatus: RegistryStatus | undefined;
-  summary: DeploymentSummary | undefined;
-  currentPhase: DeployPhase | undefined;
-  completedPhases: DeployPhase[];
-  currentTxHash: Hex | undefined;
-  errorMessage: string | undefined;
-  retryFromPhase: DeployPhase | undefined;
-  deployedCommunityId: string | undefined;
-  // The community's identity id (server-generated UUID), created at the community_setup step
-  // — before any on-chain deployment starts (Architecture 1A/1B). Known immediately, unlike
-  // deployedCommunityId above (kept for the success screen's on-chain-address display).
-  identityCommunityId: string | undefined;
-}
-
-export interface UseCreateCommunityResult {
-  state: WizardState;
-  goToStep: (step: WizardStep) => void;
-  goBack: () => void;
-  setCommunityInfo: (name: string, description: string, parentCommunityId?: string) => void;
-  setCommunitySetup: (config: {
-    membershipPolicy: MembershipPolicy;
-    advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
-  }) => Promise<void>;
-  startNetworkCheck: () => Promise<void>;
-  startDeployment: () => Promise<void>;
-  retryDeployment: () => Promise<void>;
-  saveCommunity: () => Promise<void>;
-  reset: () => void;
-}
-
 // ─── Constants ─────────────────────────────────────────────────────────────
 
-const STEP_ORDER: WizardStep[] = [
-  "community_info",
-  "community_setup",
-  "network_check",
-  "review",
-  "deploying",
-  "success",
-];
-
 const ALL_PHASES: DeployPhase[] = ["deploy_sign_up_policy", "deploy_maci", "set_target", "save_community"];
-
-const INITIAL_STATE: WizardState = {
-  step: "community_info",
-  config: {},
-  registryStatus: undefined,
-  summary: undefined,
-  currentPhase: undefined,
-  completedPhases: [],
-  currentTxHash: undefined,
-  errorMessage: undefined,
-  retryFromPhase: undefined,
-  deployedCommunityId: undefined,
-  identityCommunityId: undefined,
-};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -171,20 +120,23 @@ function linkPoseidon(bytecode: string, registry: RegistryData): string {
     .replace(new RegExp("__\\$20527677031d76601747626a9845039fe4\\$__", "g"), strip(registry.poseidonT6));
 }
 
-async function withAuthRetry<T>(action: () => Promise<T>, signIn: () => Promise<void>): Promise<T> {
+// SIWE fix (2026-08-19 community-creation-rework review, D4, corrected post-outside-voice): on
+// an AuthError, invalidate the shared session and fail immediately — do NOT silently re-sign-in
+// and retry. Silently retrying is exactly the "asks to sign in again with no explanation" bug:
+// the wallet-signature popup would fire with zero warning. signOut() flips the shared SiweGate
+// instance to unauthenticated, which makes its prompt reappear; the human then clicks "Sign in
+// with Ethereum" themselves and retries the action manually, matching
+// manage-communities/register/page.tsx's already-correct pattern exactly. Non-auth failures
+// (network blips, RPC errors) keep the original backoff-retry — that resilience is unrelated to
+// the SIWE bug and stays in scope.
+async function withAuthRetry<T>(action: () => Promise<T>, signOut: () => Promise<void>): Promise<T> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       return await action();
     } catch (err) {
       if (err instanceof communityApi.AuthError) {
-        try {
-          await signIn();
-          return await action();
-        } catch (retryErr) {
-          if (attempt === 2) throw retryErr;
-          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
-          continue;
-        }
+        await signOut();
+        throw err;
       }
       if (attempt === 2) throw err;
       await new Promise<void>((resolve) => setTimeout(resolve, 1000 * 2 ** attempt));
@@ -195,17 +147,17 @@ async function withAuthRetry<T>(action: () => Promise<T>, signIn: () => Promise<
 
 export async function saveIdentityWithRetry(
   payload: communityApi.IdentityPayload,
-  signIn: () => Promise<void>,
+  signOut: () => Promise<void>,
 ): Promise<communityApi.Community> {
-  return withAuthRetry(() => communityApi.registerIdentity(payload), signIn);
+  return withAuthRetry(() => communityApi.registerIdentity(payload), signOut);
 }
 
 export async function saveWithRetry(
   identityCommunityId: string,
   payload: communityApi.GovernancePayload,
-  signIn: () => Promise<void>,
+  signOut: () => Promise<void>,
 ): Promise<communityApi.Community> {
-  return withAuthRetry(() => communityApi.attachGovernance(identityCommunityId, payload), signIn);
+  return withAuthRetry(() => communityApi.attachGovernance(identityCommunityId, payload), signOut);
 }
 
 function getCompletedPhasesFromCheckpoint(lastPhase: DeployPhase | undefined): DeployPhase[] {
@@ -214,30 +166,419 @@ function getCompletedPhasesFromCheckpoint(lastPhase: DeployPhase | undefined): D
   return idx >= 0 ? ALL_PHASES.slice(0, idx + 1) : [];
 }
 
-// ─── Hook ──────────────────────────────────────────────────────────────────
+// ─── useDeployGovernance ───────────────────────────────────────────────────
+//
+// The on-chain deploy sequence (sign-up policy -> MACI -> set target -> attach governance),
+// extracted so it's usable from two entry points with one implementation (2026-08-19
+// community-creation-rework review, D1):
+//   1. CreateCommunityWizard, right after identity creation, for a just-created community.
+//   2. manage-communities/[id]/edit, any time later, for an already-existing off-chain
+//      community — the "deploy governance later" path that makes "governance not set" a real,
+//      recoverable state instead of a trap.
+//
+// communityId is nullable so the wizard can call this hook unconditionally on every render
+// (React's rules of hooks) even before identity creation has produced a real id — every action
+// below no-ops with a clear error until communityId is set.
 
-export function useCreateCommunity(): UseCreateCommunityResult {
+export interface DeployGovernanceConfig {
+  displayName: string;
+  signUpPolicy: SignUpPolicyArgs;
+  allowedPolicies: number[];
+  supportedModes: number[];
+}
+
+export interface DeployGovernanceState {
+  registryStatus: RegistryStatus | undefined;
+  summary: DeploymentSummary | undefined;
+  currentPhase: DeployPhase | undefined;
+  completedPhases: DeployPhase[];
+  currentTxHash: Hex | undefined;
+  errorMessage: string | undefined;
+  retryFromPhase: DeployPhase | undefined;
+  isDeployed: boolean;
+}
+
+export interface UseDeployGovernanceResult {
+  state: DeployGovernanceState;
+  startNetworkCheck: () => Promise<void>;
+  startDeployment: () => Promise<void>;
+  retryDeployment: () => Promise<void>;
+  saveCommunity: () => Promise<void>;
+}
+
+const DEPLOY_INITIAL_STATE: DeployGovernanceState = {
+  registryStatus: undefined,
+  summary: undefined,
+  currentPhase: undefined,
+  completedPhases: [],
+  currentTxHash: undefined,
+  errorMessage: undefined,
+  retryFromPhase: undefined,
+  isDeployed: false,
+};
+
+export function useDeployGovernance(
+  communityId: string | undefined,
+  config: DeployGovernanceConfig | undefined,
+  siwe: ReturnType<typeof useSiwe>,
+): UseDeployGovernanceResult {
   const { address } = useAccount();
   const chainId = useChainId();
   const registry = useZuGovRegistry();
-  const { signIn } = useSiwe();
-  const [state, setState] = useState<WizardState>(INITIAL_STATE);
+  const [state, setState] = useState<DeployGovernanceState>(DEPLOY_INITIAL_STATE);
   const deployingRef = useRef(false);
 
-  // On mount: restore in-progress deployment for current wallet
+  // Wallet-switch guard (2026-08-19 review, D7 — outside-voice finding): runDeployment reads
+  // `address` once at call-time (a safe closure snapshot for that single invocation), but
+  // without this ref, a resident switching wallets mid-deploy would have their next
+  // retry/resume attempt silently proceed under the new address — orphaning the old wallet's
+  // checkpoint while an already-deployed contract stays owned by the old address. addressRef
+  // always reflects the LIVE connected wallet, independent of any in-flight closure, so a
+  // running deploy can detect the mismatch and stop instead of silently continuing wrong.
+  const addressRef = useRef(address);
+  useEffect(() => {
+    addressRef.current = address;
+  }, [address]);
+
+  const startNetworkCheck = useCallback(async () => {
+    await registry.refetch();
+    setState((prev) => ({ ...prev, registryStatus: registry }));
+  }, [registry]);
+
+  const runDeployment = useCallback(
+    async (fromPhase: DeployPhase | undefined, existingCheckpoint?: PendingDeploymentCheckpoint) => {
+      if (deployingRef.current) return;
+      if (!communityId) throw new Error("No community to deploy governance for");
+      if (!address) throw new Error("Wallet not connected");
+      if (!registry.data) throw new Error("Registry data not available");
+      if (!config) throw new Error("Deployment config not available");
+
+      const deployAddress = address;
+      const assertWalletUnchanged = () => {
+        if (addressRef.current !== deployAddress) {
+          throw new Error(`Wallet changed. Reconnect ${deployAddress} to continue this deploy.`);
+        }
+      };
+
+      const registryData = registry.data;
+      const chainConstants = appConstants[chainId as keyof typeof appConstants];
+      const chainName = chainConstants?.chain.name ?? String(chainId);
+
+      deployingRef.current = true;
+
+      setState((prev) => ({ ...prev, errorMessage: undefined, retryFromPhase: undefined }));
+
+      const fullConfig: MACIDeploymentConfig = {
+        displayName: config.displayName,
+        description: "",
+        signUpPolicy: config.signUpPolicy,
+        allowedPolicies: config.allowedPolicies,
+        supportedModes: config.supportedModes,
+        stateTreeDepth: STATE_TREE_DEPTH,
+        membershipPolicy: "open",
+        tierChangesRequireVote: false,
+        tiers: [],
+        defaultTierLabel: "",
+      };
+
+      const checkpoint: PendingDeploymentCheckpoint = existingCheckpoint ?? {
+        config: fullConfig,
+        lastPhase: "deploy_sign_up_policy",
+        identityCommunityId: communityId,
+        chainId,
+        startedAt: Date.now(),
+      };
+
+      try {
+        const signer = await getEthersSigner();
+        let signUpPolicyAddress: Hex | undefined = checkpoint.deployedSignUpPolicyAddress;
+        let maciAddress: Hex | undefined = checkpoint.deployedMaciAddress;
+        let maciBlockNumber: number | undefined = checkpoint.deployedMaciBlockNumber;
+
+        // Phase 1: Deploy sign-up policy
+        if (!fromPhase || fromPhase === "deploy_sign_up_policy") {
+          assertWalletUnchanged();
+          setState((prev) => ({ ...prev, currentPhase: "deploy_sign_up_policy" }));
+          signUpPolicyAddress = await deployPolicyContract(config.signUpPolicy, signer, chainId);
+          assertWalletUnchanged();
+          checkpoint.deployedSignUpPolicyAddress = signUpPolicyAddress;
+          checkpoint.lastPhase = "deploy_sign_up_policy";
+          savePendingCheckpoint(deployAddress as Hex, communityId, checkpoint);
+          setState((prev) => ({ ...prev, completedPhases: [...prev.completedPhases, "deploy_sign_up_policy"] }));
+        }
+
+        if (!signUpPolicyAddress) throw new Error("Sign-up policy address missing");
+
+        // Phase 2: Deploy MACI
+        if (!fromPhase || fromPhase === "deploy_sign_up_policy" || fromPhase === "deploy_maci") {
+          assertWalletUnchanged();
+          setState((prev) => ({ ...prev, currentPhase: "deploy_maci" }));
+          const emptyBallotRoots = generateEmptyBallotRoots(STATE_TREE_DEPTH).slice(0, 5) as [
+            bigint,
+            bigint,
+            bigint,
+            bigint,
+            bigint,
+          ];
+          const linkedBytecode = linkPoseidon(MACI__factory.bytecode, registryData);
+          const maciFactory = new ContractFactory(MACI__factory.abi, linkedBytecode, signer);
+          const maciContract = await maciFactory.deploy({
+            pollFactory: registryData.pollFactory,
+            messageProcessorFactory: registryData.messageProcessorFactory,
+            tallyFactory: registryData.tallyFactory,
+            signUpPolicy: signUpPolicyAddress,
+            verifier: registryData.verifier,
+            verifyingKeysRegistry: registryData.verifyingKeysRegistry,
+            stateTreeDepth: STATE_TREE_DEPTH,
+            emptyBallotRoots,
+            owner: deployAddress,
+            initialSupportedModes: config.supportedModes,
+            initialAllowedPolicies: config.allowedPolicies,
+          });
+          const maciReceipt = (await maciContract.deploymentTransaction()?.wait()) as {
+            status: number;
+            hash: string;
+            blockNumber: number;
+          } | null;
+          if (!maciReceipt || maciReceipt.status !== 1) throw new Error("MACI deployment failed");
+          assertWalletUnchanged();
+
+          maciAddress = (await maciContract.getAddress()) as Hex;
+          maciBlockNumber = maciReceipt.blockNumber;
+          setState((prev) => ({ ...prev, currentTxHash: maciReceipt.hash as Hex }));
+          checkpoint.deployedMaciAddress = maciAddress;
+          checkpoint.deployedMaciBlockNumber = maciBlockNumber;
+          checkpoint.lastPhase = "deploy_maci";
+          savePendingCheckpoint(deployAddress as Hex, communityId, checkpoint);
+          setState((prev) => ({ ...prev, completedPhases: [...prev.completedPhases, "deploy_maci"] }));
+        }
+
+        if (!maciAddress) throw new Error("MACI address missing");
+        if (maciBlockNumber === undefined) throw new Error("MACI deployment block missing");
+
+        // Phase 3: Set target (authorize MACI on the sign-up policy)
+        if (
+          !fromPhase ||
+          fromPhase === "deploy_sign_up_policy" ||
+          fromPhase === "deploy_maci" ||
+          fromPhase === "set_target"
+        ) {
+          assertWalletUnchanged();
+          setState((prev) => ({ ...prev, currentPhase: "set_target" }));
+          const policy = new Contract(signUpPolicyAddress, SET_TARGET_ABI, signer);
+          const setTargetTx = await (
+            policy.setTarget as (addr: string) => Promise<{
+              wait: () => Promise<{
+                status: number;
+              }>;
+            }>
+          )(maciAddress);
+          const setTargetReceipt = await setTargetTx.wait();
+          if (!setTargetReceipt || setTargetReceipt.status !== 1) throw new Error("setTarget failed");
+          assertWalletUnchanged();
+          checkpoint.lastPhase = "set_target";
+          savePendingCheckpoint(deployAddress as Hex, communityId, checkpoint);
+          setState((prev) => ({ ...prev, completedPhases: [...prev.completedPhases, "set_target"] }));
+        }
+
+        // Phase 4: attach governance config now that MACI has been deployed on-chain — identity
+        // (displayName/description/membership/tiers) already exists, created either by the
+        // wizard's community_setup step or long before, for an existing off-chain community.
+        assertWalletUnchanged();
+        setState((prev) => ({ ...prev, currentPhase: "save_community" }));
+        const payload: communityApi.GovernancePayload = {
+          contractAddress: maciAddress,
+          chainId,
+          allowedPolicies: config.allowedPolicies,
+          supportedModes: config.supportedModes,
+          signUpPolicyType: config.signUpPolicy.type,
+          signUpPolicyAddress: signUpPolicyAddress,
+          maciDeploymentBlock: maciBlockNumber,
+          stateTreeDepth: STATE_TREE_DEPTH,
+          pollDeployConfig: chainConstants ? buildPollDeployConfig(registryData, chainConstants) : undefined,
+        };
+
+        const registered = await saveWithRetry(communityId, payload, siwe.signOut);
+        setState((prev) => ({ ...prev, completedPhases: [...prev.completedPhases, "save_community"] }));
+
+        clearPendingCheckpoint(deployAddress as Hex, communityId);
+
+        window.dispatchEvent(
+          new CustomEvent("zugov:community-created", {
+            detail: {
+              community: registered,
+              signUpPolicyType: config.signUpPolicy.type,
+              signUpPolicyAddress,
+            },
+          }),
+        );
+
+        setState((prev) => ({
+          ...prev,
+          isDeployed: true,
+          currentPhase: undefined,
+          summary: {
+            displayName: config.displayName,
+            description: "",
+            signUpPolicyType: config.signUpPolicy.type,
+            allowedPolicies: config.allowedPolicies,
+            supportedModes: config.supportedModes,
+            stateTreeDepth: STATE_TREE_DEPTH,
+            deployerAddress: deployAddress as Hex,
+            chainName,
+          },
+        }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setState((prev) => ({
+          ...prev,
+          errorMessage: message,
+          retryFromPhase: prev.currentPhase,
+          currentPhase: undefined,
+        }));
+      } finally {
+        deployingRef.current = false;
+      }
+    },
+    [address, chainId, communityId, config, registry, siwe],
+  );
+
+  const startDeployment = useCallback(async () => {
+    await runDeployment(undefined);
+  }, [runDeployment]);
+
+  const retryDeployment = useCallback(async () => {
+    const checkpoint = address && communityId ? getPendingCheckpoint(address as Hex, communityId) : null;
+    await runDeployment(state.retryFromPhase, checkpoint ?? undefined);
+  }, [runDeployment, state.retryFromPhase, address, communityId]);
+
+  const saveCommunity = useCallback(async () => {
+    const checkpoint = address && communityId ? getPendingCheckpoint(address as Hex, communityId) : null;
+    await runDeployment("save_community", checkpoint ?? undefined);
+  }, [runDeployment, address, communityId]);
+
+  const registryForState: RegistryStatus = {
+    isLoading: registry.isLoading,
+    isSupported: registry.isSupported,
+    isReady: registry.isReady,
+    data: registry.data,
+    error: registry.error,
+  };
+
+  return {
+    state: { ...state, registryStatus: registryForState },
+    startNetworkCheck,
+    startDeployment,
+    retryDeployment,
+    saveCommunity,
+  };
+}
+
+// ─── useCreateCommunity (wizard) ───────────────────────────────────────────
+
+export interface WizardState {
+  step: WizardStep;
+  config: Partial<MACIDeploymentConfig>;
+  // The community's identity id (server-generated UUID), created at the community_setup step
+  // — before any on-chain deployment starts (Architecture 1A/1B). Doubles as the id passed to
+  // useDeployGovernance once the resident opts into deploying governance (2026-08-19
+  // community-creation-rework review, D1/D2) — the wizard's success screen offers that as an
+  // explicit choice rather than always deploying.
+  identityCommunityId: string | undefined;
+  // Discovered on mount, not applied automatically — the recovery banner offers Resume/Dismiss
+  // as a deliberate choice, matching the pre-rework UX exactly (2026-08-19 review keeps this,
+  // only the underlying per-community checkpoint lookup changed).
+  pendingCheckpoint: { communityId: string; checkpoint: PendingDeploymentCheckpoint } | null;
+}
+
+export interface UseCreateCommunityResult {
+  state: WizardState;
+  deploy: UseDeployGovernanceResult;
+  goToStep: (step: WizardStep) => void;
+  goBack: () => void;
+  setCommunityInfo: (name: string, description: string, parentCommunityId?: string) => void;
+  setCommunitySetup: (config: {
+    membershipPolicy: MembershipPolicy;
+    tiers: TierDraft[];
+    defaultTierLabel: string;
+    advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
+  }) => Promise<void>;
+  resumeCheckpoint: () => void;
+  dismissCheckpoint: () => void;
+  reset: () => void;
+}
+
+const STEP_ORDER: WizardStep[] = [
+  "community_info",
+  "community_setup",
+  "network_check",
+  "review",
+  "deploying",
+  "success",
+];
+
+const INITIAL_STATE: WizardState = {
+  step: "community_info",
+  config: {},
+  identityCommunityId: undefined,
+  pendingCheckpoint: null,
+};
+
+export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateCommunityResult {
+  const { address } = useAccount();
+  const [state, setState] = useState<WizardState>(INITIAL_STATE);
+
+  const deployConfig: DeployGovernanceConfig | undefined = state.config.displayName
+    ? {
+        displayName: state.config.displayName,
+        signUpPolicy: state.config.signUpPolicy ?? DEFAULT_ADVANCED_CONFIG.signUpPolicy,
+        allowedPolicies: state.config.allowedPolicies ?? DEFAULT_ADVANCED_CONFIG.allowedPolicies,
+        supportedModes: state.config.supportedModes ?? DEFAULT_ADVANCED_CONFIG.supportedModes,
+      }
+    : undefined;
+  const deploy = useDeployGovernance(state.identityCommunityId, deployConfig, siwe);
+
+  // useDeployGovernance owns its own success/error state, decoupled from the wizard's step
+  // (D1 — it's shared with the edit page, which has no WizardStep concept at all). When a
+  // deploy this hook composes finishes, advance the wizard to its success screen.
+  useEffect(() => {
+    if (deploy.state.isDeployed) {
+      setState((prev) => (prev.step === "success" ? prev : { ...prev, step: "success" }));
+    }
+  }, [deploy.state.isDeployed]);
+
+  // On mount: discover any in-progress deployment for the current wallet, regardless of which
+  // community it belongs to (findAnyPendingCheckpoint — this runs before any community is known,
+  // see checkpointStore.ts's per-community keying, D5). Stored for the recovery banner to offer
+  // Resume/Dismiss as a deliberate choice — not applied automatically.
   useEffect(() => {
     if (!address) return;
-    const checkpoint = getPendingCheckpoint(address as Hex);
-    if (!checkpoint) return;
+    const found = findAnyPendingCheckpoint(address as Hex);
+    if (!found) return;
+    setState((prev) => ({ ...prev, pendingCheckpoint: found }));
+  }, [address]);
 
-    setState((prev) => ({
-      ...prev,
-      step: "deploying",
-      config: checkpoint.config,
-      identityCommunityId: checkpoint.identityCommunityId,
-      completedPhases: getCompletedPhasesFromCheckpoint(checkpoint.lastPhase),
-      retryFromPhase: checkpoint.lastPhase,
-    }));
+  const resumeCheckpoint = useCallback(() => {
+    setState((prev) => {
+      if (!prev.pendingCheckpoint) return prev;
+      const { communityId, checkpoint } = prev.pendingCheckpoint;
+      return {
+        ...prev,
+        step: "deploying",
+        config: checkpoint.config,
+        identityCommunityId: communityId,
+        pendingCheckpoint: null,
+      };
+    });
+  }, []);
+
+  const dismissCheckpoint = useCallback(() => {
+    setState((prev) => {
+      if (address && prev.pendingCheckpoint) {
+        clearPendingCheckpoint(address as Hex, prev.pendingCheckpoint.communityId);
+      }
+      return { ...prev, pendingCheckpoint: null };
+    });
   }, [address]);
 
   const goToStep = useCallback((step: WizardStep) => {
@@ -263,6 +604,8 @@ export function useCreateCommunity(): UseCreateCommunityResult {
   const setCommunitySetup = useCallback(
     async (config: {
       membershipPolicy: MembershipPolicy;
+      tiers: TierDraft[];
+      defaultTierLabel: string;
       advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
     }) => {
       if (!state.config.displayName) throw new Error("Community name is required");
@@ -280,9 +623,9 @@ export function useCreateCommunity(): UseCreateCommunityResult {
                 communityApi.update(state.identityCommunityId as string, {
                   membershipPolicy: config.membershipPolicy,
                   tierChangesRequireVote: false,
-                  defaultTierLabel: "Resident",
+                  defaultTierLabel: config.defaultTierLabel,
                 }),
-              signIn,
+              siwe.signOut,
             )
           ).id
         : (
@@ -293,11 +636,11 @@ export function useCreateCommunity(): UseCreateCommunityResult {
                 parentCommunityId: state.config.parentCommunityId,
                 membershipPolicy: config.membershipPolicy,
                 tierChangesRequireVote: false,
-                tiers: RESIDENT_ORGANIZER_TIERS,
-                defaultTierLabel: "Resident",
+                tiers: config.tiers,
+                defaultTierLabel: config.defaultTierLabel,
                 source: "wizard",
               },
-              signIn,
+              siwe.signOut,
             )
           ).id;
 
@@ -308,252 +651,33 @@ export function useCreateCommunity(): UseCreateCommunityResult {
           ...advanced,
           membershipPolicy: config.membershipPolicy,
           tierChangesRequireVote: false,
-          tiers: RESIDENT_ORGANIZER_TIERS,
-          defaultTierLabel: "Resident",
+          tiers: config.tiers,
+          defaultTierLabel: config.defaultTierLabel,
           stateTreeDepth: STATE_TREE_DEPTH,
         },
         identityCommunityId: identityId,
-        step: "network_check",
+        // Off-chain-only is now a real, intentional end state (2026-08-19 review, D2) — the
+        // wizard lands on success right after identity creation. Deploying governance is an
+        // explicit opt-in from there, not an automatic next step.
+        step: "success",
       }));
     },
-    [state.config, state.identityCommunityId, signIn],
+    [state.config, state.identityCommunityId, siwe],
   );
-
-  const startNetworkCheck = useCallback(async () => {
-    await registry.refetch();
-    setState((prev) => ({ ...prev, registryStatus: registry }));
-  }, [registry]);
-
-  const runDeployment = useCallback(
-    async (fromPhase: DeployPhase | undefined, existingCheckpoint?: PendingDeploymentCheckpoint) => {
-      if (deployingRef.current) return;
-      if (!address) throw new Error("Wallet not connected");
-      if (!registry.data) throw new Error("Registry data not available");
-
-      const config = state.config as MACIDeploymentConfig;
-      if (!config.displayName) throw new Error("Community name is required");
-
-      const identityCommunityId = existingCheckpoint?.identityCommunityId ?? state.identityCommunityId;
-      if (!identityCommunityId) {
-        throw new Error("Community identity was not created — go back and complete the community setup step");
-      }
-
-      const registryData = registry.data;
-      const chainConstants = appConstants[chainId as keyof typeof appConstants];
-      const chainName = chainConstants?.chain.name ?? String(chainId);
-
-      deployingRef.current = true;
-
-      setState((prev) => ({
-        ...prev,
-        step: "deploying",
-        errorMessage: undefined,
-        retryFromPhase: undefined,
-      }));
-
-      const checkpoint: PendingDeploymentCheckpoint = existingCheckpoint ?? {
-        config,
-        lastPhase: "deploy_sign_up_policy",
-        identityCommunityId,
-        chainId,
-        startedAt: Date.now(),
-      };
-
-      try {
-        const signer = await getEthersSigner();
-        let signUpPolicyAddress: Hex | undefined = checkpoint.deployedSignUpPolicyAddress;
-        let maciAddress: Hex | undefined = checkpoint.deployedMaciAddress;
-        let maciBlockNumber: number | undefined = checkpoint.deployedMaciBlockNumber;
-
-        // Phase 1: Deploy sign-up policy
-        if (!fromPhase || fromPhase === "deploy_sign_up_policy") {
-          setPhase(setState, "deploy_sign_up_policy");
-          signUpPolicyAddress = await deployPolicyContract(config.signUpPolicy, signer, chainId);
-          checkpoint.deployedSignUpPolicyAddress = signUpPolicyAddress;
-          checkpoint.lastPhase = "deploy_sign_up_policy";
-          savePendingCheckpoint(address as Hex, checkpoint);
-          addCompleted(setState, "deploy_sign_up_policy");
-        }
-
-        if (!signUpPolicyAddress) throw new Error("Sign-up policy address missing");
-
-        // Phase 2: Deploy MACI
-        if (!fromPhase || fromPhase === "deploy_sign_up_policy" || fromPhase === "deploy_maci") {
-          setPhase(setState, "deploy_maci");
-          const emptyBallotRoots = generateEmptyBallotRoots(STATE_TREE_DEPTH).slice(0, 5) as [
-            bigint,
-            bigint,
-            bigint,
-            bigint,
-            bigint,
-          ];
-          const linkedBytecode = linkPoseidon(MACI__factory.bytecode, registryData);
-          const maciFactory = new ContractFactory(MACI__factory.abi, linkedBytecode, signer);
-          const maciContract = await maciFactory.deploy({
-            pollFactory: registryData.pollFactory,
-            messageProcessorFactory: registryData.messageProcessorFactory,
-            tallyFactory: registryData.tallyFactory,
-            signUpPolicy: signUpPolicyAddress,
-            verifier: registryData.verifier,
-            verifyingKeysRegistry: registryData.verifyingKeysRegistry,
-            stateTreeDepth: STATE_TREE_DEPTH,
-            emptyBallotRoots,
-            owner: address,
-            initialSupportedModes: config.supportedModes,
-            initialAllowedPolicies: config.allowedPolicies,
-          });
-          const maciReceipt = (await maciContract.deploymentTransaction()?.wait()) as {
-            status: number;
-            hash: string;
-            blockNumber: number;
-          } | null;
-          if (!maciReceipt || maciReceipt.status !== 1) throw new Error("MACI deployment failed");
-
-          maciAddress = (await maciContract.getAddress()) as Hex;
-          maciBlockNumber = maciReceipt.blockNumber;
-          setState((prev) => ({ ...prev, currentTxHash: maciReceipt.hash as Hex }));
-          checkpoint.deployedMaciAddress = maciAddress;
-          checkpoint.deployedMaciBlockNumber = maciBlockNumber;
-          checkpoint.lastPhase = "deploy_maci";
-          savePendingCheckpoint(address as Hex, checkpoint);
-          addCompleted(setState, "deploy_maci");
-        }
-
-        if (!maciAddress) throw new Error("MACI address missing");
-        if (maciBlockNumber === undefined) throw new Error("MACI deployment block missing");
-
-        // Phase 3: Set target (authorize MACI on the sign-up policy)
-        if (
-          !fromPhase ||
-          fromPhase === "deploy_sign_up_policy" ||
-          fromPhase === "deploy_maci" ||
-          fromPhase === "set_target"
-        ) {
-          setPhase(setState, "set_target");
-          const policy = new Contract(signUpPolicyAddress, SET_TARGET_ABI, signer);
-          const setTargetTx = await (
-            policy.setTarget as (addr: string) => Promise<{
-              wait: () => Promise<{
-                status: number;
-              }>;
-            }>
-          )(maciAddress);
-          const setTargetReceipt = await setTargetTx.wait();
-          if (!setTargetReceipt || setTargetReceipt.status !== 1) throw new Error("setTarget failed");
-          checkpoint.lastPhase = "set_target";
-          savePendingCheckpoint(address as Hex, checkpoint);
-          addCompleted(setState, "set_target");
-        }
-
-        // Phase 4: attach governance config now that MACI has been deployed on-chain — identity
-        // (displayName/description/membership/tiers) was already saved in setCommunitySetup.
-        setPhase(setState, "save_community");
-        const payload: communityApi.GovernancePayload = {
-          contractAddress: maciAddress,
-          chainId,
-          allowedPolicies: config.allowedPolicies,
-          supportedModes: config.supportedModes,
-          signUpPolicyType: config.signUpPolicy.type,
-          signUpPolicyAddress: signUpPolicyAddress,
-          maciDeploymentBlock: maciBlockNumber,
-          stateTreeDepth: STATE_TREE_DEPTH,
-          pollDeployConfig: chainConstants ? buildPollDeployConfig(registryData, chainConstants) : undefined,
-        };
-
-        const registered = await saveWithRetry(identityCommunityId, payload, signIn);
-        addCompleted(setState, "save_community");
-
-        clearPendingCheckpoint(address as Hex);
-
-        window.dispatchEvent(
-          new CustomEvent("zugov:community-created", {
-            detail: {
-              community: registered,
-              signUpPolicyType: config.signUpPolicy.type,
-              signUpPolicyAddress,
-            },
-          }),
-        );
-
-        setState((prev) => ({
-          ...prev,
-          step: "success",
-          // registered.id is the identity id (route param for /community/[id]) — distinct from
-          // maciAddress, the on-chain contract address (Architecture 1C).
-          deployedCommunityId: registered.id,
-          currentPhase: undefined,
-          summary: {
-            displayName: config.displayName,
-            description: config.description,
-            signUpPolicyType: config.signUpPolicy.type,
-            allowedPolicies: config.allowedPolicies,
-            supportedModes: config.supportedModes,
-            stateTreeDepth: STATE_TREE_DEPTH,
-            deployerAddress: address as Hex,
-            chainName,
-          },
-        }));
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setState((prev) => ({
-          ...prev,
-          step: "error",
-          errorMessage: message,
-          retryFromPhase: prev.currentPhase,
-          currentPhase: undefined,
-        }));
-      } finally {
-        deployingRef.current = false;
-      }
-    },
-    [address, chainId, state.config, registry, signIn],
-  );
-
-  const startDeployment = useCallback(async () => {
-    await runDeployment(undefined);
-  }, [runDeployment]);
-
-  const retryDeployment = useCallback(async () => {
-    const checkpoint = address ? getPendingCheckpoint(address as Hex) : null;
-    await runDeployment(state.retryFromPhase, checkpoint ?? undefined);
-  }, [runDeployment, state.retryFromPhase, address]);
-
-  const saveCommunity = useCallback(async () => {
-    await runDeployment("save_community", address ? (getPendingCheckpoint(address as Hex) ?? undefined) : undefined);
-  }, [runDeployment, address]);
 
   const reset = useCallback(() => {
     setState(INITIAL_STATE);
   }, []);
 
-  const registryForState: RegistryStatus = {
-    isLoading: registry.isLoading,
-    isSupported: registry.isSupported,
-    isReady: registry.isReady,
-    data: registry.data,
-    error: registry.error,
-  };
-
   return {
-    state: { ...state, registryStatus: registryForState },
+    state,
+    deploy,
     goToStep,
     goBack,
     setCommunityInfo,
     setCommunitySetup,
-    startNetworkCheck,
-    startDeployment,
-    retryDeployment,
-    saveCommunity,
+    resumeCheckpoint,
+    dismissCheckpoint,
     reset,
   };
-}
-
-// ─── State helpers ─────────────────────────────────────────────────────────
-
-function setPhase(setState: React.Dispatch<React.SetStateAction<WizardState>>, phase: DeployPhase) {
-  setState((prev) => ({ ...prev, currentPhase: phase }));
-}
-
-function addCompleted(setState: React.Dispatch<React.SetStateAction<WizardState>>, phase: DeployPhase) {
-  setState((prev) => ({ ...prev, completedPhases: [...prev.completedPhases, phase] }));
 }

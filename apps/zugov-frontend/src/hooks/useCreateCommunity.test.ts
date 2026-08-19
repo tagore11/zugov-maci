@@ -60,50 +60,54 @@ describe("saveWithRetry", () => {
     expect(attachGovernanceMock).toHaveBeenCalledWith("identity-1", GOVERNANCE_PAYLOAD);
   });
 
-  it("retries once after a fresh sign-in on AuthError", async () => {
-    const signIn = vi.fn().mockResolvedValue(undefined);
-    attachGovernanceMock.mockRejectedValueOnce(new communityApi.AuthError()).mockResolvedValueOnce({
-      id: "identity-1",
-    });
+  // 2026-08-19 community-creation-rework review, D4 (corrected post-outside-voice): on an
+  // AuthError, invalidate the shared session and fail immediately — no silent re-sign-in +
+  // retry. That silent retry was exactly the "asks to sign in again with no explanation" bug;
+  // the visible SiweGate prompt reappearing (via signOut()) is what re-authenticates now, not
+  // an automatic wallet-signature popup triggered by this function.
+  it("invalidates the session and throws immediately on AuthError, without retrying", async () => {
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    const authError = new communityApi.AuthError();
+    attachGovernanceMock.mockRejectedValueOnce(authError);
 
-    const result = await saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn);
-    expect(result).toEqual({ id: "identity-1" });
-    expect(signIn).toHaveBeenCalledTimes(1);
-    expect(attachGovernanceMock).toHaveBeenCalledTimes(2);
+    await expect(saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signOut)).rejects.toBe(authError);
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(attachGovernanceMock).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps retrying with backoff when the post-sign-in retry also fails, instead of throwing immediately", async () => {
+  it("keeps retrying with backoff on non-auth failures, instead of throwing immediately", async () => {
     vi.useFakeTimers();
     try {
-      const signIn = vi.fn().mockResolvedValue(undefined);
+      const signOut = vi.fn().mockResolvedValue(undefined);
       attachGovernanceMock
-        .mockRejectedValueOnce(new communityApi.AuthError()) // attempt 0: initial call
-        .mockRejectedValueOnce(new Error("transient")) // attempt 0: retry-after-signin also fails
-        .mockResolvedValueOnce({ id: "identity-1" }); // attempt 1: succeeds
+        .mockRejectedValueOnce(new Error("transient")) // attempt 0 fails
+        .mockResolvedValueOnce({ id: "identity-1" }); // attempt 1 succeeds
 
-      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn);
+      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signOut);
       await vi.advanceTimersByTimeAsync(1000);
       const result = await promise;
 
       expect(result).toEqual({ id: "identity-1" });
-      expect(attachGovernanceMock).toHaveBeenCalledTimes(3);
+      expect(attachGovernanceMock).toHaveBeenCalledTimes(2);
+      expect(signOut).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("throws only after 3 attempts, even when every failure is an AuthError whose retry also fails", async () => {
+  it("throws only after 3 attempts for a persistent non-auth failure", async () => {
     vi.useFakeTimers();
     try {
-      const signIn = vi.fn().mockResolvedValue(undefined);
-      attachGovernanceMock.mockRejectedValue(new communityApi.AuthError());
+      const signOut = vi.fn().mockResolvedValue(undefined);
+      attachGovernanceMock.mockRejectedValue(new Error("persistent"));
 
-      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signIn).catch((err: unknown) => err);
+      const promise = saveWithRetry("identity-1", GOVERNANCE_PAYLOAD, signOut).catch((err: unknown) => err);
       await vi.advanceTimersByTimeAsync(10000);
       const result = await promise;
 
-      expect(result).toBeInstanceOf(communityApi.AuthError);
-      expect(signIn).toHaveBeenCalledTimes(3);
+      expect(result).toBeInstanceOf(Error);
+      expect(attachGovernanceMock).toHaveBeenCalledTimes(3);
+      expect(signOut).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -125,15 +129,13 @@ describe("saveIdentityWithRetry", () => {
     expect(registerIdentityMock).toHaveBeenCalledTimes(1);
   });
 
-  it("retries once after a fresh sign-in on AuthError", async () => {
-    const signIn = vi.fn().mockResolvedValue(undefined);
-    registerIdentityMock.mockRejectedValueOnce(new communityApi.AuthError()).mockResolvedValueOnce({
-      id: "identity-1",
-    });
+  it("invalidates the session and throws immediately on AuthError, without retrying", async () => {
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    const authError = new communityApi.AuthError();
+    registerIdentityMock.mockRejectedValueOnce(authError);
 
-    const result = await saveIdentityWithRetry(IDENTITY_PAYLOAD, signIn);
-    expect(result).toEqual({ id: "identity-1" });
-    expect(signIn).toHaveBeenCalledTimes(1);
-    expect(registerIdentityMock).toHaveBeenCalledTimes(2);
+    await expect(saveIdentityWithRetry(IDENTITY_PAYLOAD, signOut)).rejects.toBe(authError);
+    expect(signOut).toHaveBeenCalledTimes(1);
+    expect(registerIdentityMock).toHaveBeenCalledTimes(1);
   });
 });

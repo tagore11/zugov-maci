@@ -1,6 +1,6 @@
 import { useChainId } from "wagmi";
 import { appConstants } from "@/src/config";
-import type { WizardState, DeployPhase, UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
+import type { DeployPhase, UseDeployGovernanceResult } from "@/src/hooks/useCreateCommunity";
 
 const PHASE_LABELS: Record<DeployPhase, string> = {
   deploy_sign_up_policy: "Deploy sign-up policy",
@@ -29,20 +29,18 @@ export function getBlockExplorerTxUrl(txHash: string, chainId: number | undefine
 }
 
 interface Props {
-  state: WizardState;
-  retryDeployment: UseCreateCommunityResult["retryDeployment"];
-  saveCommunity: UseCreateCommunityResult["saveCommunity"];
+  deploy: UseDeployGovernanceResult;
 }
 
-export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) {
-  const { completedPhases, currentPhase, currentTxHash, retryFromPhase } = state;
+export function StepDeploying({ deploy }: Props) {
+  const { completedPhases, currentPhase, currentTxHash, retryFromPhase, errorMessage } = deploy.state;
   const chainId = useChainId();
 
-  const isError = state.step === "error";
+  const isError = !!errorMessage;
   const isBackendFailure = isError && retryFromPhase === "save_community";
   // Restored from a checkpoint (e.g. after a page refresh) but nothing is actually
   // running — currentPhase is only set while runDeployment is mid-flight.
-  const isResumable = state.step === "deploying" && !currentPhase && Boolean(retryFromPhase);
+  const isResumable = !isError && !currentPhase && Boolean(retryFromPhase);
 
   return (
     <div className="space-y-5">
@@ -90,11 +88,11 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
 
       {isError && (
         <div className="space-y-3">
-          <p className="text-sm text-red-400">{state.errorMessage}</p>
+          <p className="text-sm text-red-400">{errorMessage}</p>
           {isBackendFailure ? (
             <button
               type="button"
-              onClick={() => void saveCommunity()}
+              onClick={() => void deploy.saveCommunity()}
               className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
                 hover:bg-accent-hover transition-colors text-sm"
             >
@@ -103,7 +101,7 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
           ) : (
             <button
               type="button"
-              onClick={() => void retryDeployment()}
+              onClick={() => void deploy.retryDeployment()}
               className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
                 hover:bg-accent-hover transition-colors text-sm"
             >
@@ -121,7 +119,7 @@ export function StepDeploying({ state, retryDeployment, saveCommunity }: Props) 
           </p>
           <button
             type="button"
-            onClick={() => void retryDeployment()}
+            onClick={() => void deploy.retryDeployment()}
             className="w-full min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
               hover:bg-accent-hover transition-colors text-sm"
           >
