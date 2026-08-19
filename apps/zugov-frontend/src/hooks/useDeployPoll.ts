@@ -50,20 +50,20 @@ export async function getEthersSigner() {
 }
 
 async function resolveInitialVoiceCreditProxy(
+  signer: Awaited<ReturnType<typeof getEthersSigner>>,
   existingPollAddress: string | null,
   constantVoiceCreditProxyFactory: string,
   initialVoiceCreditAmount: number,
 ): Promise<string> {
   if (existingPollAddress) {
-    const { JsonRpcProvider } = await import("ethers");
-    const provider = new JsonRpcProvider("https://sepolia-rpc.scroll.io"); //TODO
-    const poll = Poll__factory.connect(existingPollAddress, provider);
+    // Reuse the connected wallet's own provider (already on the community's actual chain)
+    // instead of a hardcoded RPC endpoint — existingPollAddress could be on any supported chain.
+    const poll = Poll__factory.connect(existingPollAddress, signer.provider);
     const ext = await poll.extContracts();
     return ext.initialVoiceCreditProxy;
   }
 
   // No existing poll — deploy a fresh ConstantInitialVoiceCreditProxy
-  const signer = await getEthersSigner();
   const factory = ConstantVoiceCreditProxyFactory__factory.connect(constantVoiceCreditProxyFactory, signer);
   const tx = await factory.deploy(initialVoiceCreditAmount);
   const receipt = await tx.wait();
@@ -113,15 +113,17 @@ export function useDeployPoll(governanceType: GovernanceType | undefined): UseDe
       setDeployError(null);
 
       try {
+        const signer = await getEthersSigner();
+
         setDeployStep("Resolving voice credit proxy...");
         const initialVoiceCreditProxy = await resolveInitialVoiceCreditProxy(
+          signer,
           existingPollAddress,
           pollDeployConfig.constantVoiceCreditProxyFactory,
           pollDeployConfig.initialVoiceCreditAmount,
         );
 
         setDeployStep("Deploying poll...");
-        const signer = await getEthersSigner();
         const maci = MACI__factory.connect(maciAddress, signer);
         const coordinatorKey = PublicKey.deserialize(pollDeployConfig.coordinatorPublicKey);
         const coordinatorPubKeyParam = coordinatorKey.asContractParam();
