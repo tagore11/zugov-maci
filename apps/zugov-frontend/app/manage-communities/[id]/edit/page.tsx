@@ -5,8 +5,11 @@ import { Header } from "../../../components/Header";
 import { ArrowLeft } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 import * as membershipApi from "@/src/services/membershipApi";
+import * as eligibilityApi from "@/src/services/eligibilityApi";
+import type { RuleDraft } from "@/src/services/eligibilityApi";
 import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
+import { EligibilityRulesetEditor } from "@/app/components/EligibilityRulesetEditor";
 import { SiweGate } from "@/app/components/SiweGate";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import {
@@ -99,6 +102,7 @@ export default function EditCommunityPage() {
   const [defaultTierLabel, setDefaultTierLabel] = useState("");
   const [tiers, setTiers] = useState<EditableTier[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<Set<string>>(new Set());
+  const [eligibilityRules, setEligibilityRules] = useState<RuleDraft[]>([]);
   const [governanceConfigured, setGovernanceConfigured] = useState(false);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
   const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
@@ -108,10 +112,11 @@ export default function EditCommunityPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [community, tierRows, membershipStatus] = await Promise.all([
+      const [community, tierRows, membershipStatus, rules] = await Promise.all([
         communityApi.get(communityId),
         membershipApi.getTiers(communityId),
         membershipApi.getMembershipStatus(communityId),
+        eligibilityApi.getRuleset(communityId),
       ]);
       if (cancelled) return;
       if (!community) {
@@ -129,6 +134,7 @@ export default function EditCommunityPage() {
       setCreatorAddress(community.creatorAddress);
       setTiers(tierRows);
       setOriginalTierIds(new Set(tierRows.map((t) => t.id)));
+      setEligibilityRules(rules.map(({ id: _id, ...draft }) => draft));
       const defaultTier = tierRows.find((t) => t.id === community.defaultTierId);
       setDefaultTierLabel(defaultTier?.label ?? tierRows[0]?.label ?? "");
       // Frontend authorization gate (2026-08-19 community-creation-rework review, D6) — this
@@ -155,6 +161,17 @@ export default function EditCommunityPage() {
       const removed = tiers.find((t) => !next.some((n) => (n.id ?? n.label) === (t.id ?? t.label)));
       if (removed && removed.label === defaultTierLabel) {
         setDefaultTierLabel(next[0]?.label ?? "");
+      }
+      // A removed tier can no longer be targeted or checked-for by an eligibility rule — drop
+      // any rule that referenced it rather than letting the save fail on a dangling tierId.
+      if (removed?.id) {
+        setEligibilityRules((prev) =>
+          prev.filter((rule) => {
+            if (rule.targetTierId === removed.id) return false;
+            if (rule.mechanism === "tier" && (rule.config as { tierId: string }).tierId === removed.id) return false;
+            return true;
+          }),
+        );
       }
     }
     setTiers(next);
@@ -195,6 +212,8 @@ export default function EditCommunityPage() {
           }
         }
       }
+
+      await eligibilityApi.replaceRuleset(communityId, eligibilityRules);
 
       navigate(`/community/${communityId}`);
     } catch (err) {
@@ -321,6 +340,20 @@ export default function EditCommunityPage() {
             <div>
               <label className="block text-sm font-semibold text-foreground mb-3">Membership Tiers *</label>
               <TierEditor tiers={tiers} onChange={handleTierEditorChange} locked={tiersLocked} />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Rules</label>
+              <p className="text-xs text-gray-500 mb-3">
+                Who is allowed to join, beyond the membership policy below — compose one or more conditions (optionally
+                requiring several at once) with alternate ways to qualify. Existing members are never retroactively
+                removed when this changes.
+              </p>
+              <EligibilityRulesetEditor
+                rules={eligibilityRules}
+                tiers={tiers.filter((t): t is EditableTier & { id: string } => !!t.id)}
+                onChange={setEligibilityRules}
+              />
             </div>
 
             <div>

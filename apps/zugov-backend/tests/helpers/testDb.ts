@@ -22,6 +22,10 @@ export const testDb = getTestDb();
 export async function clearCommunities() {
   await testDb.delete(schema.governanceActionSponsors);
   await testDb.delete(schema.governanceActions);
+  // eligibilityRules.targetTierId FKs to membershipTiers.id with no ON DELETE action (RESTRICT
+  // by default) — must clear before membershipTiers or that delete fails with a FK violation.
+  await testDb.delete(schema.eligibilityRules);
+  await testDb.delete(schema.eligibilityRulesets);
   await testDb.delete(schema.joinRequests);
   await testDb.delete(schema.memberships);
   await testDb.delete(schema.membershipTiers);

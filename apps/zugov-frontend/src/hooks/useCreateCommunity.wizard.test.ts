@@ -107,9 +107,10 @@ describe("useCreateCommunity wizard flow", () => {
   });
 
   // 2026-08-19 community-creation-rework review, D2: off-chain-only is now a real, intentional
-  // end state — the wizard lands on the success screen right after identity creation, not on
-  // network_check. Deploying governance becomes an explicit opt-in from there.
-  it("community_info -> community_setup, then community_setup -> success (off-chain-only) with defaults applied", async () => {
+  // end state — the wizard reaches the success screen after identity creation (via the new
+  // eligibility step, 2026-08-19 eligibility-followups review, D2), not network_check.
+  // Deploying governance becomes an explicit opt-in from there.
+  it("community_info -> community_setup -> eligibility -> success (off-chain-only) with defaults applied", async () => {
     const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
@@ -124,6 +125,17 @@ describe("useCreateCommunity wizard flow", () => {
         tiers: RESIDENT_ORGANIZER_TIERS,
         defaultTierLabel: "Resident",
       });
+    });
+
+    // Lands on the new eligibility step first — the identity (and its tiers) is real and
+    // persisted by this point, the earliest a rule could target a tier at all.
+    expect(result.current.state.step).toBe("eligibility");
+    expect(result.current.state.identityCommunityId).toBeDefined();
+
+    // StepEligibility's own Continue handler calls goToStep("success") — skipping (no rules
+    // added) is the common case and must not be blocked.
+    act(() => {
+      result.current.goToStep("success");
     });
 
     expect(result.current.state.step).toBe("success");
@@ -173,6 +185,10 @@ describe("useCreateCommunity wizard flow", () => {
         tiers: RESIDENT_ORGANIZER_TIERS,
         defaultTierLabel: "Resident",
       });
+    });
+    expect(result.current.state.step).toBe("eligibility");
+    act(() => {
+      result.current.goToStep("success");
     });
     expect(result.current.state.step).toBe("success");
 
@@ -309,5 +325,26 @@ describe("useCreateCommunity wizard flow", () => {
       result.current.goBack();
     });
     expect(result.current.state.step).toBe("community_info");
+  });
+
+  it("goBack from eligibility returns to community_setup", async () => {
+    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
+
+    act(() => {
+      result.current.setCommunityInfo("Zukas", "");
+    });
+    await act(async () => {
+      await result.current.setCommunitySetup({
+        membershipPolicy: "open",
+        tiers: RESIDENT_ORGANIZER_TIERS,
+        defaultTierLabel: "Resident",
+      });
+    });
+    expect(result.current.state.step).toBe("eligibility");
+
+    act(() => {
+      result.current.goBack();
+    });
+    expect(result.current.state.step).toBe("community_setup");
   });
 });

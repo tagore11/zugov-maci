@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { communities, memberships, membershipTiers, joinRequests, type MembershipTier } from "../db/schema.js";
+import {
+  communities,
+  memberships,
+  membershipTiers,
+  joinRequests,
+  eligibilityRules,
+  type MembershipTier,
+} from "../db/schema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
+import { evaluateEligibilityAcrossUnion } from "./eligibilityService.js";
 
 export class TierChangesRequireVoteError extends Error {
   constructor() {
@@ -12,7 +20,15 @@ export class TierChangesRequireVoteError extends Error {
 
 export class TierInUseError extends Error {
   constructor() {
-    super("Cannot delete a tier that has members assigned, or the community's default tier");
+    super(
+      "Cannot delete a tier that has members assigned, is the community's default tier, or is targeted by an eligibility rule",
+    );
+  }
+}
+
+export class NotEligibleError extends Error {
+  constructor(reason?: string) {
+    super(reason ?? "Does not meet this community's eligibility requirements");
   }
 }
 
@@ -175,6 +191,18 @@ export async function deleteTier(communityId: string, tierId: string): Promise<v
     throw new TierInUseError();
   }
 
+  // Eligibility-adapters review (2026-08-19), D8 — a tier targeted by an eligibility rule
+  // (eligibilityRules.targetTierId) can't be deleted either; the FK itself has no ON DELETE
+  // behavior set specifically so this app-level guard is the primary protection, not a backstop.
+  const targetingRules = await db
+    .select({ id: eligibilityRules.id })
+    .from(eligibilityRules)
+    .where(eq(eligibilityRules.targetTierId, tierId))
+    .limit(1);
+  if (targetingRules.length > 0) {
+    throw new TierInUseError();
+  }
+
   await db
     .delete(membershipTiers)
     .where(and(eq(membershipTiers.id, tierId), eq(membershipTiers.communityId, communityId)));
@@ -241,14 +269,26 @@ export async function submitJoinRequest(
     throw new Error("Community has no default tier configured");
   }
 
+  // Eligibility-adapters review (2026-08-19), D2/D2b — eligibility gates whether a wallet may
+  // join at all AND resolves which tier it lands in; membershipPolicy (open/approval) is a
+  // separate, orthogonal layer applied AFTER eligibility passes (does joining need a human's
+  // approval, not whether the wallet is allowed to join in the first place). Evaluated once,
+  // here, at submission time — not re-evaluated later for the approval path (D7).
+  // eligibility-followups review (2026-08-19), D1 — evaluateEligibilityAcrossUnion wraps
+  // evaluateRuleset with a live union-eligibility fallback; behaves identically to the plain
+  // evaluateRuleset call for any community with no active union membership.
+  const evaluation = await evaluateEligibilityAcrossUnion(communityId, walletAddress);
+  if (!evaluation.eligible) throw new NotEligibleError(evaluation.reason);
+  const resolvedTierId = evaluation.tierId ?? community.defaultTierId;
+
   const now = Math.floor(Date.now() / 1000);
 
   if (community.membershipPolicy === "open") {
-    await db.insert(memberships).values({ walletAddress, communityId, tierId: community.defaultTierId, joinedAt: now });
+    await db.insert(memberships).values({ walletAddress, communityId, tierId: resolvedTierId, joinedAt: now });
     const [tier] = await db
       .select({ label: membershipTiers.label })
       .from(membershipTiers)
-      .where(eq(membershipTiers.id, community.defaultTierId))
+      .where(eq(membershipTiers.id, resolvedTierId))
       .limit(1);
     return { status: "approved", tierLabel: tier?.label };
   }
@@ -258,6 +298,7 @@ export async function submitJoinRequest(
     communityId,
     walletAddress,
     status: "pending",
+    tierId: resolvedTierId,
     createdAt: now,
     resolvedAt: null,
   });
@@ -295,20 +336,28 @@ async function getPendingRequest(requestId: string) {
 export async function approveRequest(requestId: string): Promise<void> {
   const request = await getPendingRequest(requestId);
 
-  const [community] = await db
-    .select({ defaultTierId: communities.defaultTierId })
-    .from(communities)
-    .where(eq(communities.id, request.communityId))
-    .limit(1);
-  if (!community?.defaultTierId) {
-    throw new Error("Community has no default tier configured");
+  // Eligibility-adapters review (2026-08-19), D7 — the tier was already resolved at submission
+  // time (submitJoinRequest) and stored on the request; approval never re-runs eligibility. The
+  // defaultTierId fallback here is defensive only (a request submitted before this column
+  // existed) and should not be hit for any request created after this change lands.
+  let tierId = request.tierId;
+  if (!tierId) {
+    const [community] = await db
+      .select({ defaultTierId: communities.defaultTierId })
+      .from(communities)
+      .where(eq(communities.id, request.communityId))
+      .limit(1);
+    if (!community?.defaultTierId) {
+      throw new Error("Community has no default tier configured");
+    }
+    tierId = community.defaultTierId;
   }
 
   const now = Math.floor(Date.now() / 1000);
   await db.insert(memberships).values({
     walletAddress: request.walletAddress,
     communityId: request.communityId,
-    tierId: community.defaultTierId,
+    tierId,
     joinedAt: now,
   });
   await db.update(joinRequests).set({ status: "approved", resolvedAt: now }).where(eq(joinRequests.id, requestId));
