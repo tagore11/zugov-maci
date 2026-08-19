@@ -1,6 +1,20 @@
-node_modules
-build
-coverage
+# Explicit **/ prefixes, not bare names — bare patterns weren't reliably excluding nested
+# occurrences (e.g. packages/circuits/build), so the build context sent to the Docker daemon
+# was ballooning toward the full ~22GB repo (circuits alone carries ~9GB of local zkey/ptau/
+# rapidsnark artifacts) even though these names were already listed. See ENGINEERING.md's
+# Decisions Log.
+**/node_modules
+**/build
+**/dist
+**/coverage
+**/artifacts
+**/cache
+**/.nx
+**/*.log
 .git
-zkeys
 **/.env
+# Circuit trusted-setup / proving artifacts — large, regenerated or downloaded on demand,
+# never needed as Docker build input for any of coordinator/backend/frontend.
+**/zkeys
+**/ptau
+**/rapidsnark

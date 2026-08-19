@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Build context must be the monorepo root (apps/zugov-backend has no
 # workspace:* dependencies, but the install step still needs the root
 # lockfile/workspace manifest to resolve via pnpm).
@@ -17,11 +18,17 @@ WORKDIR /repo
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
 COPY apps/zugov-backend/package.json apps/zugov-backend/package.json
 COPY apps/subgraph/package.json apps/subgraph/package.json
-RUN pnpm install --frozen-lockfile --filter @zugov/backend... --filter @maci-protocol/subgraph...
+# The cache mount persists pnpm's downloaded-package store across builds, independent of
+# whether this layer itself is a Docker cache hit — without it, any lockfile change (routine)
+# forces every dependency to be re-fetched from the registry from scratch every deploy, even
+# ones already downloaded in a previous build. See ENGINEERING.md's Decisions Log.
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --filter @zugov/backend... --filter @maci-protocol/subgraph...
 
 COPY apps/zugov-backend apps/zugov-backend
 RUN pnpm --filter @zugov/backend run build
-RUN pnpm --filter @zugov/backend deploy --prod --legacy /prod/backend
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm --filter @zugov/backend deploy --prod --legacy /prod/backend
 
 # The per-community subgraph deploy pipeline (graph-cli, mustache, the
 # AssemblyScript compiler) runs from inside this same container — bundled as
@@ -30,7 +37,8 @@ RUN pnpm --filter @zugov/backend deploy --prod --legacy /prod/backend
 # codegen/deploy commands need the AssemblyScript compiler, which is a
 # devDependency here.
 COPY apps/subgraph apps/subgraph
-RUN pnpm --filter @maci-protocol/subgraph deploy --legacy /prod/subgraph
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm --filter @maci-protocol/subgraph deploy --legacy /prod/subgraph
 
 FROM node:22-alpine AS runtime
 RUN corepack enable && corepack prepare pnpm@10.30.2 --activate
