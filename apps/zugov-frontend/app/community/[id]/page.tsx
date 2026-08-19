@@ -95,7 +95,7 @@ export default function CommunityPage() {
     queryKey: ["pollMessageCounts", pollsData?.map((p) => p.id)],
     queryFn: () =>
       Promise.all(
-        pollsData!.map((p) => fetchNumMessages(activeGovernanceType!, p.id).then((n) => [p.id, n] as const)),
+        pollsData!.map((p) => fetchNumMessages(activeGovernanceType!, p.id, rpcUrl).then((n) => [p.id, n] as const)),
       ).then(Object.fromEntries<number>),
     enabled: !!pollsData?.length && !!activeGovernanceType,
   });
@@ -105,7 +105,7 @@ export default function CommunityPage() {
     queryFn: () =>
       Promise.all(
         pollsData!.map((p) =>
-          fetchIsEligible(activeGovernanceType!, p.policy, p.policyType, address!).then(
+          fetchIsEligible(activeGovernanceType!, p.policy, p.policyType, address!, rpcUrl).then(
             (eligible) => [p.id, eligible] as const,
           ),
         ),
