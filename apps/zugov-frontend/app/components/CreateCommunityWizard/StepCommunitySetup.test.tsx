@@ -43,4 +43,30 @@ describe("StepCommunitySetup — restores state across Back navigation", () => {
     const openButton = screen.getByRole("button", { name: /anyone can join/i });
     expect(openButton).toHaveAttribute("aria-pressed", "true");
   });
+
+  // Same class of bug as the membership-policy/advanced-settings restore tests above, now for
+  // the creation-time tier editor (2026-08-19 community-creation-rework review, D3) — a
+  // creator's renamed/customized tiers must survive Back-then-forward, not silently reset to
+  // the Resident/Organizer preset.
+  it("restores creator-edited tiers when initialTiers is provided", () => {
+    render(
+      <StepCommunitySetup
+        initialTiers={[
+          { label: "Neighbor", canVote: true, canCreateGovernanceActions: false, canManageMembership: false },
+        ]}
+        setCommunitySetup={vi.fn()}
+        goBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByDisplayValue("Neighbor")).toBeInTheDocument();
+    expect(screen.queryByDisplayValue("Resident")).not.toBeInTheDocument();
+  });
+
+  it("defaults to the Resident/Organizer preset when no initialTiers is provided (first visit)", () => {
+    render(<StepCommunitySetup setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+
+    expect(screen.getByDisplayValue("Resident")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Organizer")).toBeInTheDocument();
+  });
 });

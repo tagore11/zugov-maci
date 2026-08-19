@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
-import type { UseCreateCommunityResult, WizardState } from "@/src/hooks/useCreateCommunity";
+import type { UseDeployGovernanceResult, DeployGovernanceConfig } from "@/src/hooks/useCreateCommunity";
 
 interface Props {
-  state: WizardState;
-  startDeployment: UseCreateCommunityResult["startDeployment"];
-  goBack: UseCreateCommunityResult["goBack"];
+  config: DeployGovernanceConfig;
+  membershipDescription: string;
+  roleLabels: string[];
+  deploy: UseDeployGovernanceResult;
+  goBack: () => void;
 }
 
 const POLICY_TYPE_LABELS: Record<string, string> = {
@@ -21,10 +23,9 @@ const POLICY_TYPE_LABELS: Record<string, string> = {
   HatsProtocol: "Hats Protocol",
 };
 
-export function StepReview({ state, startDeployment, goBack }: Props) {
+export function StepReview({ config, membershipDescription, roleLabels, deploy, goBack }: Props) {
   const { address } = useAccount();
   const [showTechnical, setShowTechnical] = useState(false);
-  const config = state.config;
 
   const policyNames = (config.allowedPolicies ?? [])
     .map((id) => ALLOWED_POLICIES.find((p) => p.id === String(id))?.name ?? id)
@@ -40,25 +41,18 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
 
   const signUpPolicyDetail = config.signUpPolicy ? getPolicyDetail(config.signUpPolicy) : undefined;
 
-  const joinDescription =
-    config.membershipPolicy === "approval"
-      ? "Organizers approve new residents before they can join."
-      : "Anyone can join instantly.";
-
   return (
     <div className="space-y-5">
       <h2 className="text-lg font-semibold text-foreground">Review & Deploy</h2>
       <p className="text-sm text-gray-400">
-        Creating <span className="text-foreground font-medium">{config.displayName ?? "your community"}</span> —{" "}
-        {joinDescription}
+        Deploying governance for <span className="text-foreground font-medium">{config.displayName}</span> —{" "}
+        {membershipDescription}
       </p>
 
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 divide-y divide-gray-700 text-sm">
-        <Row label="Community name" value={config.displayName ?? "–"} />
-        {config.description && <Row label="Description" value={config.description} />}
-        <Row label="Who can join" value={joinDescription} />
-        <Row label="Roles" value={(config.tiers ?? []).map((t) => t.label).join(", ") || "–"} />
-        <Row label="You are" value="Organizer" />
+        <Row label="Community name" value={config.displayName} />
+        <Row label="Who can join" value={membershipDescription} />
+        <Row label="Roles" value={roleLabels.join(", ") || "–"} />
       </div>
 
       <div className="rounded-lg border border-gray-700">
@@ -98,7 +92,7 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => void startDeployment()}
+          onClick={() => void deploy.startDeployment()}
           className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
             hover:bg-accent-hover transition-colors text-sm"
         >
@@ -109,7 +103,7 @@ export function StepReview({ state, startDeployment, goBack }: Props) {
   );
 }
 
-function getPolicyDetail(policy: NonNullable<WizardState["config"]["signUpPolicy"]>): string | undefined {
+function getPolicyDetail(policy: DeployGovernanceConfig["signUpPolicy"]): string | undefined {
   switch (policy.type) {
     case "FreeForAll":
       return undefined;

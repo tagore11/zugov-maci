@@ -8,25 +8,19 @@ import {
 } from "@/app/components/PolicyArgsFields";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { type SignUpPolicyType, type SignUpPolicyArgs } from "@/src/config";
-import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
+import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import { RESIDENT_ORGANIZER_TIERS } from "@/src/hooks/useCreateCommunity";
+import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
 
 interface Props {
   initialMembershipPolicy?: MembershipPolicy;
   initialSignUpPolicy?: SignUpPolicyArgs;
   initialPolicies?: number[];
   initialModes?: number[];
+  initialTiers?: EditableTier[];
   setCommunitySetup: UseCreateCommunityResult["setCommunitySetup"];
   goBack: UseCreateCommunityResult["goBack"];
-}
-
-function describeTier(tier: TierDraft): string {
-  const caps: string[] = [];
-  if (tier.canVote) caps.push("vote");
-  if (tier.canCreateGovernanceActions) caps.push("create polls");
-  if (tier.canManageMembership) caps.push("manage membership");
-  return `Can ${caps.join(", ")}.`;
 }
 
 /** Reverse of buildPolicyArgs (PolicyArgsFields.tsx) — reconstructs the form input strings from
@@ -79,10 +73,17 @@ export function StepCommunitySetup({
   initialSignUpPolicy,
   initialPolicies,
   initialModes,
+  initialTiers,
   setCommunitySetup,
   goBack,
 }: Props) {
   const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>(initialMembershipPolicy ?? "open");
+  // Pre-filled with the Resident/Organizer preset, fully editable (2026-08-19
+  // community-creation-rework review, D3) — matches today's actual default so nothing changes
+  // for a creator who clicks straight through, but they can now rename, adjust permissions on,
+  // add, or remove tiers instead of being stuck with the preset. The first tier in the list is
+  // the default tier a new member lands in, mirroring the original hardcoded "Resident" default.
+  const [tiers, setTiers] = useState<EditableTier[]>(initialTiers ?? RESIDENT_ORGANIZER_TIERS);
 
   // Advanced settings default to sensible values — only touched if the resident opens the
   // section. FreeForAll / policy id 1 / mode id 1 match useCreateCommunity's own defaults,
@@ -113,6 +114,10 @@ export function StepCommunitySetup({
 
   async function handleNext() {
     setSubmitError(undefined);
+    if (tiers.length === 0) {
+      setSubmitError("Add at least one tier.");
+      return;
+    }
     const advanced = advancedOpen
       ? (() => {
           const signUpPolicy = buildPolicyArgs(policyType, inputs);
@@ -127,7 +132,7 @@ export function StepCommunitySetup({
 
     setIsSubmitting(true);
     try {
-      await setCommunitySetup({ membershipPolicy, advanced });
+      await setCommunitySetup({ membershipPolicy, tiers, defaultTierLabel: tiers[0].label, advanced });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to create community identity");
     } finally {
@@ -176,14 +181,7 @@ export function StepCommunitySetup({
 
       <div className="space-y-2">
         <span className="block text-sm font-medium text-gray-300">Roles</span>
-        <div className="rounded-lg border border-gray-700 bg-gray-800/40 divide-y divide-gray-700 text-sm">
-          {RESIDENT_ORGANIZER_TIERS.map((tier) => (
-            <div key={tier.label} className="px-4 py-2.5">
-              <div className="text-foreground font-medium">{tier.label}</div>
-              <div className="text-xs text-gray-400 mt-0.5">{describeTier(tier)}</div>
-            </div>
-          ))}
-        </div>
+        <TierEditor tiers={tiers} onChange={setTiers} />
       </div>
 
       <div className="rounded-lg border border-gray-700">
@@ -204,7 +202,8 @@ export function StepCommunitySetup({
             <div>
               <div className="text-sm font-medium text-gray-300">Voting mechanism</div>
               <p className="text-xs text-gray-500 mt-1">
-                MACI — private, collusion-resistant voting using zero-knowledge proofs. The only option available today.
+                MACI — private, collusion-resistant voting using zero-knowledge proofs. Deploy it now or skip for now
+                and add it later from the community's settings.
               </p>
             </div>
 

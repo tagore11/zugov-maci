@@ -1,17 +1,89 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
+import { useAccount } from "wagmi";
 import { Header } from "../../../components/Header";
 import { ArrowLeft } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 import * as membershipApi from "@/src/services/membershipApi";
-import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
+import type { MembershipPolicy } from "@/src/services/checkpointStore";
+import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
+import { SiweGate } from "@/app/components/SiweGate";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import {
+  useDeployGovernance,
+  DEFAULT_ADVANCED_CONFIG,
+  type DeployGovernanceConfig,
+} from "@/src/hooks/useCreateCommunity";
+import { StepNetworkCheck } from "@/app/components/CreateCommunityWizard/StepNetworkCheck";
+import { StepReview } from "@/app/components/CreateCommunityWizard/StepReview";
+import { StepDeploying } from "@/app/components/CreateCommunityWizard/StepDeploying";
 
-type EditableTier = TierDraft & { id?: string };
+type DeploySubStep = "idle" | "network_check" | "review" | "deploying";
+
+// Deploying governance for an EXISTING off-chain community — the durable, cross-session "deploy
+// later" entry point (2026-08-19 community-creation-rework review, D1). Reuses the exact same
+// network_check/review/deploying step components and useDeployGovernance hook the wizard uses
+// right after creation, just keyed by a community id that already exists instead of one just
+// created in this session.
+function DeployGovernanceSection({ communityId, config }: { communityId: string; config: DeployGovernanceConfig }) {
+  const siwe = useSiwe();
+  const deploy = useDeployGovernance(communityId, config, siwe);
+  const [subStep, setSubStep] = useState<DeploySubStep>("idle");
+
+  useEffect(() => {
+    if (deploy.state.isDeployed) {
+      // Full page reload is the simplest correct way to reflect the community's new
+      // governanceConfigured: true everywhere on this page (this component's local state
+      // otherwise has no way to know the parent's fetched community record is stale).
+      window.location.reload();
+    }
+  }, [deploy.state.isDeployed]);
+
+  if (subStep === "idle") {
+    return (
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4 space-y-2">
+        <p className="text-sm text-gray-400">Governance isn&apos;t configured for this community yet.</p>
+        <button
+          type="button"
+          onClick={() => setSubStep("network_check")}
+          className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover"
+        >
+          Deploy governance now
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <SiweGate message="Sign in to deploy governance for this community" siwe={siwe}>
+      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
+        {subStep === "network_check" && (
+          <StepNetworkCheck deploy={deploy} goBack={() => setSubStep("idle")} goToReview={() => setSubStep("review")} />
+        )}
+        {subStep === "review" && (
+          <StepReview
+            config={config}
+            membershipDescription="Existing community members."
+            roleLabels={[]}
+            deploy={deploy}
+            goBack={() => setSubStep("network_check")}
+          />
+        )}
+      </div>
+      {(deploy.state.currentPhase || deploy.state.errorMessage || deploy.state.completedPhases.length > 0) && (
+        <div className="mt-4">
+          <StepDeploying deploy={deploy} />
+        </div>
+      )}
+    </SiweGate>
+  );
+}
 
 export default function EditCommunityPage() {
   const params = useParams();
   const communityId = params.id!;
   const navigate = useNavigate();
+  const { address } = useAccount();
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -27,15 +99,19 @@ export default function EditCommunityPage() {
   const [defaultTierLabel, setDefaultTierLabel] = useState("");
   const [tiers, setTiers] = useState<EditableTier[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<Set<string>>(new Set());
+  const [governanceConfigured, setGovernanceConfigured] = useState(false);
+  const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
+  const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
 
   const tiersLocked = tierChangesRequireVote;
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [community, tierRows] = await Promise.all([
+      const [community, tierRows, membershipStatus] = await Promise.all([
         communityApi.get(communityId),
         membershipApi.getTiers(communityId),
+        membershipApi.getMembershipStatus(communityId),
       ]);
       if (cancelled) return;
       if (!community) {
@@ -49,10 +125,20 @@ export default function EditCommunityPage() {
       setMembershipPolicy(community.membershipPolicy);
       setTierChangesRequireVote(community.tierChangesRequireVote);
       setDirectDeploymentEnabled(community.directDeploymentEnabled);
+      setGovernanceConfigured(community.governanceConfigured);
+      setCreatorAddress(community.creatorAddress);
       setTiers(tierRows);
       setOriginalTierIds(new Set(tierRows.map((t) => t.id)));
       const defaultTier = tierRows.find((t) => t.id === community.defaultTierId);
       setDefaultTierLabel(defaultTier?.label ?? tierRows[0]?.label ?? "");
+      // Frontend authorization gate (2026-08-19 community-creation-rework review, D6) — this
+      // page previously had none; relying on the backend alone was low-risk when the worst case
+      // was a rejected PATCH, but the new "Deploy governance now" button raises the stakes to
+      // real gas cost for an unauthorized wallet, so gate the whole page section, not just that
+      // button.
+      const memberTier =
+        membershipStatus.status === "member" ? tierRows.find((t) => t.label === membershipStatus.tierLabel) : undefined;
+      setIsCommunityAdmin(!!memberTier?.canManageMembership);
       setLoading(false);
     }
     void load();
@@ -61,29 +147,17 @@ export default function EditCommunityPage() {
     };
   }, [communityId]);
 
-  function updateTierField(index: number, patch: Partial<TierDraft>) {
-    setTiers((prev) => prev.map((t, i) => (i === index ? { ...t, ...patch } : t)));
-  }
-
-  function removeTierAt(index: number) {
-    if (tiers.length <= 1) return;
-    const removedLabel = tiers[index]?.label;
-    setTiers((prev) => prev.filter((_, i) => i !== index));
-    if (removedLabel === defaultTierLabel) {
-      setDefaultTierLabel(tiers.find((_, i) => i !== index)?.label ?? "");
+  // TierEditor owns add/remove/update internally (2026-08-19 review, D8) — this page only needs
+  // to react to the resulting array and keep defaultTierLabel pointing at a tier that still
+  // exists (the same reconciliation the old inline remove handler always did).
+  function handleTierEditorChange(next: EditableTier[]) {
+    if (next.length < tiers.length) {
+      const removed = tiers.find((t) => !next.some((n) => (n.id ?? n.label) === (t.id ?? t.label)));
+      if (removed && removed.label === defaultTierLabel) {
+        setDefaultTierLabel(next[0]?.label ?? "");
+      }
     }
-  }
-
-  function addTier() {
-    setTiers((prev) => [
-      ...prev,
-      {
-        label: `Tier ${prev.length + 1}`,
-        canCreateGovernanceActions: false,
-        canVote: false,
-        canManageMembership: false,
-      },
-    ]);
+    setTiers(next);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -155,6 +229,30 @@ export default function EditCommunityPage() {
     );
   }
 
+  const isCreator = !!address && !!creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
+  const isAuthorized = isCreator || isCommunityAdmin;
+
+  if (!isAuthorized) {
+    return (
+      <div className="min-h-screen bg-gray-950 text-foreground">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 py-8">
+          <p className="text-gray-500">Only this community&apos;s creator or an admin can manage it.</p>
+          <Link to="/manage-communities" className="text-accent-hover hover:text-accent font-medium">
+            Back to Manage Communities
+          </Link>
+        </main>
+      </div>
+    );
+  }
+
+  const deployConfig: DeployGovernanceConfig = {
+    displayName,
+    signUpPolicy: DEFAULT_ADVANCED_CONFIG.signUpPolicy,
+    allowedPolicies: [...DEFAULT_ADVANCED_CONFIG.allowedPolicies],
+    supportedModes: [...DEFAULT_ADVANCED_CONFIG.supportedModes],
+  };
+
   return (
     <div className="min-h-screen bg-gray-950 text-foreground">
       <Header />
@@ -168,8 +266,8 @@ export default function EditCommunityPage() {
           Back to Manage Communities
         </Link>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8">
-          <div className="flex items-center justify-between mb-8">
+        <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8 space-y-8">
+          <div className="flex items-center justify-between">
             <h1 className="text-3xl font-bold text-foreground">Edit Community</h1>
             <Link
               to={`/manage-communities/${communityId}/members`}
@@ -177,6 +275,15 @@ export default function EditCommunityPage() {
             >
               Review pending requests →
             </Link>
+          </div>
+
+          <div>
+            <h2 className="text-lg font-semibold text-foreground mb-3">Governance</h2>
+            {governanceConfigured ? (
+              <p className="text-sm text-gray-400">Governance is configured for this community.</p>
+            ) : (
+              <DeployGovernanceSection communityId={communityId} config={deployConfig} />
+            )}
           </div>
 
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
@@ -212,77 +319,8 @@ export default function EditCommunityPage() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-semibold text-foreground">Membership Tiers *</label>
-                {!tiersLocked && (
-                  <button
-                    type="button"
-                    onClick={addTier}
-                    className="text-sm text-accent-hover hover:text-accent font-medium"
-                  >
-                    + Add tier
-                  </button>
-                )}
-              </div>
-              {tiersLocked && (
-                <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/40 rounded-lg p-3 mb-3">
-                  This community's tier changes require a community vote, which is not yet available.
-                </p>
-              )}
-              <div className="space-y-3">
-                {tiers.map((tier, i) => (
-                  <div key={tier.id ?? `new-${i}`} className="p-4 border-2 border-gray-700 rounded-lg space-y-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        value={tier.label}
-                        disabled={tiersLocked}
-                        onChange={(e) => updateTierField(i, { label: e.target.value })}
-                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 text-foreground rounded-lg text-sm disabled:bg-gray-800/40 disabled:text-gray-500"
-                      />
-                      {!tiersLocked && (
-                        <button
-                          type="button"
-                          onClick={() => removeTierAt(i)}
-                          disabled={tiers.length <= 1}
-                          className="text-xs text-red-400 hover:text-red-300 disabled:opacity-30 px-2"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
-                        <input
-                          type="checkbox"
-                          disabled={tiersLocked}
-                          checked={tier.canCreateGovernanceActions}
-                          onChange={(e) => updateTierField(i, { canCreateGovernanceActions: e.target.checked })}
-                        />
-                        Can create polls
-                      </label>
-                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
-                        <input
-                          type="checkbox"
-                          disabled={tiersLocked}
-                          checked={tier.canVote}
-                          onChange={(e) => updateTierField(i, { canVote: e.target.checked })}
-                        />
-                        Can vote
-                      </label>
-                      <label className="flex items-center gap-1.5 text-sm text-gray-300">
-                        <input
-                          type="checkbox"
-                          disabled={tiersLocked}
-                          checked={tier.canManageMembership}
-                          onChange={(e) => updateTierField(i, { canManageMembership: e.target.checked })}
-                        />
-                        Can manage membership
-                      </label>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <label className="block text-sm font-semibold text-foreground mb-3">Membership Tiers *</label>
+              <TierEditor tiers={tiers} onChange={handleTierEditorChange} locked={tiersLocked} />
             </div>
 
             <div>
