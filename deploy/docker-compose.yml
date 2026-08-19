@@ -14,9 +14,10 @@ services:
       retries: 10
 
   backend:
-    build:
-      context: ..
-      dockerfile: apps/zugov-backend/Dockerfile
+    # Built and pushed by .github/workflows/deploy-backend.yml's `build` job, not on this
+    # host — see IMAGE_TAG in that workflow's deploy step. Defaults to `latest` so a plain
+    # `docker compose up` still works for manual/local use outside that pipeline.
+    image: ghcr.io/znurznurznur/maci-backend:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -134,9 +135,9 @@ services:
       retries: 10
 
   coordinator:
-    build:
-      context: ..
-      dockerfile: apps/coordinator/Dockerfile
+    # Built and pushed by .github/workflows/deploy-backend.yml's `build` job — see the
+    # `backend` service above for why.
+    image: ghcr.io/znurznurznur/maci-coordinator:${IMAGE_TAG:-latest}
     restart: unless-stopped
     depends_on:
       coordinator-redis:
