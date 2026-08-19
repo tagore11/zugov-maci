@@ -15,6 +15,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: false,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
   {
     label: "Visitor",
@@ -23,6 +24,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: false,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
   {
     label: "Regular",
@@ -31,6 +33,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: false,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
   {
     label: "OG",
@@ -39,6 +42,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: false,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
   {
     label: "Manager",
@@ -47,6 +51,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: true,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
   {
     label: "Admin",
@@ -55,6 +60,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
     canManageMembership: true,
     canDelegate: false,
     canBeDelegatedTo: false,
+    canCreateEvents: true,
   },
 ];
 

@@ -7,6 +7,9 @@ export const tierBodySchema = z.object({
   canManageMembership: z.boolean(),
   canDelegate: z.boolean().optional().default(false),
   canBeDelegatedTo: z.boolean().optional().default(false),
+  // Events (2026-08-19 eng review): defaults true so a wizard-created tier matches the schema's
+  // own default without the wizard having to know about it, but stays overridable per-tier.
+  canCreateEvents: z.boolean().optional().default(true),
 });
 
 export type TierBody = z.infer<typeof tierBodySchema>;

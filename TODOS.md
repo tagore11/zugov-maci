@@ -2,17 +2,47 @@
 
 ## ZuGov / Union communities follow-ups (from 2026-08-18 eng review)
 
-### Events (one-time/recurring) as a first-class concept
+### Events (one-time/recurring) as a first-class concept — backend implementation
 
-**What:** Communities can organize events (one-time or recurring). Only the structural constraint is captured here — no entity built yet.
+**What:** Full schema + API locked by the 2026-08-19 `/plan-eng-review` (18 decisions, including an outside-voice pass): `events`, `venues`, `eventRsvps` tables anchored to `communities.id`, a new `canCreateEvents` tier permission, RSVP-only in v1 (check-in deferred to the Contribution layer TODO below), recurring events as independent rows sharing an optional `seriesId` (no RRULE engine), venue as its own reusable entity gated on `canManageMembership`, event edit/cancel as creator-OR-`canManageMembership` (not creator-only — the outside voice caught that the original creator-only design broke ENGINEERING.md's own "authorization is one reusable pattern" rule), a transactional `duplicate()` endpoint (capped at 52) plus a series-scoped bulk-cancel endpoint, and a paginated list endpoint matching `communities.ts`'s existing convention.
 
-**Why:** Named during the union-communities architecture review as part of why community structure needs to be built right, but has no concrete requirements yet to design against.
+**Why:** No longer "unscoped" — this review fully designed it, including a cross-model outside-voice pass that caught 9 real gaps the interactive review alone missed (admin override, venue-creation permission, read-visibility, series lifecycle, batch-size cap, pagination, others noted in the review's findings).
 
-**Context:** Whoever picks this up must anchor events to `communities.id` the same way `parentCommunityId` and `unionMemberships` already do — never to a `maciGovernanceConfigs` field. This is the one hard constraint the review locked in: events (like unions and parent/child) live at the identity/structural layer, independent of whichever governance tool (MACI today) a community has configured.
+**Context:** Backend-only. The outside voice flagged that Events is P3 while two P1/P2 items (wallet funding, MerkleProof factory deploy) directly block the live Sept 9 pilot, and this ships zero resident-facing value without a frontend pass — founder's explicit call was to proceed anyway as deliberate backend groundwork, with frontend tracked as its own separate TODO (below) rather than silently deferred.
 
-**Effort:** Unscoped — no entity design exists yet
+**Effort:** L (3 new tables, ~11 routes, full test coverage per the review's test plan at `~/.gstack/projects/znurznurznur-maci/isasertkaya-main-eng-review-test-plan-20260819-081939.md`)
 **Priority:** P3
-**Depends on:** Identity/governance table split (this review) landing first
+**Depends on:** None — hard constraint (anchor to `communities.id`, never `maciGovernanceConfigs`) already satisfied by the identity/governance split, which has landed.
+
+### Events frontend (calendar/list/create UI)
+
+**What:** List view (grouped by date, not a calendar grid — see the follow-up item below), create/edit-event modal, RSVP toggle, venue picker — the UI layer for the Events backend above. Locked via a 2026-08-19 `/plan-design-review`: kind shows as a monochrome icon+label (not a colored badge — DESIGN.md's single-accent rule), no kind/date filters in v1 (deferred, small event counts don't need them yet), Edit reuses the create modal in a pre-filled/PATCH mode, Cancel/cancel-series use an inline "Are you sure? confirm" affordance rather than `window.confirm()` (matching this session's earlier wallet-sign-out fix), and the new modal gets Escape-key close + `role="dialog"`/`aria-modal` (no existing modal in this app has either — see the a11y follow-up item below).
+
+**Why:** The backend ships with zero resident-facing value until this lands — flagged by the outside-voice pass during the 2026-08-19 eng review as a real sequencing gap, tracked explicitly rather than left implicit.
+
+**Effort:** M (eventApi.ts, EventsSection.tsx, CreateEventModal.tsx, wired into the community detail page)
+**Priority:** P2 (higher than the backend's own P3 once the backend actually ships — dead API surface with no UI is worse than no API at all)
+**Depends on:** Events backend (above) landing first
+
+### Events calendar grid view
+
+**What:** A month/week calendar-grid view for Events, toggled from the list view — actual grid cells with day numbers, not just a chronological list grouped under date headers.
+
+**Why:** TODOS.md's original item name was "calendar/list view," but the 2026-08-19 `/plan-design-review` scoped the first pass down to list-only — a real calendar grid is a materially bigger build (grid math, cell click targets, mobile grid collapse) with no existing grid-UI precedent anywhere in this app, and small pop-up-city event counts don't need it yet. Tracked explicitly so the "calendar" half of the original name isn't silently dropped.
+
+**Effort:** L (new grid-layout component, month/week navigation, mobile collapse behavior — no reusable precedent in the codebase)
+**Priority:** P3
+**Depends on:** Events frontend (above) landing first
+
+### Modal accessibility retrofit (Escape-key close + role="dialog")
+
+**What:** Add Escape-key close and `role="dialog"`/`aria-modal="true"` to `CreateGovernanceActionModal` and `AuthModal` — the two existing modals in the app, neither of which has either today.
+
+**Why:** Caught during the 2026-08-19 Events `/plan-design-review` (Pass 6, Responsive & Accessibility) while checking precedent for the new `CreateEventModal`. Keyboard-only and screen-reader users currently cannot close either existing modal without a mouse click on the X icon or the backdrop — a real accessibility gap, not cosmetic polish. The new Events modal gets both fixes as new code; this item is the retrofit for the two that predate it.
+
+**Effort:** S (one small hook/utility shared across both modals — Escape listener + two ARIA attributes)
+**Priority:** P3
+**Depends on:** None
 
 ### Nested `{ identity, governance }` API response shape
 

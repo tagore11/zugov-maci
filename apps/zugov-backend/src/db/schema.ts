@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, primaryKey, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, primaryKey, index, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { CredentialStatus, Protocol } from "../services/identity/IdentityProvider.js";
 
 // Server-side session store: the cookie only ever holds an opaque random token (see
@@ -155,6 +155,10 @@ export const membershipTiers = pgTable("membership_tiers", {
   canManageMembership: boolean("can_manage_membership").notNull(),
   canDelegate: boolean("can_delegate").notNull().default(false),
   canBeDelegatedTo: boolean("can_be_delegated_to").notNull().default(false),
+  // Events (2026-08-19 eng review): default true so the "anyone can propose an event" model
+  // (matched to how pop-up-city events actually work — see review's sola.day research) is the
+  // out-of-the-box behavior; a community can restrict it per-tier without a migration.
+  canCreateEvents: boolean("can_create_events").notNull().default(true),
   createdAt: integer("created_at").notNull(),
 });
 
@@ -239,3 +243,102 @@ export const governanceActionSponsors = pgTable(
 
 export type GovernanceActionSponsor = typeof governanceActionSponsors.$inferSelect;
 export type NewGovernanceActionSponsor = typeof governanceActionSponsors.$inferInsert;
+
+// Events (2026-08-19 eng review, see TODOS.md "Events" entries for the full design log).
+// Identity/structural layer, same as unions and parentCommunityId — anchored to
+// communities.id, never governance-gated. Reusable per-community location, deliberately its
+// own entity (not a text field on events) so it can be referenced across many events, matching
+// how a real multi-week pop-up city actually uses a handful of fixed physical spaces.
+// ON DELETE CASCADE: a venue with no community behind it is meaningless (same reasoning as
+// maciGovernanceConfigs). NOTE: no DELETE /venues/:id route exists yet (see TODOS.md "Venue
+// deletion + venueId invariant fix") — events.venueId's ON DELETE SET NULL is currently
+// unreachable via the API, but documented so whoever adds venue deletion doesn't get surprised.
+export const venues = pgTable("venues", {
+  id: text("id").primaryKey(),
+  communityId: text("community_id")
+    .notNull()
+    .references(() => communities.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  address: text("address"),
+  mapUrl: text("map_url"),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type Venue = typeof venues.$inferSelect;
+export type NewVenue = typeof venues.$inferInsert;
+
+// Anchored to communities.id per the hard constraint locked in the 2026-08-18 union-communities
+// review: events live at the identity/structural layer, independent of whichever governance
+// tool (MACI today) a community has configured — never reference maciGovernanceConfigs.
+//
+// venueId / locationText: exactly one is set, enforced by the create/update Zod validator (not
+// a DB constraint) — a structured reusable venue, or a free-text fallback (virtual meeting URL,
+// one-off address). ON DELETE SET NULL on venueId (not CASCADE): an event losing its venue
+// reference is still a meaningful event (title/time/community intact), unlike
+// maciGovernanceConfigs' CASCADE case.
+//
+// seriesId: NOT a self-referencing FK — just a shared UUID stamped across every row a
+// duplicate() call generates, so "all events in this series" is one WHERE clause. Recurring
+// events are independent rows on purpose (2026-08-19 review, D4): no RRULE engine, matching
+// sola.day's own live API, which has no recurrence params either. Multi-day is never stored —
+// it's computed as endAt - startAt > 24h wherever it's displayed.
+//
+// status: "active" | "cancelled", soft-cancel only (mirrors unionMemberships — cancel doesn't
+// delete the row). Editable/cancelable by the creator OR a wallet with canManageMembership on
+// the community (2026-08-19 review, outside-voice finding: creator-only broke
+// ENGINEERING.md's "authorization is one reusable pattern" rule — governanceActions already
+// re-validates permission at mutation time for the same reason).
+export const events = pgTable(
+  "events",
+  {
+    id: text("id").primaryKey(),
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description"),
+    venueId: text("venue_id").references(() => venues.id, { onDelete: "set null" }),
+    locationText: text("location_text"),
+    startAt: integer("start_at").notNull(),
+    endAt: integer("end_at").notNull(),
+    seriesId: text("series_id"),
+    kind: text("kind").$type<"talk" | "workshop" | "social" | "meeting" | "other">().notNull().default("other"),
+    creatorAddress: text("creator_address").notNull(),
+    status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
+    createdAt: integer("created_at").notNull(),
+    cancelledAt: integer("cancelled_at"),
+  },
+  // Primary list query ("events for community X in date range A-B") is a range scan on exactly
+  // these two columns — the first explicit secondary index in this schema file, added
+  // deliberately for a known hot path rather than following the rest of the schema's
+  // PK-implicit-index-only convention (2026-08-19 review, Performance section).
+  (table) => [index("events_community_start_idx").on(table.communityId, table.startAt)],
+);
+
+export type Event = typeof events.$inferSelect;
+export type NewEvent = typeof events.$inferInsert;
+
+// RSVP is intent only — check-in/confirmed-attendance is deliberately deferred to the separate
+// "Contribution layer" TODO (badges/credentials), not built here (2026-08-19 review, D3).
+// Deliberately open to ANY signed-in wallet, not gated on community membership — more open than
+// voting/governance-action creation on purpose (2026-08-19 review, A1).
+//
+// status: "active" | "cancelled", soft-cancel (mirrors unionMemberships exactly) — a
+// cancel-then-re-RSVP flips the same row back to "active" instead of creating a duplicate,
+// same "declined row resets to pending" shape invite() already uses for unions.
+export const eventRsvps = pgTable(
+  "event_rsvps",
+  {
+    eventId: text("event_id")
+      .notNull()
+      .references(() => events.id, { onDelete: "cascade" }),
+    walletAddress: text("wallet_address").notNull(),
+    status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
+    rsvpedAt: integer("rsvped_at").notNull(),
+    cancelledAt: integer("cancelled_at"),
+  },
+  (table) => [primaryKey({ columns: [table.eventId, table.walletAddress] })],
+);
+
+export type EventRsvp = typeof eventRsvps.$inferSelect;
+export type NewEventRsvp = typeof eventRsvps.$inferInsert;
