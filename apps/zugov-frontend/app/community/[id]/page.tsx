@@ -24,6 +24,7 @@ import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
 import { UnionsSection } from "./UnionsSection";
 import { GovernanceActionsList } from "../../components/GovernanceActionsList";
+import { EventsSection } from "../../components/EventsSection";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
@@ -336,6 +337,13 @@ export default function CommunityPage() {
           )}
 
           <UnionsSection communityId={dc.id} />
+
+          {/* Events lives in the identity/structure layer, not governance — it renders for
+              ungoverned communities too, matching "structural relationships never require
+              governance" (ENGINEERING.md). */}
+          <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+            <EventsSection communityId={dc.id} connected={!!address} walletAddress={address} />
+          </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
             <GovernanceActionsList communityId={dc.id} connected={!!address} />
