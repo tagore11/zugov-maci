@@ -172,11 +172,25 @@ export class ProofGeneratorService {
   async merge({ maciContractAddress, pollId, approval, sessionKeyAddress, chain }: IMergeArgs): Promise<boolean> {
     const signer = await this.sessionKeysService.getCoordinatorSigner(chain, sessionKeyAddress, approval);
 
-    await mergeSignups({
-      maciAddress: maciContractAddress,
-      pollId: BigInt(pollId),
-      signer,
-    });
+    try {
+      await mergeSignups({
+        maciAddress: maciContractAddress,
+        pollId: BigInt(pollId),
+        signer,
+      });
+    } catch (error) {
+      // Idempotent: the caller's goal ("the state tree is merged") is already satisfied, so
+      // a retry after a previous attempt's later step (generate/submit) failed shouldn't be
+      // blocked here just because merge itself already succeeded — see
+      // packages/sdk/ts/maci/merge.ts, which throws in this specific case rather than
+      // treating it as a no-op (correct for direct CLI use, where a human should be told
+      // "you already did this"; not correct for this HTTP endpoint, which
+      // apps/zugov-backend's runTallyPipeline calls unconditionally as step 1 of 3 on every
+      // retry).
+      if (!(error as Error).message.includes("already been merged")) {
+        throw error;
+      }
+    }
 
     return true;
   }

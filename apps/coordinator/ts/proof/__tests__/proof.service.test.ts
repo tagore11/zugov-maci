@@ -1,9 +1,9 @@
 import { Keypair, PrivateKey } from "@maci-protocol/domainobjs";
-import { Deployment, EMode, ESupportedChains } from "@maci-protocol/sdk";
+import { Deployment, EMode, ESupportedChains, mergeSignups } from "@maci-protocol/sdk";
 import dotenv from "dotenv";
 import { zeroAddress } from "viem";
 
-import type { IGenerateArgs } from "../types";
+import type { IGenerateArgs, IMergeArgs } from "../types";
 
 import { ErrorCodes } from "../../common";
 import { getCoordinatorKeypair } from "../../common/coordinatorKeypair";
@@ -26,10 +26,12 @@ jest.mock("@maci-protocol/sdk", (): unknown => ({
     tallyProofs: [1],
     tallyData: {},
   }),
+  mergeSignups: jest.fn().mockResolvedValue({ status: 1 }),
 }));
 
 describe("ProofGeneratorService", () => {
   let defaultProofArgs: IGenerateArgs;
+  let defaultMergeArgs: IMergeArgs;
 
   let mockContract = {
     polls: jest.fn(),
@@ -60,6 +62,11 @@ describe("ProofGeneratorService", () => {
       // Must be a chain with a configured RPC url (see ts/common/chain.ts's
       // getConfiguredRpcUrl) since generate() resolves a real signer via getRpcUrl(chain)
       // when no sessionKeyAddress/approval are given.
+      chain: ESupportedChains.Sepolia,
+    };
+    defaultMergeArgs = {
+      pollId: 1,
+      maciContractAddress: zeroAddress,
       chain: ESupportedChains.Sepolia,
     };
   });
@@ -122,5 +129,31 @@ describe("ProofGeneratorService", () => {
 
     expect(getContractArgs.signer).toBeDefined();
     expect(typeof getContractArgs.signer?.getAddress).toBe("function");
+  });
+
+  describe("merge", () => {
+    test("should return true when mergeSignups succeeds", async () => {
+      const service = new ProofGeneratorService(fileService, sessionKeysService);
+
+      await expect(service.merge(defaultMergeArgs)).resolves.toBe(true);
+    });
+
+    test("should return true (idempotent) when the state tree is already merged", async () => {
+      (mergeSignups as jest.Mock).mockRejectedValueOnce(new Error("The state tree has already been merged"));
+
+      const service = new ProofGeneratorService(fileService, sessionKeysService);
+
+      // A retry after a previous attempt's generate/submit step failed shouldn't be blocked
+      // just because merge itself already succeeded on that earlier attempt.
+      await expect(service.merge(defaultMergeArgs)).resolves.toBe(true);
+    });
+
+    test("should rethrow any other merge failure", async () => {
+      (mergeSignups as jest.Mock).mockRejectedValueOnce(new Error("Voting period is not over"));
+
+      const service = new ProofGeneratorService(fileService, sessionKeysService);
+
+      await expect(service.merge(defaultMergeArgs)).rejects.toThrow("Voting period is not over");
+    });
   });
 });
