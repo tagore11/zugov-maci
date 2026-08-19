@@ -1,5 +1,7 @@
 import { EMode } from "@maci-protocol/contracts";
+import { ESupportedChains } from "@maci-protocol/sdk";
 import dotenv from "dotenv";
+import { JsonRpcProvider } from "ethers";
 import { zeroAddress } from "viem";
 
 import fs, { type Stats } from "fs";
@@ -115,19 +117,45 @@ describe("HealthService", () => {
   });
 
   describe("checkWalletFunds", () => {
-    test("should return the wallet address", async () => {
-      const { fundsInNetworks } = await healthService.checkWalletFunds();
+    beforeEach(() => {
+      // Avoid depending on real RPC endpoints being reachable in tests — chain resolution
+      // itself (getRpcUrl/getSigner) still runs for real, only the network call is stubbed.
+      jest.spyOn(JsonRpcProvider.prototype, "getBalance").mockResolvedValue(1_000_000_000_000_000_000n);
+    });
 
-      expect(fundsInNetworks[0].address).toBeDefined();
-      expect(fundsInNetworks[0].address).not.toBe(zeroAddress);
+    test("should return the wallet address for a chain with RPC configured", async () => {
+      const { fundsInNetworks } = await healthService.checkWalletFunds();
+      const sepoliaFunds = fundsInNetworks.find((entry) => entry.network === String(ESupportedChains.Sepolia));
+
+      expect(sepoliaFunds?.address).toBeDefined();
+      expect(sepoliaFunds?.address).not.toBe(zeroAddress);
+      expect(sepoliaFunds?.status).toBe(true);
+    });
+
+    test("should return distinct entries for both configured chains, and zeroAddress/false for an unconfigured one", async () => {
+      const { fundsInNetworks } = await healthService.checkWalletFunds();
+      const sepoliaFunds = fundsInNetworks.find((entry) => entry.network === String(ESupportedChains.Sepolia));
+      const scrollSepoliaFunds = fundsInNetworks.find(
+        (entry) => entry.network === String(ESupportedChains.ScrollSepolia),
+      );
+      const mainnetFunds = fundsInNetworks.find((entry) => entry.network === String(ESupportedChains.Mainnet));
+
+      expect(sepoliaFunds?.status).toBe(true);
+      expect(scrollSepoliaFunds?.status).toBe(true);
+      // Mainnet has no COORDINATOR_*_RPC_URL configured (ts/common/chain.ts) — it must fail
+      // closed, never silently reuse Sepolia's or Scroll Sepolia's endpoint/result.
+      expect(mainnetFunds?.address).toBe(zeroAddress);
+      expect(mainnetFunds?.status).toBe(false);
+      expect(mainnetFunds?.error).toContain(ESupportedChains.Mainnet);
     });
 
     test("should return 0x if coordinator private key is not set", async () => {
       process.env.PRIVATE_KEY = "";
       process.env.MNEMONIC = "";
       const { fundsInNetworks } = await healthService.checkWalletFunds();
+      const sepoliaFunds = fundsInNetworks.find((entry) => entry.network === String(ESupportedChains.Sepolia));
 
-      expect(fundsInNetworks[0].address).toBe(zeroAddress);
+      expect(sepoliaFunds?.address).toBe(zeroAddress);
     });
   });
 

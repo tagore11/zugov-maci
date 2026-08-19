@@ -155,11 +155,12 @@ services:
       COORDINATOR_MESSAGE_PROCESS_ZKEY_NAME: MessageProcessor_10-20-2_test
       COORDINATOR_POLL_JOINING_ZKEY_NAME: PollJoining_10_test
       COORDINATOR_POLL_JOINED_ZKEY_NAME: PollJoined_10_test
-      # apps/coordinator/hardhat.config.cjs only supports a single configured RPC network — it
-      # cannot serve multiple chains at once. Every community registered so far is on Sepolia,
-      # not Scroll Sepolia, so that's what's wired here — revisit if Scroll Sepolia communities
-      # need tallying.
-      COORDINATOR_RPC_URL: ${SEPOLIA_RPC_URL}
+      # Per-chain RPC urls (apps/coordinator/ts/common/chain.ts's getRpcUrl resolves the right
+      # one from each request's `chain` field) — a community on a chain with no entry here
+      # fails that request instead of silently reusing another chain's endpoint. Both source
+      # vars already exist above for `backend`/`graph-node`.
+      COORDINATOR_SEPOLIA_RPC_URL: ${SEPOLIA_RPC_URL}
+      COORDINATOR_SCROLL_SEPOLIA_RPC_URL: ${SCROLL_SEPOLIA_RPC_URL}
       COORDINATOR_REDIS_HOST: coordinator-redis
       COORDINATOR_REDIS_PORT: 6379
       COORDINATOR_PORT: 3001

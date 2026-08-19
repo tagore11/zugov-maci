@@ -5,6 +5,7 @@ import { Test } from "@nestjs/testing";
 import type { IGetPublicKeyData } from "../../file/types";
 import type { IGenerateArgs, IGenerateData, IMergeArgs } from "../types";
 
+import { ErrorCodes } from "../../common";
 import { FileService } from "../../file/file.service";
 import { ProofController } from "../proof.controller";
 import { ProofGeneratorService } from "../proof.service";
@@ -97,6 +98,16 @@ describe("ProofController", () => {
     test("should return true when there are no errors", async () => {
       const data = await proofController.merge(defaultMergeArgs);
       expect(data).toBe(true);
+    });
+
+    test("should return a chain-specific 500 error when the requested chain has no RPC configured", async () => {
+      const chain = ESupportedChains.ScrollSepolia;
+      const error = new Error(`${ErrorCodes.COORDINATOR_RPC_URL_NOT_SET.toString()}: ${chain}`);
+      mockGeneratorService.merge.mockRejectedValue(error);
+
+      await expect(proofController.merge({ ...defaultMergeArgs, chain })).rejects.toThrow(
+        new HttpException(error.message, HttpStatus.INTERNAL_SERVER_ERROR),
+      );
     });
   });
 
