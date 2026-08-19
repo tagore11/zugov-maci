@@ -430,3 +430,141 @@ describe("DELETE /:id/tiers/:tierId — eligibility rule guard (D8)", () => {
     expect(body.error).toMatch(/targeted by an eligibility rule/i);
   });
 });
+
+// Eligibility-followups review (2026-08-19), D1 — live union eligibility fallback, end to end
+// through the real HTTP union routes (found/invite/respond) and the join route.
+describe("POST /:id/join — union eligibility fallback (2026-08-19 follow-up review, D1)", () => {
+  async function foundUnion(cookie: string, foundingCommunityId: string) {
+    const res = await app.request("/api/unions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ displayName: "Test Union", foundingCommunityId }),
+    });
+    expect(res.status).toBe(201);
+    const { union } = (await res.json()) as { union: { id: string } };
+    return union.id;
+  }
+
+  async function inviteAndAccept(cookie: string, unionId: string, actingCommunityId: string, communityId: string) {
+    const inviteRes = await app.request(`/api/unions/${unionId}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ communityId, actingCommunityId }),
+    });
+    expect(inviteRes.status).toBe(201);
+
+    const respondRes = await app.request(`/api/unions/${unionId}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ communityId, accept: true }),
+    });
+    expect(respondRes.status).toBe(200);
+  }
+
+  it("trust-gap fix: a union sibling with NO configured ruleset does not extend eligibility", async () => {
+    const adminCookie = await getAuthCookie();
+    const { community: communityA } = await registerIdentity(adminCookie, { displayName: "Union A" });
+    const { community: communityB } = await registerIdentity(adminCookie, {
+      displayName: "Union B (Open, unconfigured)",
+    });
+
+    // A requires already holding its own default tier — a fresh wallet can never satisfy this
+    // directly, isolating the test to whether the union fallback (incorrectly) grants access.
+    const setRulesetRes = await app.request(`/api/communities/${communityA.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: communityA.defaultTierId } }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    const unionId = await foundUnion(adminCookie, communityA.id);
+    await inviteAndAccept(adminCookie, unionId, communityA.id, communityB.id);
+
+    const joinerAccount = privateKeyToAccount(`0x${"13".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${communityA.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("a wallet ineligible for A directly, but eligible for an active union sibling with a configured ruleset, can join A via the fallback", async () => {
+    const adminCookie = await getAuthCookie();
+    const { community: communityA } = await registerIdentity(adminCookie, { displayName: "Union A2" });
+    const { community: communityC } = await registerIdentity(adminCookie, { displayName: "Union C (configured Open)" });
+
+    const setRulesetRes = await app.request(`/api/communities/${communityA.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: communityA.defaultTierId } }],
+      }),
+    });
+    expect(setRulesetRes.status).toBe(201);
+
+    // C has an EXPLICITLY configured ruleset (even though its one rule is "open") — this is a
+    // real trust decision by C's own admin, distinct from B's unconfigured state above, so it
+    // must extend eligibility to union siblings.
+    const setSiblingRulesetRes = await app.request(`/api/communities/${communityC.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({ rules: [{ groupIndex: 0, mechanism: "open", config: {} }] }),
+    });
+    expect(setSiblingRulesetRes.status).toBe(201);
+
+    const unionId = await foundUnion(adminCookie, communityA.id);
+    await inviteAndAccept(adminCookie, unionId, communityA.id, communityC.id);
+
+    const joinerAccount = privateKeyToAccount(`0x${"ee".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${communityA.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status: string; tierLabel?: string };
+    expect(body.status).toBe("approved");
+    // Union-sourced eligibility never carries a foreign tier target — lands in A's own default.
+    expect(body.tierLabel).toBe("Regular");
+  });
+
+  it("leaving the union narrows eligibility back down immediately, with no cleanup needed", async () => {
+    const adminCookie = await getAuthCookie();
+    const { community: communityA } = await registerIdentity(adminCookie, { displayName: "Union A3" });
+    const { community: communityC } = await registerIdentity(adminCookie, { displayName: "Union C3" });
+
+    await app.request(`/api/communities/${communityA.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: communityA.defaultTierId } }],
+      }),
+    });
+    await app.request(`/api/communities/${communityC.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({ rules: [{ groupIndex: 0, mechanism: "open", config: {} }] }),
+    });
+
+    const unionId = await foundUnion(adminCookie, communityA.id);
+    await inviteAndAccept(adminCookie, unionId, communityA.id, communityC.id);
+
+    const leaveRes = await app.request(`/api/unions/${unionId}/leave`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({ communityId: communityC.id }),
+    });
+    expect(leaveRes.status).toBe(200);
+
+    const joinerAccount = privateKeyToAccount(`0x${"dd".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+    const res = await app.request(`/api/communities/${communityA.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+});

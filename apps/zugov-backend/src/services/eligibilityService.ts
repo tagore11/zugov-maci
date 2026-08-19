@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, asc } from "drizzle-orm";
+import { eq, and, asc, inArray } from "drizzle-orm";
 import { createPublicClient, http, type Address } from "viem";
 import { db } from "../db/client.js";
 import {
@@ -7,6 +7,7 @@ import {
   eligibilityRules,
   membershipTiers,
   memberships,
+  unionMemberships,
   type EligibilityRule,
 } from "../db/schema.js";
 import { getRpcUrl } from "./chainRpc.js";
@@ -223,6 +224,56 @@ export async function evaluateRuleset(communityId: string, wallet: string): Prom
   }
 
   return { eligible: true, tierId: winningTierId };
+}
+
+// ─── Union eligibility ─────────────────────────────────────────────────────
+
+/**
+ * Extends evaluateRuleset with a live, union-aware fallback (2026-08-19 eligibility-follow-ups
+ * review, D1): if a wallet fails a community's own ruleset, and that community is an active
+ * member of one or more unions, it also gets checked against each active sibling community's own
+ * ruleset (pooled across every union the community belongs to, self excluded, short-circuited on
+ * first pass). Any sibling pass makes the wallet eligible here too — tierId comes back null (no
+ * explicit target), so the caller's existing "?? community.defaultTierId" fallback applies; a
+ * sibling's targetTierId can never map onto a different community's own tiers.
+ *
+ * Nothing is stored or "refreshed" on union accept/leave — this recomputes live on every call, so
+ * union membership changes (join, leave, a sibling editing its own ruleset) take effect
+ * immediately with no separate sync step and no staleness window.
+ *
+ * A sibling with NO configured ruleset (Open — evaluateRuleset's own "absence = Open" default) is
+ * excluded from the pool entirely, not treated as an automatic pass. Without this, any active
+ * union member could unilaterally invite() a bare community and, the moment its own admin
+ * accepts, silently hand every wallet on earth eligibility into every other union member — caught
+ * during this review's outside-voice pass.
+ */
+export async function evaluateEligibilityAcrossUnion(communityId: string, wallet: string): Promise<RulesetEvaluation> {
+  const ownResult = await evaluateRuleset(communityId, wallet);
+  if (ownResult.eligible) return ownResult;
+
+  const activeUnionRows = await db
+    .select({ unionId: unionMemberships.unionId })
+    .from(unionMemberships)
+    .where(and(eq(unionMemberships.communityId, communityId), eq(unionMemberships.status, "active")));
+  if (activeUnionRows.length === 0) return ownResult;
+
+  const unionIds = activeUnionRows.map((row) => row.unionId);
+  const siblingRows = await db
+    .select({ communityId: unionMemberships.communityId })
+    .from(unionMemberships)
+    .where(and(inArray(unionMemberships.unionId, unionIds), eq(unionMemberships.status, "active")));
+  const siblingIds = [...new Set(siblingRows.map((row) => row.communityId))].filter((id) => id !== communityId);
+
+  for (const siblingId of siblingIds) {
+    const siblingRules = await getRuleset(siblingId);
+    if (siblingRules.length === 0) continue; // Open sibling never extends trust — trust-gap fix
+    const siblingResult = await evaluateRuleset(siblingId, wallet);
+    if (siblingResult.eligible) {
+      return { eligible: true, tierId: null };
+    }
+  }
+
+  return ownResult;
 }
 
 // ─── Ruleset management ────────────────────────────────────────────────────

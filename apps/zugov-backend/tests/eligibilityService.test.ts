@@ -21,7 +21,9 @@ vi.mock("viem", async (importOriginal) => {
 // beforeEach is too late.
 process.env.SCROLL_SEPOLIA_RPC_URL ??= "http://mock-rpc.invalid";
 
-const { evaluateRuleset, replaceRuleset, getRuleset } = await import("../src/services/eligibilityService.js");
+const { evaluateRuleset, evaluateEligibilityAcrossUnion, replaceRuleset, getRuleset } = await import(
+  "../src/services/eligibilityService.js"
+);
 
 const SCROLL_SEPOLIA = 534351;
 const WALLET_A = "0x1111111111111111111111111111111111111a";
@@ -63,6 +65,34 @@ async function insertMembership(communityId: string, walletAddress: string, tier
     communityId,
     tierId,
     joinedAt: Math.floor(Date.now() / 1000),
+  });
+}
+
+async function insertUnion(overrides: Partial<typeof schema.unions.$inferInsert> = {}) {
+  const id = randomUUID();
+  await testDb.insert(schema.unions).values({
+    id,
+    displayName: "Test Union",
+    creatorAddress: "0x0000000000000000000000000000000000dead",
+    createdAt: Math.floor(Date.now() / 1000),
+    ...overrides,
+  });
+  return id;
+}
+
+async function addUnionMembership(
+  unionId: string,
+  communityId: string,
+  status: "pending" | "active" | "declined" | "left" = "active",
+) {
+  const now = Math.floor(Date.now() / 1000);
+  await testDb.insert(schema.unionMemberships).values({
+    unionId,
+    communityId,
+    status,
+    invitedByAddress: "0x0000000000000000000000000000000000dead",
+    requestedAt: now,
+    respondedAt: status === "pending" ? null : now,
   });
 }
 
@@ -358,5 +388,118 @@ describe("replaceRuleset / getRuleset", () => {
     const communityId = await insertCommunity();
     const rules = await getRuleset(communityId);
     expect(rules).toEqual([]);
+  });
+});
+
+describe("evaluateEligibilityAcrossUnion — live union fallback (2026-08-19 follow-up review, D1)", () => {
+  it("own ruleset passes → returns immediately, no union query needed", async () => {
+    const communityId = await insertCommunity();
+    // No union membership at all — if the function tried to query unions here it would still
+    // work, but this asserts the own-ruleset-passes short-circuit specifically.
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result).toEqual({ eligible: true, tierId: null });
+  });
+
+  it("own ruleset fails, no active union membership → falls through to the own failure reason", async () => {
+    const communityId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toMatch(/not yet a member/i);
+  });
+
+  it("own ruleset fails, active union, no sibling passes → own failure reason still surfaces", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    const siblingTierId = await insertTier(siblingId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    await replaceRuleset(siblingId, [{ groupIndex: 0, mechanism: "tier", config: { tierId: siblingTierId } }]);
+    const unionId = await insertUnion();
+    await addUnionMembership(unionId, communityId, "active");
+    await addUnionMembership(unionId, siblingId, "active");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(false);
+    expect(result.reason).toMatch(/not yet a member/i);
+  });
+
+  it("own ruleset fails, an active sibling's ruleset passes → eligible with no tier override", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    await replaceRuleset(siblingId, [{ groupIndex: 0, mechanism: "open", config: {} }]);
+    const unionId = await insertUnion();
+    await addUnionMembership(unionId, communityId, "active");
+    await addUnionMembership(unionId, siblingId, "active");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result).toEqual({ eligible: true, tierId: null });
+  });
+
+  it("pools siblings across every active union the community belongs to, deduped, self excluded", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    await replaceRuleset(siblingId, [{ groupIndex: 0, mechanism: "open", config: {} }]);
+    const unionA = await insertUnion();
+    const unionB = await insertUnion();
+    // communityId and siblingId are both in TWO shared unions — the sibling must only be
+    // checked once (dedup), and the pool must never include communityId itself.
+    await addUnionMembership(unionA, communityId, "active");
+    await addUnionMembership(unionA, siblingId, "active");
+    await addUnionMembership(unionB, communityId, "active");
+    await addUnionMembership(unionB, siblingId, "active");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(true);
+  });
+
+  it("trust-gap fix: a sibling with no ruleset at all (Open) never extends eligibility", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    // siblingId deliberately has NO ruleset configured at all (getRuleset returns []) — this is
+    // the exact exploit the outside-voice pass caught: an Open sibling must not silently grant
+    // eligibility to every wallet on earth just by being in the union.
+    const unionId = await insertUnion();
+    await addUnionMembership(unionId, communityId, "active");
+    await addUnionMembership(unionId, siblingId, "active");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(false);
+  });
+
+  it("a pending (not yet accepted) union membership does not extend eligibility", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    await replaceRuleset(siblingId, [{ groupIndex: 0, mechanism: "open", config: {} }]);
+    const unionId = await insertUnion();
+    await addUnionMembership(unionId, communityId, "pending");
+    await addUnionMembership(unionId, siblingId, "active");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(false);
+  });
+
+  it("a sibling that left the union no longer extends eligibility", async () => {
+    const communityId = await insertCommunity();
+    const siblingId = await insertCommunity();
+    const tierId = await insertTier(communityId);
+    await replaceRuleset(communityId, [{ groupIndex: 0, mechanism: "tier", config: { tierId } }]);
+    await replaceRuleset(siblingId, [{ groupIndex: 0, mechanism: "open", config: {} }]);
+    const unionId = await insertUnion();
+    await addUnionMembership(unionId, communityId, "active");
+    await addUnionMembership(unionId, siblingId, "left");
+
+    const result = await evaluateEligibilityAcrossUnion(communityId, WALLET_A);
+    expect(result.eligible).toBe(false);
   });
 });

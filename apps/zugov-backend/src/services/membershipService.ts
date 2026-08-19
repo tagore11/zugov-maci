@@ -10,7 +10,7 @@ import {
   type MembershipTier,
 } from "../db/schema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
-import { evaluateRuleset } from "./eligibilityService.js";
+import { evaluateEligibilityAcrossUnion } from "./eligibilityService.js";
 
 export class TierChangesRequireVoteError extends Error {
   constructor() {
@@ -274,7 +274,10 @@ export async function submitJoinRequest(
   // separate, orthogonal layer applied AFTER eligibility passes (does joining need a human's
   // approval, not whether the wallet is allowed to join in the first place). Evaluated once,
   // here, at submission time — not re-evaluated later for the approval path (D7).
-  const evaluation = await evaluateRuleset(communityId, walletAddress);
+  // eligibility-followups review (2026-08-19), D1 — evaluateEligibilityAcrossUnion wraps
+  // evaluateRuleset with a live union-eligibility fallback; behaves identically to the plain
+  // evaluateRuleset call for any community with no active union membership.
+  const evaluation = await evaluateEligibilityAcrossUnion(communityId, walletAddress);
   if (!evaluation.eligible) throw new NotEligibleError(evaluation.reason);
   const resolvedTierId = evaluation.tierId ?? community.defaultTierId;
 

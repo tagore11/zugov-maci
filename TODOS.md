@@ -52,6 +52,16 @@
 **Priority:** P2
 **Depends on:** None
 
+### RPC caching/rate-limiting for union-eligibility ERC20 checks
+
+**What:** The union eligibility fallback (`evaluateEligibilityAcrossUnion`, 2026-08-19 follow-up review) can trigger up to N sibling `evaluateRuleset` calls per join attempt, short-circuited on first pass but otherwise uncapped. Any sibling using the `erc20_token` mechanism does a live, serially-awaited on-chain `balanceOf()` read with no cache and no rate limit — repeatable by any wallet on every failed join attempt against a union community.
+
+**Why:** Caught during that follow-up review's outside-voice pass. Accepted as a documented, not-solved risk for the initial pass — matches current scale (small unions, few ERC20-gated communities) — but a real cost once ERC20-gated unions grow. A short-lived balance cache (wallet+token+chain) or a join-attempt rate limit are the two obvious mitigations.
+
+**Effort:** S–M (cache) or S (rate limit)
+**Priority:** P3
+**Depends on:** Union eligibility live-evaluation (this follow-up review's D1)
+
 ### Tier-adapter self-reference/cycle documentation
 
 **What:** A group requiring "already holds Tier X" to unlock Tier X itself (or a two-group cycle) isn't detected anywhere today — it's a config-time footgun, not a crash (a self-referential rule is simply always false, fails closed). Worth real creator-facing documentation once the ruleset-builder UI exists.
