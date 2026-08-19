@@ -156,6 +156,13 @@ services:
       COORDINATOR_MESSAGE_PROCESS_ZKEY_NAME: MessageProcessor_10-20-2_test
       COORDINATOR_POLL_JOINING_ZKEY_NAME: PollJoining_10_test
       COORDINATOR_POLL_JOINED_ZKEY_NAME: PollJoined_10_test
+      # Where the Dockerfile's `pnpm run download-zkeys:test` step actually wrote them
+      # (cwd /maci at download time) relative to `start:prod`'s cwd (/maci/apps/coordinator).
+      # Without this, file.service.ts's path.resolve(COORDINATOR_ZKEY_PATH) receives
+      # undefined and /v1/proof/generate fails before it ever reads a zkey.
+      COORDINATOR_ZKEY_PATH: ../../zkeys
+      # Absolute path the Dockerfile's runner stage downloads the rapidsnark prover to.
+      COORDINATOR_RAPIDSNARK_EXE: /home/node/rapidsnark/build/prover
       # Per-chain RPC urls (apps/coordinator/ts/common/chain.ts's getRpcUrl resolves the right
       # one from each request's `chain` field) — a community on a chain with no entry here
       # fails that request instead of silently reusing another chain's endpoint. Both source
