@@ -94,8 +94,15 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           envs: GHCR_TOKEN,GHCR_ACTOR,IMAGE_TAG
           # Was 45m when this step built both images inline (see the `build` job comment
-          # above for why that stopped working). Now it only pulls, migrates, and restarts.
-          command_timeout: 10m
+          # above for why that stopped working); dropped to 10m once it only pulled,
+          # migrated, and restarted. Raised back to 20m after run 32277385065's deploy step
+          # itself timed out — not a build problem this time: the VPS's disk (83% full,
+          # shared/network-attached on this Contabo tier) hit a transient I/O stall mid-pull,
+          # one layer extracting at ~1 byte/s for the whole remaining budget. `docker ps`/
+          # `systemctl status docker` afterward showed a healthy daemon, no orphaned process
+          # holding a lock — this was a one-off stall, not a stuck host, so the fix is
+          # headroom to survive it, not a full build-timeout-sized budget.
+          command_timeout: 20m
           script: |
             set -euo pipefail
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
