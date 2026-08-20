@@ -725,6 +725,56 @@ describe("POST /api/communities/:id/proposals/direct/confirm (specs/007 US2, FR-
     expect(proposal.options).toEqual(["Yes", "No"]);
   });
 
+  // Governance restructure Phase 2 (2026-08-20) — outside-voice-caught regression: the direct
+  // path's insert call never set decisionTargetType, so a submitted value silently rode the DB
+  // default ("policy") instead of persisting.
+  it("persists the submitted decisionTargetType instead of silently defaulting to policy", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/proposals/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+        decisionTargetType: "opinion",
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { proposal } = (await confirmRes.json()) as { proposal: { decisionTargetType: string } };
+    expect(proposal.decisionTargetType).toBe("opinion");
+  });
+
+  it("defaults decisionTargetType to policy when omitted", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/proposals/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { proposal } = (await confirmRes.json()) as { proposal: { decisionTargetType: string } };
+    expect(proposal.decisionTargetType).toBe("policy");
+  });
+
   it("returns 403 and leaves no record when directDeploymentEnabled is false", async () => {
     const creatorCookie = await authCookieFor(CREATOR);
     const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);

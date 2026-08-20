@@ -27,11 +27,23 @@ export type FormalizeConfirmBody = z.infer<typeof formalizeConfirmBodySchema>;
 
 // specs/007: same shape as createDraftBodySchema — direct deployment reuses drafting's own
 // eligibility/axis rules (research.md #2), it just skips the draft/co-sponsorship stage.
-export const directAuthorizeBodySchema = createDraftBodySchema;
+//
+// Governance restructure Phase 2 (2026-08-20) — decisionTargetType/optionMemberAddresses/options
+// are added here, NOT on createDraftBodySchema, deliberately: "person"-type (election) proposals
+// are direct-deploy only this phase (the draft/co-sponsorship path collects options later, at
+// formalize time, with no validation hook for optionMemberAddresses today — see
+// proposalService.ts's validateTierAndAxis). Sending `options` at authorize time (in addition to
+// confirm time, where it's sent again after the actual on-chain deploy) lets the length-match
+// check against optionMemberAddresses run before the wallet-signed deploy transaction, not after.
+export const directAuthorizeBodySchema = createDraftBodySchema.extend({
+  decisionTargetType: z.enum(["opinion", "policy", "person"]).optional(),
+  optionMemberAddresses: z.array(z.string()).optional(),
+  options: z.array(z.string()).optional(),
+});
 
 export type DirectAuthorizeBody = z.infer<typeof directAuthorizeBodySchema>;
 
-export const directConfirmBodySchema = createDraftBodySchema.extend({
+export const directConfirmBodySchema = directAuthorizeBodySchema.extend({
   pollAddress: z.string().min(1),
   pollId: z.string().min(1),
   txHash: z.string().min(1),

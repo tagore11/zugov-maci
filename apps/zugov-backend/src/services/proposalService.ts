@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { communities, memberships, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
-import type { CreateDraftBody } from "../validators/proposalSchema.js";
+import type { CreateDraftBody, DirectAuthorizeBody, DirectConfirmBody } from "../validators/proposalSchema.js";
 import { isExecutableCombination } from "./proposalConstants.js";
 import * as membershipService from "./membershipService.js";
 import { assertHasAnyAdapterAttached, NoDecisionAdapterAttachedError } from "./decisionAdapterService.js";
@@ -345,7 +345,7 @@ export async function confirmFormalize(
 export async function authorizeDirect(
   communityId: string,
   creatorAddress: string,
-  body: CreateDraftBody,
+  body: DirectAuthorizeBody,
 ): Promise<{ authorized: true }> {
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
@@ -357,14 +357,7 @@ export async function authorizeDirect(
 export async function confirmDirect(
   communityId: string,
   creatorAddress: string,
-  body: CreateDraftBody & {
-    pollAddress: string;
-    pollId: string;
-    txHash: string;
-    pollStartDate: number;
-    pollEndDate: number;
-    options?: string[];
-  },
+  body: DirectConfirmBody,
 ): Promise<ViewableProposal> {
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
@@ -385,6 +378,7 @@ export async function confirmDirect(
       privacy: body.privacy,
       executionLocation: body.executionLocation,
       votingProtocolType: body.votingProtocolType,
+      decisionTargetType: body.decisionTargetType ?? "policy",
       eligibleTierIds: JSON.stringify(body.eligibleTierIds),
       status: "formalized",
       creationPath: "direct",
