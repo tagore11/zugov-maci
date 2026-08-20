@@ -5,8 +5,10 @@ import type { PollDeployConfig } from "@/src/config";
 import { CreateProposalModal } from "./CreateProposalModal";
 
 const getTiersMock = vi.fn();
+const listMembersMock = vi.fn();
 vi.mock("@/src/services/membershipApi", () => ({
   getTiers: (...args: unknown[]) => getTiersMock(...args),
+  listMembers: (...args: unknown[]) => listMembersMock(...args),
 }));
 
 const createDraftMock = vi.fn();
@@ -62,6 +64,7 @@ async function fillCommonFields() {
 
 beforeEach(() => {
   getTiersMock.mockReset();
+  listMembersMock.mockReset();
   createDraftMock.mockReset();
   authorizeDirectMock.mockReset();
   confirmDirectMock.mockReset();
@@ -69,6 +72,10 @@ beforeEach(() => {
   getTiersMock.mockResolvedValue([
     { id: "tier-voter", label: "Voter", canVote: true, isDefault: false },
     { id: "tier-guest", label: "Guest", canVote: false, isDefault: true },
+  ]);
+  listMembersMock.mockResolvedValue([
+    { walletAddress: "0x1111111111111111111111111111111111111a", tierLabel: "Voter" },
+    { walletAddress: "0x2222222222222222222222222222222222222b", tierLabel: "Voter" },
   ]);
 });
 
@@ -183,6 +190,107 @@ describe("CreateProposalModal", () => {
 
       await waitFor(() => expect(screen.getByText("Not authorized to create governance actions")).toBeInTheDocument());
       expect(deployPollMock).not.toHaveBeenCalled();
+    });
+
+    // Governance restructure Phase 2 (2026-08-20) — person-type (election) proposals, direct-
+    // deploy path only.
+    describe("person-type (election) options", () => {
+      const MEMBER_A = "0x1111111111111111111111111111111111111a";
+      const MEMBER_B = "0x2222222222222222222222222222222222222b";
+
+      async function selectPersonType() {
+        fireEvent.change(screen.getByLabelText(/Decision Type/), { target: { value: "person" } });
+        await waitFor(() => expect(listMembersMock).toHaveBeenCalled());
+      }
+
+      it("shows a member picker per candidate once Person is selected", async () => {
+        renderWithProviders(
+          <CreateProposalModal
+            isOpen={true}
+            onClose={() => {}}
+            communityId="0xabc"
+            directDeploymentEnabled={true}
+            pollDeployConfig={POLL_DEPLOY_CONFIG}
+          />,
+        );
+        await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
+
+        expect(screen.queryAllByDisplayValue("Pick a member…")).toHaveLength(0);
+        await selectPersonType();
+        await waitFor(() => expect(screen.getAllByDisplayValue("Pick a member…")).toHaveLength(2));
+        expect(screen.getByText(/Candidates \* \(at least 2\)/)).toBeInTheDocument();
+      });
+
+      it("blocks submission until every candidate has a picked, distinct member", async () => {
+        renderWithProviders(
+          <CreateProposalModal
+            isOpen={true}
+            onClose={() => {}}
+            communityId="0xabc"
+            directDeploymentEnabled={true}
+            pollDeployConfig={POLL_DEPLOY_CONFIG}
+          />,
+        );
+        await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
+        await fillDirectModeFields();
+        await selectPersonType();
+        const memberPickers = await waitFor(() => screen.getAllByDisplayValue("Pick a member…"));
+
+        // No member picked yet — still blocked.
+        expect(screen.getByText("Deploy Poll")).toBeDisabled();
+
+        // Both candidates pick the SAME member — still blocked (must be distinct).
+        fireEvent.change(memberPickers[0]!, { target: { value: MEMBER_A } });
+        fireEvent.change(memberPickers[1]!, { target: { value: MEMBER_A } });
+        expect(screen.getByText("Deploy Poll")).toBeDisabled();
+
+        // Distinct members picked — now ready.
+        fireEvent.change(memberPickers[1]!, { target: { value: MEMBER_B } });
+        expect(screen.getByText("Deploy Poll")).not.toBeDisabled();
+      });
+
+      it("keeps options and optionMemberAddresses index-aligned when a middle candidate is left blank", async () => {
+        authorizeDirectMock.mockResolvedValue({ authorized: true });
+        deployPollMock.mockResolvedValue({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" });
+        confirmDirectMock.mockResolvedValue({ proposal: {} });
+
+        renderWithProviders(
+          <CreateProposalModal
+            isOpen={true}
+            onClose={() => {}}
+            communityId="0xabc"
+            directDeploymentEnabled={true}
+            pollDeployConfig={POLL_DEPLOY_CONFIG}
+          />,
+        );
+        await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
+        await fillDirectModeFields();
+        await selectPersonType();
+
+        // Add a third candidate slot, then leave the MIDDLE one (index 1) blank — the bug this
+        // regression test guards against would pair MEMBER_B with the blank slot instead of
+        // Candidate C, or shift indices once the blank is dropped.
+        fireEvent.click(screen.getByText("+ Add Candidate"));
+        const candidateInputs = screen.getAllByPlaceholderText(/Candidate label \d/);
+        fireEvent.change(candidateInputs[0]!, { target: { value: "Alice" } });
+        fireEvent.change(candidateInputs[1]!, { target: { value: "" } });
+        fireEvent.change(candidateInputs[2]!, { target: { value: "Charlie" } });
+
+        const memberPickers = screen.getAllByDisplayValue("Pick a member…");
+        fireEvent.change(memberPickers[0]!, { target: { value: MEMBER_A } });
+        // memberPickers[1] (paired with the blank candidate) deliberately left unpicked.
+        fireEvent.change(memberPickers[2]!, { target: { value: MEMBER_B } });
+
+        fireEvent.click(screen.getByText("Deploy Poll"));
+
+        await waitFor(() => expect(confirmDirectMock).toHaveBeenCalled());
+        const confirmPayload = confirmDirectMock.mock.calls[0]![1] as {
+          options: string[];
+          optionMemberAddresses: string[];
+        };
+        expect(confirmPayload.options).toEqual(["Alice", "Charlie"]);
+        expect(confirmPayload.optionMemberAddresses).toEqual([MEMBER_A, MEMBER_B]);
+      });
     });
 
     it("renders the pollDeployConfig-missing fallback and never calls authorizeDirect", async () => {

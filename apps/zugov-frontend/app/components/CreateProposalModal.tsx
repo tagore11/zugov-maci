@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import * as membershipApi from "@/src/services/membershipApi";
 import * as proposalApi from "@/src/services/proposalApi";
 import type {
+  ProposalDecisionTargetType,
   ProposalExecutionLocation,
   ProposalPrivacy,
   ProposalVotingProtocolType,
@@ -25,6 +26,30 @@ import {
 export function policyIdToType(id: number): SignUpPolicyType | undefined {
   const entry = Object.entries(PolicyType).find(([, value]) => Number(value) === id);
   return entry?.[0] as SignUpPolicyType | undefined;
+}
+
+const DECISION_TARGET_TYPE_OPTIONS: { value: ProposalDecisionTargetType; label: string }[] = [
+  { value: "policy", label: "Policy — a binding decision on a proposal or rule" },
+  { value: "opinion", label: "Opinion — a non-binding survey or straw poll" },
+  { value: "person", label: "Person — an election, electing someone to a role" },
+];
+
+/** Person-type (election) proposals only — options and optionMemberAddresses must stay
+ * index-aligned, so blanks are filtered from both arrays TOGETHER, not independently (a blank
+ * option removed from the middle would otherwise silently pair the wrong address with the wrong
+ * remaining option). Matches useDeployPoll.ts's own `options.filter((o) => o.trim() !== "")`
+ * blank-detection rule exactly, so the on-chain deployed option list and this stay aligned. */
+export function buildElectionOptionPairs(
+  options: string[],
+  optionMemberAddresses: string[],
+): { options: string[]; optionMemberAddresses: string[] } {
+  const pairs = options
+    .map((option, i) => ({ option, memberAddress: optionMemberAddresses[i] ?? "" }))
+    .filter((pair) => pair.option.trim() !== "");
+  return {
+    options: pairs.map((pair) => pair.option),
+    optionMemberAddresses: pairs.map((pair) => pair.memberAddress),
+  };
 }
 
 const TALLY_MECHANISM_OPTIONS: { value: ProposalVotingProtocolType; label: string }[] = [
@@ -66,6 +91,16 @@ export function CreateProposalModal({
   });
   const votingTiers = tiers.filter((t) => t.canVote);
 
+  // Governance restructure Phase 2 (2026-08-20) — "person"-type (election) proposals are
+  // direct-deploy only (see ENGINEERING.md's Decisions Log); the member picker they need only
+  // fetches once that target type is actually selected, not on every modal open.
+  const [decisionTargetType, setDecisionTargetType] = useState<ProposalDecisionTargetType>("policy");
+  const { data: members = [] } = useQuery({
+    queryKey: ["members", communityId],
+    queryFn: () => membershipApi.listMembers(communityId),
+    enabled: isOpen && directDeploymentEnabled && decisionTargetType === "person",
+  });
+
   const allowedPolicyTypes = (community?.allowedPolicies ?? [])
     .map(policyIdToType)
     .filter((t): t is SignUpPolicyType => !!t);
@@ -93,6 +128,11 @@ export function CreateProposalModal({
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [options, setOptions] = useState(["", ""]);
+  // "person"-type only — same index as `options`, kept in sync on every add/remove so option[i]
+  // always pairs with optionMemberAddresses[i] (outside-voice-caught risk during the Phase 2 eng
+  // review: independently filtering the two arrays before submission would let a blank option
+  // removed from the middle silently desync them — see buildElectionOptionPairs below).
+  const [optionMemberAddresses, setOptionMemberAddresses] = useState(["", ""]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { deployPoll } = useDeployPoll(GovernanceTypes.MACI);
@@ -103,8 +143,17 @@ export function CreateProposalModal({
   const eligibilityPolicyReady = !directDeploymentEnabled || newPolicyArgs !== null;
 
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
+  const electionPairs = buildElectionOptionPairs(options, optionMemberAddresses);
+  // Person-type elections need every remaining candidate to have a picked, distinct member —
+  // client-side check for a fast, clear error; the backend enforces the same rule regardless.
+  const electionOptionsReady =
+    decisionTargetType !== "person" ||
+    (electionPairs.optionMemberAddresses.every((address) => address !== "") &&
+      new Set(electionPairs.optionMemberAddresses.map((address) => address.toLowerCase())).size ===
+        electionPairs.optionMemberAddresses.length);
   const directModeReady =
-    !directDeploymentEnabled || (!!startDate && !!endDate && filledOptionCount >= 2 && eligibilityPolicyReady);
+    !directDeploymentEnabled ||
+    (!!startDate && !!endDate && filledOptionCount >= 2 && eligibilityPolicyReady && electionOptionsReady);
 
   const resetForm = () => {
     setTitle("");
@@ -114,6 +163,8 @@ export function CreateProposalModal({
     setStartDate("");
     setEndDate("");
     setOptions(["", ""]);
+    setOptionMemberAddresses(["", ""]);
+    setDecisionTargetType("policy");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -141,6 +192,8 @@ export function CreateProposalModal({
           executionLocation,
           votingProtocolType,
           eligibleTierIds: directEligibleTierIds,
+          decisionTargetType,
+          ...(decisionTargetType === "person" ? electionPairs : {}),
         });
 
         if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
@@ -174,7 +227,9 @@ export function CreateProposalModal({
           txHash,
           pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
           pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
-          options: options.filter((o) => o.trim() !== ""),
+          decisionTargetType,
+          options: electionPairs.options,
+          ...(decisionTargetType === "person" ? { optionMemberAddresses: electionPairs.optionMemberAddresses } : {}),
         });
       } else {
         // Mirrors the direct-deploy branch above (specs/010 research.md #11): this poll's real
@@ -337,6 +392,24 @@ export function CreateProposalModal({
                 </p>
 
                 <div>
+                  <label htmlFor="proposal-decision-type" className="block text-sm font-semibold text-foreground mb-3">
+                    Decision Type
+                  </label>
+                  <select
+                    id="proposal-decision-type"
+                    value={decisionTargetType}
+                    onChange={(e) => setDecisionTargetType(e.target.value as ProposalDecisionTargetType)}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    {DECISION_TARGET_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Policy *</label>
                   <p className="text-xs text-gray-400 mb-2">Who can vote on this poll, enforced on-chain.</p>
                   <select
@@ -387,21 +460,44 @@ export function CreateProposalModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-300 mb-1">Options * (at least 2)</label>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">
+                    {decisionTargetType === "person" ? "Candidates * (at least 2)" : "Options * (at least 2)"}
+                  </label>
                   <div className="space-y-2">
                     {options.map((option, i) => (
                       <div key={i} className="flex gap-2">
                         <input
                           type="text"
                           value={option}
-                          placeholder={`Option ${i + 1}`}
+                          placeholder={decisionTargetType === "person" ? `Candidate label ${i + 1}` : `Option ${i + 1}`}
                           onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
                           className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
                         />
+                        {decisionTargetType === "person" && (
+                          <select
+                            value={optionMemberAddresses[i] ?? ""}
+                            onChange={(e) =>
+                              setOptionMemberAddresses(
+                                optionMemberAddresses.map((a, j) => (j === i ? e.target.value : a)),
+                              )
+                            }
+                            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                          >
+                            <option value="">Pick a member…</option>
+                            {members.map((m) => (
+                              <option key={m.walletAddress} value={m.walletAddress}>
+                                {m.walletAddress.slice(0, 6)}…{m.walletAddress.slice(-4)} ({m.tierLabel})
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         {options.length > 2 && (
                           <button
                             type="button"
-                            onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                            onClick={() => {
+                              setOptions(options.filter((_, j) => j !== i));
+                              setOptionMemberAddresses(optionMemberAddresses.filter((_, j) => j !== i));
+                            }}
                             className="px-3 py-2 text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
                           >
                             <X className="w-4 h-4" />
@@ -411,11 +507,19 @@ export function CreateProposalModal({
                     ))}
                     <button
                       type="button"
-                      onClick={() => setOptions([...options, ""])}
+                      onClick={() => {
+                        setOptions([...options, ""]);
+                        setOptionMemberAddresses([...optionMemberAddresses, ""]);
+                      }}
                       className="w-full px-3 py-2 border-2 border-dashed border-gray-600 rounded-lg text-sm text-gray-400 hover:border-accent hover:text-accent-hover transition-colors font-medium"
                     >
-                      + Add Option
+                      + Add {decisionTargetType === "person" ? "Candidate" : "Option"}
                     </button>
+                    {decisionTargetType === "person" && !electionOptionsReady && filledOptionCount >= 2 && (
+                      <p className="text-xs text-amber-400">
+                        Every candidate needs a picked, distinct member before you can submit.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

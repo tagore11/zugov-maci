@@ -92,6 +92,16 @@ export async function listMyMemberships(): Promise<string[]> {
   return data.communityIds;
 }
 
+export type Member = { walletAddress: string; tierLabel: string };
+
+/** Feeds the person-type (election) proposal creation UI's member picker (governance restructure
+ * Phase 2, 2026-08-20). Membership-gated on the backend, not admin-gated. */
+export async function listMembers(communityId: string): Promise<Member[]> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/members`, { credentials: "include" });
+  const data = await parseErrorOr<{ members: Member[] }>(res, `Failed to list members: ${res.status}`);
+  return data.members;
+}
+
 export async function rejectRequest(communityId: string, requestId: string): Promise<void> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/join-requests/${requestId}/reject`, {
     method: "POST",
