@@ -2,15 +2,11 @@
 
 ## ZuGov / Governance restructure Phase 2+ follow-ups (from 2026-08-20 `/plan-eng-review`, Phase 1 scope)
 
-### Confirm MACI's `FULL` mode real semantics
+### ~~Confirm MACI's `FULL` mode real semantics~~ — RESOLVED (2026-08-20 Phase 2 `/plan-eng-review`)
 
-**What:** `EMode.FULL` (`packages/core/ts/Poll.ts`) appears, from a partial read during the terminology review, to involve unused-voice-credit refund behavior distinct from a plain quadratic/non-quadratic vote-counting rule — but this was never confirmed against the actual current protocol implementation in this repo, only inferred from a partial code read. Needs a real answer before `FULL` gets classified anywhere in the new `votingProtocolType`/decision-adapter vocabulary: is it a genuine 3rd voting protocol type, a substrate/circuit detail that doesn't belong in that enum at all, or something else entirely.
+**Resolution:** Confirmed by reading `packages/core/ts/Poll.ts:349-473` directly. `EMode.FULL` is a genuine, distinct 4th voting protocol type, not a substrate/circuit detail: on each message, it resets every OTHER vote option's ballot weight to zero and assigns the full new weight to only the selected option (`Poll.ts:395-399`), and requires the voter to spend their entire remaining voice-credit balance in that single message — any leftover credits throw `InvalidVoiceCredits` (`Poll.ts:377-379`). Credit-cost math is linear (non-quadratic), same formula as `NON_QV`/`RANKED` (`Poll.ts:466-472`). In plain terms: "single-choice, mandatory full-commitment" voting — not a refund mechanism as originally speculated. Belongs in `votingProtocolType` as a real, distinct value; `decisionAdapterService.ts`'s MACI capability declaration should be updated to include it (Phase 2 plan, T2, Architecture Finding 5, not yet implemented).
 
-**Why:** Explicitly flagged as unresolved, not confirmed, during both the 2026-08-20 governance-terminology review and the Phase 1 `/plan-eng-review` — founder's own call to track it separately rather than let it quietly ride along inside the broader "audit MACI's current protocol state" item below.
-
-**Effort:** S (a focused read of `Poll.ts`'s `FULL`-mode branches + whoever knows MACI's circuits)
-**Priority:** P2
-**Depends on:** None — informs the eventual `votingProtocolType` classification and decision-adapter capability declarations
+**Depends on:** None
 
 ### Unified decision-adapter execution interface
 
@@ -70,17 +66,37 @@
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Proposal rename (Phase 1) landing first
+**Depends on:** Proposal rename (Phase 1) landing first; **and, per the 2026-08-20 Phase 2 `/plan-eng-review`'s Architecture Finding 4, a real survey decision adapter (Zupoll-style) existing** — the "must apply to both voting and survey" requirement can't be honestly built while survey doesn't exist as a decision-taking mechanism at all. Building a voting-only version now would either leave the requirement unmet or force a re-scope once survey lands; deferred entirely rather than half-built.
 
-### Decision target/type post-proposal enactment automation
+### Decision target/type post-proposal enactment automation — person-type case IN PROGRESS (Phase 2)
 
-**What:** Phase 1 adds a real `decisionTargetType` column (opinion/policy/person) to `proposals`, but doesn't build what happens after the decision is made. For a "person" (election) target: register the elected person on-chain or directly on the community page. For "policy": apply/execute the decided rule. "Opinion" needs no further action.
+**What:** Phase 1 adds a real `decisionTargetType` column (opinion/policy/person) to `proposals`, but doesn't build what happens after the decision is made. Phase 2 (2026-08-20 `/plan-eng-review`) scopes and builds the "person" case: `optionMemberAddresses` links each option to a real member, and tally completion resolves the winning option to `electedWalletAddress` (record + community-page badge only — no new on-chain write, no new roles/permissions system; see the "Elected-roles table with permissions" TODO below for that fuller version, deferred). "Policy" (apply/execute the decided rule) and "opinion" (needs no further action) stay unbuilt.
 
-**Why:** This is where "election"/"referendum" get real operational meaning per the locked glossary (post-proposal action stage) — Phase 1 only adds the classification, not the behavior it should drive.
+**Why:** This is where "election"/"referendum" get real operational meaning per the locked glossary (post-proposal action stage) — Phase 1 only added the classification, not the behavior it should drive.
 
-**Effort:** M (per target type — person-type enactment is the concrete, requested example)
+**Effort:** M (person-type case, in progress) + M (policy-type case, still unscoped)
 **Priority:** P2
 **Depends on:** Proposal rename + decisionTargetType column (Phase 1) landing first
+
+### Elected-roles table with permissions
+
+**What:** A first-class "elected role" concept, separate from `membershipTiers`, giving a person-type proposal's winner real enforced standing (permissions, visibility) in the community — not just a recorded address. Likely shape: a new `electedRoles` table (`communityId` FK CASCADE, `proposalId` FK CASCADE, `walletAddress`, `grantedAt`), one row per proposal — not a mutation of `membershipTiers`.
+
+**Why:** The fuller version of "register the elected person" that the original glossary wording implied. Phase 2 ships the minimal version (`proposals.electedWalletAddress` + a display badge) deliberately, since no product spec yet defines what an elected role should actually grant beyond a tier.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Phase 2's `electedWalletAddress` column landing first (gives it a real winner to grant the role to); a real product spec for what the role grants
+
+### Member display-name system
+
+**What:** `memberships` (`schema.ts`) has only `walletAddress` — no display name, ENS resolution, or nickname anywhere in the app. Every UI surface that shows a member today truncates the raw address.
+
+**Why:** Surfaced by Phase 2's person-type enactment work (2026-08-20 `/plan-eng-review`, Architecture Finding 2) — the member picker and "Elected: 0x1234…abcd" badge both work fine with raw addresses, but this gap will keep resurfacing (delegate picker once delegation lands, elected-roles display, any future member-facing list). ENS resolution is a well-trodden, low-risk pattern (client-side, doesn't even require a schema change) but not every wallet has an ENS name; a self-set nickname needs a new column + edit UI. Deciding ENS-only vs. nickname vs. both needs a product call, not a code decision.
+
+**Effort:** S (ENS-only) to M (nickname system)
+**Priority:** P2
+**Depends on:** None technically; wants a product decision on ENS vs. nickname vs. both before scoping
 
 ## ZuGov / Governance terminology follow-ups (from 2026-08-20 terminology review)
 
@@ -94,15 +110,11 @@
 **Priority:** P2
 **Depends on:** Eligibility adapters core (done, 2026-08-19)
 
-### Audit current in-repo MACI protocol state against ZuGov's app-layer assumptions
+### ~~Audit current in-repo MACI protocol state against ZuGov's app-layer assumptions~~ — RESOLVED (2026-08-20 Phase 2 `/plan-eng-review`)
 
-**What:** `GovernanceActionsList.tsx`'s `TALLY_MECHANISM_TO_MODE` maps `"ranked"` to mode code `"3"` — MACI's `EMode` (`packages/core/ts/Poll.ts`) appeared to only have 3 values (`QV`/`NON_QV`/`FULL`, presumably 0/1/2) as read during this review, which would make `"3"` invalid; `"weighted"` maps to the same code as `"simple"`, collapsing two supposedly-distinct app-layer choices into one on-chain behavior. Founder's note: this read may reflect general/initial MACI documentation rather than the actual current state of this repo's MACI protocol, which may have moved ahead without docs catching up. Needs a real audit of `packages/core`/`packages/contracts`'s current capabilities (Mode enum, Policy types, anything newer) before treating the mapping as a confirmed bug or fixing it.
+**Resolution:** No bug. `packages/core/ts/utils/constants.ts:12-17` defines `EMode` with **4** values, not 3: `QV=0, NON_QV=1, FULL=2, RANKED=3`. `tallyService.ts`'s existing `VOTING_PROTOCOL_TYPE_TO_MODE` mapping (`{quadratic:0, simple:1, full:2, ranked:3, weighted:1}`) already matches this exactly — `"ranked" → 3` is a real, valid mode, not an out-of-range value. `"weighted"` has no distinct on-chain `EMode` counterpart at all (there is no `WEIGHTED` value in the enum), so aliasing it to `NON_QV` (mode `1`, same as `"simple"`) is an honest fallback, not a collision bug — "weighted" voting isn't a real MACI protocol concept yet, only an app-layer aspiration. `decisionAdapterService.ts`'s MACI capability declaration should be updated (Phase 2 plan, T2, Architecture Finding 5, not yet implemented) to include `"ranked"` and `"full"` as genuinely supported, with a comment explaining `"weighted"`'s alias status.
 
-**Why:** Surfaced during the 2026-08-20 governance-terminology review; explicitly downgraded from "confirmed bug" to "needs audit" per founder correction.
-
-**Effort:** S (audit) + M (fix, once scoped)
-**Priority:** P2
-**Depends on:** None — informs the eventual decision-adapter rename/rebuild work
+**Depends on:** None
 
 ### clr.fund-style decision adapter (funding allocation) — on-chain and off-chain/public variants
 
