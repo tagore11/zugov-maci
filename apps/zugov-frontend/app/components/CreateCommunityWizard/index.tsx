@@ -1,12 +1,9 @@
-import { useAccount } from "wagmi";
 import { usePrivy } from "@privy-io/react-auth";
-import { useCreateCommunity, DEFAULT_ADVANCED_CONFIG, type WizardStep } from "@/src/hooks/useCreateCommunity";
+import { useAccount } from "wagmi";
+import { useCreateCommunity, type WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 import { StepCommunitySetup } from "./StepCommunitySetup";
 import { StepEligibility } from "./StepEligibility";
-import { StepReview } from "./StepReview";
-import { StepNetworkCheck } from "./StepNetworkCheck";
-import { StepDeploying } from "./StepDeploying";
 import { StepSuccess } from "./StepSuccess";
 import { SiweGate } from "@/app/components/SiweGate";
 import { useSiwe } from "@/src/hooks/useSiwe";
@@ -15,19 +12,12 @@ const STEP_LABELS: Record<WizardStep, string> = {
   community_info: "Community Info",
   community_setup: "Community Setup",
   eligibility: "Eligibility",
-  network_check: "Network Check",
-  review: "Review",
-  deploying: "Deploying",
   success: "Done",
-  error: "Error",
 };
 
-// Only the identity-creation steps get a numbered progress bar — network_check/review/deploying
-// are now reached from a separate, optional "deploy governance" opt-in on the success screen
-// (2026-08-19 community-creation-rework review, D2), not a continuation of the same sequence.
-// "eligibility" is identity-layer too, same tier as community_info/community_setup, not
-// governance (2026-08-19 eligibility-followups review, D2) — counted here, not treated as
-// optional-and-separate like the governance-deploy steps.
+// Governance restructure Phase 1 (2026-08-20, D2): the wizard never deploys governance itself
+// any more — that moved to an advanced setting on the edit page. Every reachable wizard step
+// counts toward this progress bar now, so it's just the full WizardStep set minus "success".
 const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup", "eligibility"];
 
 export function CreateCommunityWizard() {
@@ -38,17 +28,7 @@ export function CreateCommunityWizard() {
   // immediately instead of the gate's own stale copy still believing isAuthenticated: true
   // (2026-08-19 community-creation-rework review, D4).
   const siwe = useSiwe();
-  const {
-    state,
-    deploy,
-    goToStep,
-    goBack,
-    setCommunityInfo,
-    setCommunitySetup,
-    resumeCheckpoint,
-    dismissCheckpoint,
-    reset,
-  } = useCreateCommunity(siwe);
+  const { state, goToStep, goBack, setCommunityInfo, setCommunitySetup, reset } = useCreateCommunity(siwe);
 
   if (!address) {
     return (
@@ -68,38 +48,9 @@ export function CreateCommunityWizard() {
   const showProgress = PROGRESS_STEPS.includes(state.step);
   const currentIdx = PROGRESS_STEPS.indexOf(state.step);
 
-  const membershipDescription =
-    state.config.membershipPolicy === "approval"
-      ? "Organizers approve new residents before they can join."
-      : "Anyone can join instantly.";
-  const roleLabels = (state.config.tiers ?? []).map((t) => t.label);
-  const deployConfig = state.config.displayName
-    ? {
-        displayName: state.config.displayName,
-        signUpPolicy: state.config.signUpPolicy ?? DEFAULT_ADVANCED_CONFIG.signUpPolicy,
-        allowedPolicies: state.config.allowedPolicies ?? DEFAULT_ADVANCED_CONFIG.allowedPolicies,
-        supportedModes: state.config.supportedModes ?? DEFAULT_ADVANCED_CONFIG.supportedModes,
-      }
-    : undefined;
-
   return (
     <SiweGate message="Sign in to register your community globally" siwe={siwe}>
       <div className="space-y-5">
-        {/* Recovery banner */}
-        {state.step === "community_info" && state.pendingCheckpoint && (
-          <div className="rounded-lg border border-yellow-600/50 bg-yellow-900/20 p-3 text-sm text-yellow-300 flex items-center justify-between gap-3">
-            <span>You have an unfinished community creation.</span>
-            <div className="flex gap-2 shrink-0">
-              <button type="button" onClick={resumeCheckpoint} className="underline hover:text-yellow-200">
-                Resume
-              </button>
-              <button type="button" onClick={dismissCheckpoint} className="text-yellow-500 hover:text-yellow-400">
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Step progress */}
         {showProgress && (
           <div className="flex items-center gap-1">
@@ -158,31 +109,7 @@ export function CreateCommunityWizard() {
           />
         )}
 
-        {state.step === "network_check" && (
-          <StepNetworkCheck deploy={deploy} goBack={() => goToStep("success")} goToReview={() => goToStep("review")} />
-        )}
-
-        {state.step === "review" && deployConfig && (
-          <StepReview
-            config={deployConfig}
-            membershipDescription={membershipDescription}
-            roleLabels={roleLabels}
-            category={state.config.category}
-            deploy={deploy}
-            goBack={() => goToStep("network_check")}
-          />
-        )}
-
-        {(state.step === "deploying" || state.step === "error") && <StepDeploying deploy={deploy} />}
-
-        {state.step === "success" && (
-          <StepSuccess
-            communityId={state.identityCommunityId}
-            governanceConfigured={deploy.state.isDeployed}
-            onDeployNow={() => goToStep("network_check")}
-            reset={reset}
-          />
-        )}
+        {state.step === "success" && <StepSuccess communityId={state.identityCommunityId} reset={reset} />}
       </div>
     </SiweGate>
   );

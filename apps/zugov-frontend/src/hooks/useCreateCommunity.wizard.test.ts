@@ -54,7 +54,6 @@ vi.mock("@/src/services/checkpointStore", async () => {
   return {
     ...actual,
     getPendingCheckpoint: () => null,
-    findAnyPendingCheckpoint: () => null,
     savePendingCheckpoint: vi.fn(),
     clearPendingCheckpoint: vi.fn(),
   };
@@ -139,7 +138,6 @@ describe("useCreateCommunity wizard flow", () => {
     });
 
     expect(result.current.state.step).toBe("success");
-    expect(result.current.deploy.state.isDeployed).toBe(false);
     expect(result.current.state.config.membershipPolicy).toBe("open");
     expect(result.current.state.config.tiers).toEqual(RESIDENT_ORGANIZER_TIERS);
     expect(result.current.state.config.defaultTierLabel).toBe("Resident");
@@ -171,33 +169,6 @@ describe("useCreateCommunity wizard flow", () => {
 
     expect(result.current.state.config.tiers).toEqual(customTiers);
     expect(result.current.state.config.defaultTierLabel).toBe("Neighbor");
-  });
-
-  it("goToStep(network_check) from the success screen enters the opt-in deploy flow", async () => {
-    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
-
-    act(() => {
-      result.current.setCommunityInfo("Zukas", "");
-    });
-    await act(async () => {
-      await result.current.setCommunitySetup({
-        membershipPolicy: "open",
-        tiers: RESIDENT_ORGANIZER_TIERS,
-        defaultTierLabel: "Resident",
-      });
-    });
-    expect(result.current.state.step).toBe("eligibility");
-    act(() => {
-      result.current.goToStep("success");
-    });
-    expect(result.current.state.step).toBe("success");
-
-    act(() => {
-      result.current.goToStep("network_check");
-    });
-    expect(result.current.state.step).toBe("network_check");
-    // The same identity created above is what governance will attach to — not a new one.
-    expect(result.current.state.identityCommunityId).toBeDefined();
   });
 
   it("approval-required membership policy is preserved through to success, not silently reset to open", async () => {
