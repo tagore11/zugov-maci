@@ -26,19 +26,21 @@ export interface DecisionAdapterCapabilities {
   // MACI — it's a purely off-chain, app-DB check with no on-chain Policy equivalent, so MACI
   // cannot enforce it the way it can open (FreeForAll) or erc20_token (ERC20Token policy).
   supportedEligibilityMechanisms: EligibilityMechanism[];
-  // "simple" (NON_QV) and "quadratic" (QV) are MACI's two confirmed-working voting protocol
-  // types. "ranked"/"weighted"/"full" are deliberately excluded from this declaration — the
-  // ranked/weighted mode-mapping issue and FULL's real semantics are both open, tracked
-  // separately in TODOS.md (2026-08-20 terminology + Phase 1 reviews), not resolved by declaring
-  // support here.
-  supportedVotingProtocolTypes: ("simple" | "quadratic")[];
+  // "simple" (NON_QV), "quadratic" (QV), "ranked" (RANKED), and "full" (FULL) are MACI's four
+  // confirmed-working voting protocol types — verified against packages/core/ts/utils/
+  // constants.ts's real 4-value EMode enum and tallyService.ts's existing mode-mapping during
+  // the 2026-08-20 governance-restructure Phase 2 review (TODOS.md's "audit MACI protocol
+  // state" item, resolved: no bug, the mapping already matched the enum exactly). "weighted" is
+  // deliberately excluded — there is no distinct on-chain EMode for it; the app aliases it to
+  // NON_QV (same mode as "simple") as an honest fallback, not a real 5th protocol type.
+  supportedVotingProtocolTypes: ("simple" | "quadratic" | "ranked" | "full")[];
 }
 
 const ADAPTER_CAPABILITIES: Record<DecisionAdapterType, DecisionAdapterCapabilities> = {
   maci: {
     adapterType: "maci",
     supportedEligibilityMechanisms: ["open", "erc20_token"],
-    supportedVotingProtocolTypes: ["simple", "quadratic"],
+    supportedVotingProtocolTypes: ["simple", "quadratic", "ranked", "full"],
   },
 };
 
