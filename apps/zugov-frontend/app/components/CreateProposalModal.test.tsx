@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PollDeployConfig } from "@/src/config";
-import { CreateGovernanceActionModal } from "./CreateGovernanceActionModal";
+import { CreateProposalModal } from "./CreateProposalModal";
 
 const getTiersMock = vi.fn();
 vi.mock("@/src/services/membershipApi", () => ({
@@ -12,7 +12,7 @@ vi.mock("@/src/services/membershipApi", () => ({
 const createDraftMock = vi.fn();
 const authorizeDirectMock = vi.fn();
 const confirmDirectMock = vi.fn();
-vi.mock("@/src/services/governanceActionApi", () => ({
+vi.mock("@/src/services/proposalApi", () => ({
   createDraft: (...args: unknown[]) => createDraftMock(...args),
   authorizeDirect: (...args: unknown[]) => authorizeDirectMock(...args),
   confirmDirect: (...args: unknown[]) => confirmDirectMock(...args),
@@ -72,9 +72,9 @@ beforeEach(() => {
   ]);
 });
 
-describe("CreateGovernanceActionModal", () => {
+describe("CreateProposalModal", () => {
   it("renders non-executable axis options as visible but disabled", async () => {
-    renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
+    renderWithProviders(<CreateProposalModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
 
     await waitFor(() => expect(screen.getByText(/Every voting-capable tier/)).toBeInTheDocument());
 
@@ -94,8 +94,8 @@ describe("CreateGovernanceActionModal", () => {
   });
 
   it("auto-derives eligibleTierIds from every voting-capable tier, without a manual picker (specs/010 US7, FR-014)", async () => {
-    createDraftMock.mockResolvedValue({ governanceAction: {} });
-    renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
+    createDraftMock.mockResolvedValue({ proposal: {} });
+    renderWithProviders(<CreateProposalModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
 
     await waitFor(() => expect(screen.getByText("Voter", { exact: false })).toBeInTheDocument());
     // No checkbox/tier picker exists — only voting-tier data appears as read-only explanatory text.
@@ -110,7 +110,7 @@ describe("CreateGovernanceActionModal", () => {
 
   it("surfaces a 403 rejection instead of silently succeeding", async () => {
     createDraftMock.mockRejectedValue(new Error("Not authorized to create governance actions"));
-    renderWithProviders(<CreateGovernanceActionModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
+    renderWithProviders(<CreateProposalModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
 
     await waitFor(() => expect(screen.getByText(/Every voting-capable tier/)).toBeInTheDocument());
 
@@ -137,10 +137,10 @@ describe("CreateGovernanceActionModal", () => {
     it("renders deploy-time fields and calls authorizeDirect → deployPoll → confirmDirect in order", async () => {
       authorizeDirectMock.mockResolvedValue({ authorized: true });
       deployPollMock.mockResolvedValue({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" });
-      confirmDirectMock.mockResolvedValue({ governanceAction: {} });
+      confirmDirectMock.mockResolvedValue({ proposal: {} });
 
       renderWithProviders(
-        <CreateGovernanceActionModal
+        <CreateProposalModal
           isOpen={true}
           onClose={() => {}}
           communityId="0xabc"
@@ -168,7 +168,7 @@ describe("CreateGovernanceActionModal", () => {
       authorizeDirectMock.mockRejectedValue(new Error("Not authorized to create governance actions"));
 
       renderWithProviders(
-        <CreateGovernanceActionModal
+        <CreateProposalModal
           isOpen={true}
           onClose={() => {}}
           communityId="0xabc"
@@ -187,7 +187,7 @@ describe("CreateGovernanceActionModal", () => {
 
     it("renders the pollDeployConfig-missing fallback and never calls authorizeDirect", async () => {
       renderWithProviders(
-        <CreateGovernanceActionModal
+        <CreateProposalModal
           isOpen={true}
           onClose={() => {}}
           communityId="0xabc"

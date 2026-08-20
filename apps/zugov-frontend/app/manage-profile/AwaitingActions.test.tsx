@@ -22,7 +22,7 @@ vi.mock("@/src/services/membershipApi", () => ({
 
 const governanceListMock = vi.fn();
 const checkVoteEligibilityMock = vi.fn();
-vi.mock("@/src/services/governanceActionApi", () => ({
+vi.mock("@/src/services/proposalApi", () => ({
   list: (...args: unknown[]) => governanceListMock(...args),
   checkVoteEligibility: (...args: unknown[]) => checkVoteEligibilityMock(...args),
 }));
@@ -44,7 +44,7 @@ beforeEach(() => {
   getMock.mockReset();
   listMyMembershipsMock.mockReset().mockResolvedValue([]);
   listPendingRequestsMock.mockReset().mockResolvedValue([]);
-  governanceListMock.mockReset().mockResolvedValue({ governanceActions: [] });
+  governanceListMock.mockReset().mockResolvedValue({ proposals: [] });
   checkVoteEligibilityMock.mockReset();
 });
 
@@ -92,7 +92,7 @@ describe("AwaitingActions", () => {
     listMyMembershipsMock.mockResolvedValue(["community-1"]);
     listMock.mockResolvedValue({ communities: [OWNED], total: 1, hasMore: false });
     governanceListMock.mockResolvedValue({
-      governanceActions: [
+      proposals: [
         { id: "action-1", title: "Fund the garden", status: "formalized" },
         { id: "action-2", title: "Draft only", status: "draft" },
       ],

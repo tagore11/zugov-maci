@@ -1,22 +1,37 @@
 import { useState } from "react";
 import { useChainId } from "wagmi";
 import { X } from "lucide-react";
-import { GovernanceTypes, type GovernanceType, type PollDeployConfig } from "@/src/config";
-import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
+import { useQuery } from "@tanstack/react-query";
+import * as membershipApi from "@/src/services/membershipApi";
+import * as proposalApi from "@/src/services/proposalApi";
+import type {
+  ProposalExecutionLocation,
+  ProposalPrivacy,
+  ProposalVotingProtocolType,
+} from "@/src/services/proposalApi";
+import type { Community } from "@/src/services/communityApi";
+import { useDeployPoll, getEthersSigner, votingMechanismToMode } from "@/src/hooks/useDeployPoll";
 import { deployPolicyContract } from "@/src/services/policyDeploy";
+import { decodeContractError } from "@/src/lib/decodeContractError";
+import { GovernanceTypes, PolicyType, type SignUpPolicyType, type PollDeployConfig } from "@/src/config";
+import {
+  POLICY_TYPE_OPTIONS,
+  DEFAULT_POLICY_INPUTS,
+  buildPolicyArgs,
+  PolicyArgsFields,
+  type PolicyInputState,
+} from "./PolicyArgsFields";
 
-const MACI_ELIGIBILITY_OPTIONS: { value: string; label: string; enabled: boolean }[] = [
-  { value: "FreeForAll", label: "Free For All", enabled: true },
-  { value: "ERC20", label: "ERC20", enabled: false },
-  { value: "MerkleProof", label: "Merkle Proof", enabled: false },
-  { value: "ERC20Votes", label: "ERC20 Votes", enabled: false },
-  { value: "EAS", label: "EAS", enabled: false },
-  { value: "GitcoinPassport", label: "Gitcoin Passport", enabled: false },
-  { value: "Zupass", label: "Zupass", enabled: false },
-  { value: "Semaphore", label: "Semaphore", enabled: false },
-  { value: "AnonAadhaar", label: "Anon Aadhaar", enabled: false },
-  { value: "Token", label: "Token", enabled: false },
-  { value: "Hats", label: "Hats", enabled: false },
+export function policyIdToType(id: number): SignUpPolicyType | undefined {
+  const entry = Object.entries(PolicyType).find(([, value]) => Number(value) === id);
+  return entry?.[0] as SignUpPolicyType | undefined;
+}
+
+const TALLY_MECHANISM_OPTIONS: { value: ProposalVotingProtocolType; label: string }[] = [
+  { value: "simple", label: "Simple Majority" },
+  { value: "quadratic", label: "Quadratic Voting" },
+  { value: "ranked", label: "Ranked Choice" },
+  { value: "full", label: "Full Voting" },
 ];
 
 interface CreateProposalModalProps {
@@ -24,10 +39,14 @@ interface CreateProposalModalProps {
   onClose: () => void;
   onSuccess?: () => void;
   communityId: string;
-  governanceType?: GovernanceType;
-  maciAddress?: string;
-  pollDeployConfig?: PollDeployConfig;
-  existingPollAddress?: string | null;
+  /** When true, this community skips the draft/co-sponsorship stage entirely (specs/007) — the
+   * modal collects deploy-time fields up front and deploys in one step instead of creating a draft. */
+  directDeploymentEnabled?: boolean;
+  /** Required to actually deploy on-chain when directDeploymentEnabled is true; null/undefined means
+   * this community has no linked on-chain governance contract yet (FR-006). */
+  pollDeployConfig?: PollDeployConfig | null;
+  /** Needed to build the eligibility policy picker below (allowedPolicies). */
+  community?: Community;
 }
 
 export function CreateProposalModal({
@@ -35,136 +54,157 @@ export function CreateProposalModal({
   onClose,
   onSuccess,
   communityId,
-  governanceType,
-  maciAddress,
+  directDeploymentEnabled = false,
   pollDeployConfig,
-  existingPollAddress,
+  community,
 }: CreateProposalModalProps) {
-  const isMaci = governanceType === GovernanceTypes.MACI;
   const chainId = useChainId();
-  const { isDeploying, deployStep, deployError, deployPoll } = useDeployPoll(governanceType);
-  const [formData, setFormData] = useState({
-    title: "",
-    description: "",
-    votingMechanism: "simple",
-    weighted: false,
-    privacy: isMaci ? "private" : "public", //TODO
-    startDate: "",
-    endDate: "",
-    eligibility: isMaci ? "FreeForAll" : "",
-    options: ["", ""],
+  const { data: tiers = [] } = useQuery({
+    queryKey: ["tiers", communityId],
+    queryFn: () => membershipApi.getTiers(communityId),
+    enabled: isOpen,
   });
+  const votingTiers = tiers.filter((t) => t.canVote);
+
+  const allowedPolicyTypes = (community?.allowedPolicies ?? [])
+    .map(policyIdToType)
+    .filter((t): t is SignUpPolicyType => !!t);
+
+  // Each community's MACI contract only accepts a subset of tally mechanisms (see MACI.sol's
+  // supportedModes allow-list) — offering an unsupported one here reverts with UnsupportedMode()
+  // on deploy, so filter to what this community actually supports.
+  const supportedModes = community?.supportedModes ?? [];
+  const allowedTallyOptions =
+    supportedModes.length > 0
+      ? TALLY_MECHANISM_OPTIONS.filter((opt) => supportedModes.includes(votingMechanismToMode(opt.value)))
+      : TALLY_MECHANISM_OPTIONS;
+
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [privacy] = useState<ProposalPrivacy>("privacy_preserving");
+  const [executionLocation] = useState<ProposalExecutionLocation>("onchain");
+  const [votingProtocolType, setVotingProtocolType] = useState<ProposalVotingProtocolType>(
+    allowedTallyOptions[0]?.value ?? "simple",
+  );
+  const [eligibilityPolicyType, setEligibilityPolicyType] = useState<SignUpPolicyType>(
+    allowedPolicyTypes[0] ?? "FreeForAll",
+  );
+  const [newPolicyInputs, setNewPolicyInputs] = useState<PolicyInputState>(DEFAULT_POLICY_INPUTS);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [options, setOptions] = useState(["", ""]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { deployPoll } = useDeployPoll(GovernanceTypes.MACI);
 
   if (!isOpen) return null;
 
+  const newPolicyArgs = buildPolicyArgs(eligibilityPolicyType, newPolicyInputs);
+  const eligibilityPolicyReady = !directDeploymentEnabled || newPolicyArgs !== null;
+
+  const filledOptionCount = options.filter((o) => o.trim() !== "").length;
+  const directModeReady =
+    !directDeploymentEnabled || (!!startDate && !!endDate && filledOptionCount >= 2 && eligibilityPolicyReady);
+
+  const resetForm = () => {
+    setTitle("");
+    setDescription("");
+    setEligibilityPolicyType(allowedPolicyTypes[0] ?? "FreeForAll");
+    setNewPolicyInputs(DEFAULT_POLICY_INPUTS);
+    setStartDate("");
+    setEndDate("");
+    setOptions(["", ""]);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
 
-    if (formData.startDate && formData.endDate) {
-      const start = new Date(formData.startDate).getTime();
-      const end = new Date(formData.endDate).getTime();
-      if (start >= end) {
-        alert("End date must be after start date.");
-        return;
-      }
-      if (start <= Date.now()) {
-        alert("Start date must be in the future.");
-        return;
-      }
-    }
-
-    if (isMaci && maciAddress && pollDeployConfig) {
-      try {
-        // Only "Free For All" is enabled in MACI_ELIGIBILITY_OPTIONS above, so a fresh
-        // FreeForAll policy is always what's needed here — matches this modal's prior behavior.
-        const signer = await getEthersSigner();
-        const policyAddress = await deployPolicyContract({ type: "FreeForAll" }, signer, chainId);
-        await deployPoll({
-          maciAddress,
-          pollDeployConfig,
-          existingPollAddress: existingPollAddress ?? null,
-          policyAddress,
-          formData,
-        });
-        setFormData({
-          title: "",
-          description: "",
-          votingMechanism: "simple",
-          weighted: false,
-          privacy: "private",
-          startDate: "",
-          endDate: "",
-          eligibility: "FreeForAll",
-          options: ["", ""],
-        });
-        onSuccess?.();
-        onClose();
-      } catch {
-        // deployError is set by the hook; stay open so user can see it
-      }
+    if (!directDeploymentEnabled && votingTiers.length === 0) {
+      setError("This community has no voting-capable tiers yet.");
       return;
     }
 
-    // Fallback: save to localStorage for non-MACI or unconfigured communities
-    const newProposal = {
-      id: Date.now().toString(),
-      communityId,
-      title: formData.title,
-      description: formData.description,
-      status: "active",
-      type: "onchain",
-      privacy: formData.privacy,
-      eligible: true,
-      votes: 0,
-      votingMechanism: formData.votingMechanism,
-      weighted: formData.weighted,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      eligibility: formData.eligibility,
-      options: formData.options.filter((o) => o.trim() !== ""),
-      createdAt: new Date().toISOString(),
-    };
-    const existingProposals = localStorage.getItem(`proposals_${communityId}`);
-    const proposals = existingProposals ? JSON.parse(existingProposals) : [];
-    proposals.push(newProposal);
-    localStorage.setItem(`proposals_${communityId}`, JSON.stringify(proposals));
-    setFormData({
-      title: "",
-      description: "",
-      votingMechanism: "simple",
-      weighted: false,
-      privacy: isMaci ? "private" : "public", //TODO
-      startDate: "",
-      endDate: "",
-      eligibility: isMaci ? "FreeForAll" : "", //TODO
-      options: ["", ""],
-    });
-    window.location.reload();
-    onClose();
-  };
+    setIsSubmitting(true);
+    try {
+      if (directDeploymentEnabled && pollDeployConfig) {
+        // The backend's checkVoteEligibility (used for the "Vote" button badge) still gates on
+        // eligibleTierIds regardless of creation path — the UI no longer asks for tiers here
+        // since the real gate is now the on-chain eligibility policy below, so every
+        // voting-capable tier is recorded automatically rather than picked manually.
+        const directEligibleTierIds = votingTiers.map((t) => t.id);
 
-  const addOption = () => {
-    setFormData({ ...formData, options: [...formData.options, ""] });
-  };
+        await proposalApi.authorizeDirect(communityId, {
+          title,
+          description,
+          privacy,
+          executionLocation,
+          votingProtocolType,
+          eligibleTierIds: directEligibleTierIds,
+        });
 
-  const removeOption = (index: number) => {
-    setFormData({
-      ...formData,
-      options: formData.options.filter((_, i) => i !== index),
-    });
-  };
+        if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
+        const signer = await getEthersSigner();
+        const policyAddress = await deployPolicyContract(newPolicyArgs, signer, chainId);
 
-  const updateOption = (index: number, value: string) => {
-    const newOptions = [...formData.options];
-    newOptions[index] = value;
-    setFormData({ ...formData, options: newOptions });
+        const { pollAddress, pollId, txHash } = await deployPoll({
+          maciAddress: communityId,
+          pollDeployConfig,
+          existingPollAddress: null,
+          policyAddress,
+          formData: {
+            title,
+            description,
+            votingMechanism: votingProtocolType,
+            startDate,
+            endDate,
+            eligibility: eligibilityPolicyType,
+            options,
+          },
+        });
+        await proposalApi.confirmDirect(communityId, {
+          title,
+          description,
+          privacy,
+          executionLocation,
+          votingProtocolType,
+          eligibleTierIds: directEligibleTierIds,
+          pollAddress,
+          pollId,
+          txHash,
+          pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+          pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+          options: options.filter((o) => o.trim() !== ""),
+        });
+      } else {
+        // Mirrors the direct-deploy branch above (specs/010 research.md #11): this poll's real
+        // eligibility gate is the on-chain policy chosen later, at deploy time (DeployPollPrompt)
+        // — not chosen yet here — so every voting-capable tier is recorded automatically rather
+        // than asking the user to guess eligibility before that policy exists.
+        await proposalApi.createDraft(communityId, {
+          title,
+          description,
+          privacy,
+          executionLocation,
+          votingProtocolType,
+          eligibleTierIds: votingTiers.map((t) => t.id),
+        });
+      }
+      resetForm();
+      onSuccess?.();
+      onClose();
+    } catch (err) {
+      setError(decodeContractError(err));
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-4xl w-full my-8 max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl max-w-2xl w-full my-8 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-700 flex items-center justify-between sticky top-0 bg-gray-900 rounded-t-2xl z-10">
-          <h2 className="text-2xl font-bold text-foreground">Create New Proposal</h2>
+          <h2 className="text-2xl font-bold text-foreground">Create Governance Action</h2>
           <button
             onClick={onClose}
             className="p-2 hover:bg-gray-800 rounded-lg transition-colors text-gray-400 hover:text-foreground"
@@ -173,214 +213,245 @@ export function CreateProposalModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-8 space-y-10">
-          {/* Title */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Proposal Title *</label>
-            <input
-              type="text"
-              required
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
-              placeholder="Enter proposal title"
-            />
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Description *</label>
-            <textarea
-              required
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              rows={4}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
-              placeholder="Describe the proposal in detail"
-            />
-          </div>
-
-          {/* Voting Mechanism */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Voting Mechanism *</label>
-            <select
-              value={formData.votingMechanism}
-              onChange={(e) => setFormData({ ...formData, votingMechanism: e.target.value })}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
+        {directDeploymentEnabled && !pollDeployConfig ? (
+          <div className="p-8 space-y-6">
+            <p className="text-sm text-amber-400 bg-amber-900/20 border border-amber-700/40 rounded-lg p-4">
+              On-chain deployment isn't linked for this community yet.
+            </p>
+            <button
+              onClick={onClose}
+              className="px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 text-foreground"
             >
-              <option value="simple">Simple Majority</option>
-              <option value="quadratic">Quadratic Voting</option>
-              <option value="ranked">Ranked Choice</option>
-              <option value="full">Full Voting</option>
-            </select>
+              Close
+            </button>
           </div>
-
-          {/* Weighted Voting */}
-          <div className="bg-gray-800/40 p-5 rounded-lg border-2 border-gray-700 opacity-50 cursor-not-allowed">
-            <div className="flex items-start gap-4">
-              <input
-                type="checkbox"
-                disabled
-                checked={false} //TODO
-                className="w-5 h-5 rounded text-accent focus:ring-accent mt-1 cursor-not-allowed"
-              />
-              <div>
-                <span className="text-base font-semibold text-foreground block mb-2">Weighted Voting</span>
-                <p className="text-sm text-gray-400">Enable voting power based on token holdings or reputation score</p>
-                <p className="text-xs text-gray-500 mt-1">Coming soon</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Privacy */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Privacy *</label>
-            {isMaci && <p className="text-sm text-gray-500 mb-3">MACI governance requires private voting.</p>}
-            <div className="grid grid-cols-2 gap-4">
-              <label
-                className={`flex items-center gap-3 p-5 border-2 rounded-lg ${isMaci ? "border-gray-800 bg-gray-800/40 opacity-50 cursor-not-allowed" : "border-gray-700 cursor-pointer hover:bg-gray-800/60"}`}
-              >
-                <input
-                  type="radio"
-                  name="privacy"
-                  value="public"
-                  checked={formData.privacy === "public"}
-                  disabled={isMaci} //TODO
-                  onChange={(e) => setFormData({ ...formData, privacy: e.target.value })}
-                  className="w-5 h-5 text-accent focus:ring-accent"
-                />
-                <span className="font-semibold text-base text-foreground">Public</span>
-              </label>
-              <label
-                className={`flex items-center gap-3 p-5 border-2 rounded-lg ${isMaci ? "border-accent bg-accent/10 cursor-not-allowed" : "border-gray-700 cursor-pointer hover:bg-gray-800/60"}`}
-              >
-                <input
-                  type="radio"
-                  name="privacy"
-                  value="private"
-                  checked={formData.privacy === "private"}
-                  disabled={isMaci} //TODO
-                  onChange={(e) => setFormData({ ...formData, privacy: e.target.value })}
-                  className="w-5 h-5 text-accent focus:ring-accent"
-                />
-                <span className="font-semibold text-base text-foreground">Private</span>
-              </label>
-            </div>
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        ) : (
+          <form onSubmit={handleSubmit} className="p-8 space-y-8">
             <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Start Date *</label>
+              <label htmlFor="governance-action-title" className="block text-sm font-semibold text-foreground mb-3">
+                Title *
+              </label>
               <input
-                type="datetime-local"
-                required
-                value={formData.startDate}
-                onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">End Date *</label>
-              <input
-                type="datetime-local"
-                required
-                value={formData.endDate}
-                onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
-              />
-            </div>
-          </div>
-
-          {/* Eligibility */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Criteria *</label>
-            {isMaci ? (
-              <select
-                required
-                value={formData.eligibility}
-                onChange={(e) => setFormData({ ...formData, eligibility: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground"
-              >
-                {MACI_ELIGIBILITY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value} disabled={!opt.enabled}>
-                    {opt.label}
-                    {!opt.enabled ? " (coming soon)" : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
+                id="governance-action-title"
                 type="text"
                 required
-                value={formData.eligibility}
-                onChange={(e) => setFormData({ ...formData, eligibility: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
-                placeholder="Define who can vote on this proposal"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
               />
-            )}
-          </div>
+            </div>
 
-          {/* Options */}
-          <div>
-            <label className="block text-sm font-semibold text-foreground mb-3">Voting Options *</label>
-            <div className="space-y-3">
-              {formData.options.map((option, index) => (
-                <div key={index} className="flex gap-3">
-                  <input
-                    type="text"
-                    required
-                    value={option}
-                    onChange={(e) => updateOption(index, e.target.value)}
-                    className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base text-foreground placeholder:text-gray-500"
-                    placeholder={`Option ${index + 1}`}
+            <div>
+              <label
+                htmlFor="governance-action-description"
+                className="block text-sm font-semibold text-foreground mb-3"
+              >
+                Description *
+              </label>
+              <textarea
+                id="governance-action-description"
+                required
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-3">Privacy</label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-3 p-4 border-2 border-accent bg-accent/10 rounded-lg">
+                  <input type="radio" checked readOnly className="w-5 h-5" />
+                  <span className="font-semibold text-foreground">Privacy-preserving</span>
+                </div>
+                <div
+                  className="flex items-center gap-3 p-4 border-2 border-gray-800 bg-gray-800/40 rounded-lg opacity-50 cursor-not-allowed"
+                  title="Coming soon"
+                >
+                  <input type="radio" disabled className="w-5 h-5" />
+                  <div>
+                    <span className="font-semibold text-foreground">Public</span>
+                    <p className="text-xs text-gray-400">Coming soon</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-3">Execution Location</label>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="flex items-center gap-3 p-4 border-2 border-accent bg-accent/10 rounded-lg">
+                  <input type="radio" checked readOnly className="w-5 h-5" />
+                  <span className="font-semibold text-foreground">Onchain</span>
+                </div>
+                {["Offchain", "Hybrid"].map((label) => (
+                  <div
+                    key={label}
+                    className="flex items-center gap-3 p-4 border-2 border-gray-800 bg-gray-800/40 rounded-lg opacity-50 cursor-not-allowed"
+                    title="Coming soon"
+                  >
+                    <input type="radio" disabled className="w-5 h-5" />
+                    <div>
+                      <span className="font-semibold text-foreground">{label}</span>
+                      <p className="text-xs text-gray-400">Coming soon</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-foreground mb-3">Tally Mechanism *</label>
+              <select
+                value={votingProtocolType}
+                onChange={(e) => setVotingProtocolType(e.target.value as ProposalVotingProtocolType)}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                {allowedTallyOptions.length === 0 && <option value="">No supported tally mechanisms configured</option>}
+                {allowedTallyOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+                <option value="weighted" disabled>
+                  Weighted (coming soon)
+                </option>
+              </select>
+            </div>
+
+            {!directDeploymentEnabled && (
+              <div>
+                <p className="text-sm text-gray-400">
+                  Every voting-capable tier ({votingTiers.map((t) => t.label).join(", ") || "none yet"}) will be able to
+                  vote once this poll is deployed — the actual eligibility gate is the on-chain policy chosen at deploy
+                  time.
+                </p>
+              </div>
+            )}
+
+            {directDeploymentEnabled && (
+              <div className="space-y-4 p-4 border-2 border-accent/40 bg-accent/10 rounded-lg">
+                <p className="text-sm font-semibold text-foreground">
+                  This community deploys polls directly — no draft or co-sponsorship needed.
+                </p>
+
+                <div>
+                  <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Policy *</label>
+                  <p className="text-xs text-gray-400 mb-2">Who can vote on this poll, enforced on-chain.</p>
+                  <select
+                    value={eligibilityPolicyType}
+                    onChange={(e) => setEligibilityPolicyType(e.target.value as SignUpPolicyType)}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-base text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                  >
+                    {allowedPolicyTypes.length === 0 && <option value="">No allowed policies configured</option>}
+                    {allowedPolicyTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {POLICY_TYPE_OPTIONS.find((p) => p.type === type)?.label ?? type}
+                      </option>
+                    ))}
+                  </select>
+
+                  <PolicyArgsFields
+                    policyType={eligibilityPolicyType}
+                    inputs={newPolicyInputs}
+                    updateInput={(key, value) => setNewPolicyInputs((prev) => ({ ...prev, [key]: value }))}
+                    theme="dark"
                   />
-                  {formData.options.length > 2 && (
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="poll-start-date" className="block text-xs font-semibold text-gray-300 mb-1">
+                      Start Date *
+                    </label>
+                    <input
+                      id="poll-start-date"
+                      type="datetime-local"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="poll-end-date" className="block text-xs font-semibold text-gray-300 mb-1">
+                      End Date *
+                    </label>
+                    <input
+                      id="poll-end-date"
+                      type="datetime-local"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-300 mb-1">Options * (at least 2)</label>
+                  <div className="space-y-2">
+                    {options.map((option, i) => (
+                      <div key={i} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={option}
+                          placeholder={`Option ${i + 1}`}
+                          onChange={(e) => setOptions(options.map((o, j) => (j === i ? e.target.value : o)))}
+                          className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+                        />
+                        {options.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => setOptions(options.filter((_, j) => j !== i))}
+                            className="px-3 py-2 text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                     <button
                       type="button"
-                      onClick={() => removeOption(index)}
-                      className="px-4 py-3 text-red-400 hover:bg-red-900/20 rounded-lg transition-colors"
+                      onClick={() => setOptions([...options, ""])}
+                      className="w-full px-3 py-2 border-2 border-dashed border-gray-600 rounded-lg text-sm text-gray-400 hover:border-accent hover:text-accent-hover transition-colors font-medium"
                     >
-                      <X className="w-5 h-5" />
+                      + Add Option
                     </button>
-                  )}
+                  </div>
                 </div>
-              ))}
+              </div>
+            )}
+
+            {error && (
+              <div className="p-4 bg-red-900/20 border border-red-600/50 rounded-lg">
+                <p className="text-sm text-red-300">{error}</p>
+              </div>
+            )}
+
+            <div className="flex gap-4 pt-6 border-t border-gray-700">
               <button
                 type="button"
-                onClick={addOption}
-                className="w-full px-4 py-3 border-2 border-dashed border-gray-600 rounded-lg text-gray-400 hover:border-accent hover:text-accent-hover transition-colors font-medium"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="flex-1 px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 text-foreground disabled:opacity-50"
               >
-                + Add Option
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !directModeReady}
+                className="flex-1 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover disabled:opacity-60"
+              >
+                {isSubmitting
+                  ? directDeploymentEnabled
+                    ? "Deploying..."
+                    : "Creating..."
+                  : directDeploymentEnabled
+                    ? "Deploy Poll"
+                    : "Create Draft"}
               </button>
             </div>
-          </div>
-
-          {/* Actions */}
-          {deployError && (
-            <div className="p-4 bg-red-900/20 border border-red-600/50 rounded-lg">
-              <p className="text-sm text-red-300 font-medium">Deployment failed</p>
-              <p className="text-xs text-red-400 mt-1 break-all">{deployError}</p>
-            </div>
-          )}
-          <div className="flex gap-4 pt-6 border-t border-gray-700">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isDeploying}
-              className="flex-1 px-6 py-3 border-2 border-gray-600 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-base text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isDeploying}
-              className="flex-1 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {isDeploying ? (deployStep ?? "Deploying...") : "Create Proposal"}
-            </button>
-          </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   );

@@ -32,8 +32,8 @@ import {
 // Still the starting point offered to a creator in the tier-editor step (2026-08-19
 // community-creation-rework review, D3) — now editable rather than fixed.
 export const RESIDENT_ORGANIZER_TIERS: TierDraft[] = Object.freeze([
-  Object.freeze({ label: "Resident", canCreateGovernanceActions: false, canVote: true, canManageMembership: false }),
-  Object.freeze({ label: "Organizer", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }),
+  Object.freeze({ label: "Resident", canCreateProposals: false, canVote: true, canManageMembership: false }),
+  Object.freeze({ label: "Organizer", canCreateProposals: true, canVote: true, canManageMembership: true }),
 ]) as TierDraft[];
 
 // Sensible zero-config defaults for the collapsed Advanced section — FreeForAll is the only

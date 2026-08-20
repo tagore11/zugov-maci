@@ -88,13 +88,13 @@ describe("RESIDENT_ORGANIZER_TIERS", () => {
     expect(resident).toEqual({
       label: "Resident",
       canVote: true,
-      canCreateGovernanceActions: false,
+      canCreateProposals: false,
       canManageMembership: false,
     });
     expect(organizer).toEqual({
       label: "Organizer",
       canVote: true,
-      canCreateGovernanceActions: true,
+      canCreateProposals: true,
       canManageMembership: true,
     });
   });
@@ -154,8 +154,8 @@ describe("useCreateCommunity wizard flow", () => {
   it("submits creator-edited tiers, not the hardcoded preset, when the resident customizes them", async () => {
     const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
     const customTiers = [
-      { label: "Neighbor", canVote: true, canCreateGovernanceActions: false, canManageMembership: false },
-      { label: "Steward", canVote: true, canCreateGovernanceActions: true, canManageMembership: true },
+      { label: "Neighbor", canVote: true, canCreateProposals: false, canManageMembership: false },
+      { label: "Steward", canVote: true, canCreateProposals: true, canManageMembership: true },
     ];
 
     act(() => {

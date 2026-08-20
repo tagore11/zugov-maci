@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { ListChecks } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 import * as membershipApi from "@/src/services/membershipApi";
-import * as governanceActionApi from "@/src/services/governanceActionApi";
+import * as proposalApi from "@/src/services/proposalApi";
 
 type AwaitingActionItem =
   | { kind: "union_invite"; communityId: string; communityName: string; unionName: string }
@@ -65,13 +65,13 @@ async function fetchAwaitingActions(address: string): Promise<AwaitingActionItem
 
   await Promise.all(
     memberCommunities.map(async ({ id, displayName }) => {
-      const { governanceActions } = await governanceActionApi
+      const { proposals } = await proposalApi
         .list(id)
-        .catch(() => ({ governanceActions: [] as governanceActionApi.GovernanceActionWithMeta[] }));
-      const formalized = governanceActions.filter((a) => a.status === "formalized");
+        .catch(() => ({ proposals: [] as proposalApi.ProposalWithMeta[] }));
+      const formalized = proposals.filter((a) => a.status === "formalized");
       const eligible = await Promise.all(
         formalized.map((a) =>
-          governanceActionApi
+          proposalApi
             .checkVoteEligibility(id, a.id)
             .then((r) => (r.eligible ? a : null))
             .catch(() => null),
