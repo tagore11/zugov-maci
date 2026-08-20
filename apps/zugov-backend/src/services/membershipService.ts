@@ -116,6 +116,20 @@ export async function listMembersByAddresses(communityId: string, walletAddresse
   return rows.map((row) => row.walletAddress.toLowerCase());
 }
 
+/**
+ * Full member listing for a community (governance restructure Phase 2, 2026-08-20) — feeds the
+ * person-type (election) proposal creation UI's member picker. Gated on membership at the route
+ * level (GET /:id/members, routes/membership.ts) — wallet addresses aren't a public directory,
+ * but any member (not just admins) needs this to pick election candidates.
+ */
+export async function listMembers(communityId: string): Promise<{ walletAddress: string; tierLabel: string }[]> {
+  return db
+    .select({ walletAddress: memberships.walletAddress, tierLabel: membershipTiers.label })
+    .from(memberships)
+    .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+    .where(eq(memberships.communityId, communityId));
+}
+
 export async function createTiersForCommunity(
   communityId: string,
   tiers: TierBody[],

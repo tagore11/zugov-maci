@@ -566,3 +566,75 @@ describe("POST /:id/join — union eligibility fallback (2026-08-19 follow-up re
     expect(res.status).toBe(403);
   });
 });
+
+// Governance restructure Phase 2 (2026-08-20) — feeds the person-type (election) proposal
+// creation UI's member picker.
+describe("GET /api/communities/:id/members", () => {
+  it("returns 401 without authentication", async () => {
+    const res = await app.request("/api/communities/0xdead/members");
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 403 for an authenticated wallet that is not a member of the community", async () => {
+    const creatorCookie = await getAuthCookie();
+    const { community } = await registerIdentity(creatorCookie);
+
+    const outsiderCookie = await authCookieFor(privateKeyToAccount(`0x${"77".repeat(32)}`));
+    const res = await app.request(`/api/communities/${community.id}/members`, {
+      headers: { Cookie: outsiderCookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  // Matches ENGINEERING.md's documented convention (authorization runs before existence
+  // checks) — a nonexistent community's membership status is indistinguishable from "not a
+  // member", so it surfaces as the same 403, not a 404.
+  it("returns 403 (not 404) for a nonexistent community", async () => {
+    const cookie = await getAuthCookie();
+    const res = await app.request("/api/communities/does-not-exist/members", {
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns every member with wallet address and tier label for an authenticated member", async () => {
+    const creatorCookie = await getAuthCookie();
+    const { community } = await registerIdentity(creatorCookie);
+
+    const memberAccount = privateKeyToAccount(`0x${"88".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: memberCookie },
+    });
+    expect(joinRes.status).toBe(200);
+
+    // The joining member (not just the creator/admin) can list members too — this is a
+    // membership check, not an admin check, since any canCreateProposals member needs it to
+    // pick election candidates, not just members with canManageMembership.
+    const res = await app.request(`/api/communities/${community.id}/members`, {
+      headers: { Cookie: memberCookie },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { members: { walletAddress: string; tierLabel: string }[] };
+    const addresses = body.members.map((m) => m.walletAddress.toLowerCase());
+    expect(addresses).toContain(TEST_ACCOUNT.address.toLowerCase());
+    expect(addresses).toContain(memberAccount.address.toLowerCase());
+    expect(body.members.every((m) => m.tierLabel === "Regular")).toBe(true);
+  });
+
+  it("is scoped per community — a member of one community can't list another's members", async () => {
+    const creatorACookie = await getAuthCookie();
+    await registerIdentity(creatorACookie);
+
+    const creatorBCookie = await authCookieFor(privateKeyToAccount(`0x${"99".repeat(32)}`));
+    const { community: communityB } = await registerIdentity(creatorBCookie, {
+      displayName: "Second Test Community",
+    });
+
+    const res = await app.request(`/api/communities/${communityB.id}/members`, {
+      headers: { Cookie: creatorACookie },
+    });
+    expect(res.status).toBe(403);
+  });
+});

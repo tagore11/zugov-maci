@@ -98,6 +98,21 @@ membershipRouter.get("/:id/membership", async (c) => {
   return c.json(result);
 });
 
+// Governance restructure Phase 2 (2026-08-20) — feeds the person-type (election) proposal
+// creation UI's member picker. Membership-gated, not admin-gated: any member with
+// canCreateProposals needs this to pick candidates, not just members with canManageMembership.
+// Not a public read — wallet addresses aren't a public directory.
+membershipRouter.get("/:id/members", requireAuth, async (c) => {
+  const communityId = c.req.param("id");
+  const session = await getSession(c);
+  const status = await membershipService.getMembershipStatus(communityId, session.address!);
+  if (status.status !== "member") {
+    return c.json({ error: "Not authorized to view this community's members" }, 403);
+  }
+  const members = await membershipService.listMembers(communityId);
+  return c.json({ members });
+});
+
 membershipRouter.post("/:id/join", requireAuth, async (c) => {
   const session = await getSession(c);
   try {
