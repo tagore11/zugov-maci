@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useChainId } from "wagmi";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import * as communityApi from "@/src/services/communityApi";
 import type { CommunityCategory } from "@/src/services/communityApi";
@@ -35,15 +34,19 @@ export function StepCommunityInfo({
   const [touched, setTouched] = useState(false);
   const [candidateParents, setCandidateParents] = useState<communityApi.Community[]>([]);
 
-  const chainId = useChainId();
-
   // Local chapters, event teams, and contributor circles nest under a parent community
-  // (Lightpaper's "communities and sub-communities" building block). Best-effort: an empty or
-  // failed fetch just leaves the picker empty — parent selection is optional.
+  // (Lightpaper's "communities and sub-communities" building block) — a structural relationship
+  // independent of governance (ENGINEERING.md's identity/governance separation principle).
+  // Deliberately no chainId filter here: chainId lives on maciGovernanceConfigs, so filtering by
+  // it silently excluded every ungoverned community from ever being selectable as a parent
+  // (governance-restructure Phase 1 review, confirmed bug — communityApi.list's chainId filter
+  // is a plain WHERE after a LEFT JOIN, which behaves like an INNER JOIN for that column).
+  // Best-effort: an empty or failed fetch just leaves the picker empty — parent selection is
+  // optional.
   useEffect(() => {
     let cancelled = false;
     communityApi
-      .list(1, chainId)
+      .list(1)
       .then(({ communities }) => {
         if (!cancelled) setCandidateParents(communities);
       })
@@ -53,7 +56,7 @@ export function StepCommunityInfo({
     return () => {
       cancelled = true;
     };
-  }, [chainId]);
+  }, []);
 
   const nameError = touched && name.trim().length === 0 ? "Community name is required" : undefined;
   const canProceed = name.trim().length > 0 && name.trim().length <= 80;

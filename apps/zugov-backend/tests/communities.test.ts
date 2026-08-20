@@ -203,6 +203,21 @@ describe("GET /api/communities", () => {
     const found = body.communities.find((c) => c.id === community.id);
     expect(found?.governanceConfigured).toBe(false);
   });
+
+  // Governance-restructure Phase 1 review (2026-08-20) — documents intentional behavior, not a
+  // bug: chainId=X means "communities deployed on chain X," and an ungoverned community has no
+  // chain at all, so excluding it here is correct. The real bug was a DIFFERENT call site
+  // (the create-community wizard's parent-community picker, StepCommunityInfo.tsx) using this
+  // chain-specific filter for a task — parent/child nesting — that has nothing to do with chain
+  // at all. Fixed there by dropping the chainId argument, not by changing this filter's
+  // semantics (see StepCommunityInfo.tsx's own comment for the frontend side of this fix).
+  it("excludes an ungoverned community from a chainId-filtered listing (no chain to match against)", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request("/api/communities?chainId=534351");
+    const body = (await res.json()) as { communities: { id: string }[] };
+    expect(body.communities.some((c) => c.id === community.id)).toBe(false);
+  });
 });
 
 describe("GET /api/communities/:id", () => {
