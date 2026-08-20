@@ -197,12 +197,17 @@ services:
     # 127.0.0.1 for host-side debugging.
     ports:
       - "127.0.0.1:3003:3001"
-    # Reuses the app's existing health module (ts/health) — no new endpoint added. See the
-    # `backend` service above for why this exists; coordinator's runtime image is node:20-slim
-    # (Debian-based), so wget comes from apt, not busybox — already present via the wget install
-    # in apps/coordinator/Dockerfile's runner stage.
+    # Deliberately NOT /v1/health/check: that route's checkWalletFunds() makes a live RPC call
+    # to every configured chain (health.service.ts) on every single probe, so a degraded/rate-
+    # limited third-party RPC (seen in practice: sepolia-rpc.scroll.io returning "No nodes
+    # available") makes this healthcheck time out forever even though the coordinator itself is
+    # fine and that endpoint would eventually return 200 regardless of RPC status. /api (the
+    # Swagger UI SwaggerModule.setup("api", ...) sets up in main.ts) proves the HTTP server is
+    # actually up and routing, with no external dependency — the same bar backend's healthcheck
+    # above holds itself to. wget comes from apt (coordinator's runtime image is node:20-slim,
+    # Debian-based, not busybox) — already installed in apps/coordinator/Dockerfile's runner stage.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3001/v1/health/check"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api"]
       interval: 5s
       timeout: 5s
       retries: 10
