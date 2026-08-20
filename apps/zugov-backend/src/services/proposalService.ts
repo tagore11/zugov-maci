@@ -29,6 +29,9 @@ export class IneligibleTiersError extends Error {
   }
 }
 
+// Governance restructure Phase 2 (2026-08-20) — "person"-type (election) proposal validation.
+export class InvalidElectionOptionsError extends Error {}
+
 export class ProposalNotFoundError extends Error {
   constructor() {
     super("Not found");
@@ -71,9 +74,10 @@ export class DraftPathDisabledError extends Error {
   }
 }
 
-type ViewableProposal = Omit<Proposal, "eligibleTierIds" | "options"> & {
+type ViewableProposal = Omit<Proposal, "eligibleTierIds" | "options" | "optionMemberAddresses"> & {
   eligibleTierIds: string[];
   options: string[] | null;
+  optionMemberAddresses: string[] | null;
 };
 
 function deserialize(row: Proposal): ViewableProposal {
@@ -81,6 +85,7 @@ function deserialize(row: Proposal): ViewableProposal {
     ...row,
     eligibleTierIds: JSON.parse(row.eligibleTierIds) as string[],
     options: row.options ? (JSON.parse(row.options) as string[]) : null,
+    optionMemberAddresses: row.optionMemberAddresses ? (JSON.parse(row.optionMemberAddresses) as string[]) : null,
   };
 }
 
@@ -110,10 +115,49 @@ async function getDirectDeploymentEnabled(communityId: string): Promise<boolean>
   return community?.directDeploymentEnabled ?? false;
 }
 
+/** "Person"-type (election) proposals only — direct-deploy creation path only this phase (the
+ * draft/co-sponsorship path collects options later, at formalize time, with no validation hook
+ * for optionMemberAddresses; see Phase 2 eng review's Architecture Finding 2 amendment).
+ * Validates at creation time, before any wallet-signed deploy transaction, not at tally
+ * completion — a malformed candidate list should never reach a live, votable poll. */
+async function validateElectionOptions(
+  communityId: string,
+  options: string[] | undefined,
+  optionMemberAddresses: string[] | undefined,
+): Promise<void> {
+  if (!optionMemberAddresses || optionMemberAddresses.length === 0) {
+    throw new InvalidElectionOptionsError("optionMemberAddresses is required for person-type proposals");
+  }
+  if (!options || options.length !== optionMemberAddresses.length) {
+    throw new InvalidElectionOptionsError("optionMemberAddresses length must match options length");
+  }
+
+  const normalized = optionMemberAddresses.map((address) => address.toLowerCase());
+  if (new Set(normalized).size !== normalized.length) {
+    throw new InvalidElectionOptionsError("optionMemberAddresses must not contain duplicate addresses");
+  }
+
+  const foundMembers = new Set(await membershipService.listMembersByAddresses(communityId, optionMemberAddresses));
+  const nonMembers = normalized.filter((address) => !foundMembers.has(address));
+  if (nonMembers.length > 0) {
+    throw new InvalidElectionOptionsError("optionMemberAddresses must all be real community members");
+  }
+}
+
 /** Shared by createDraft, authorizeDirect, and confirmDirect (research.md #2) — the eligibility rules
  * for who may create a governance action, and what it may contain, don't change based on which path
- * (draft vs. direct) creates it. */
-async function validateTierAndAxis(communityId: string, creatorAddress: string, body: CreateDraftBody): Promise<void> {
+ * (draft vs. direct) creates it. decisionTargetType/optionMemberAddresses/options are only ever
+ * present on the direct-deploy path's body (createDraftBodySchema doesn't declare them), so this
+ * branch is a no-op for createDraft's calls. */
+async function validateTierAndAxis(
+  communityId: string,
+  creatorAddress: string,
+  body: CreateDraftBody & {
+    decisionTargetType?: Proposal["decisionTargetType"];
+    optionMemberAddresses?: string[];
+    options?: string[];
+  },
+): Promise<void> {
   // Governance restructure Phase 1 (2026-08-20) — a community with no decision adapter attached
   // (governance never configured, D2's accepted "loses proposal mechanisms" tradeoff) cannot
   // create a proposal at all. Checked first, before the authorization/axis checks below, so the
@@ -137,6 +181,12 @@ async function validateTierAndAxis(communityId: string, creatorAddress: string, 
   const invalidTierIds = body.eligibleTierIds.filter((id) => !tierById.get(id));
   if (invalidTierIds.length > 0) {
     throw new IneligibleTiersError(invalidTierIds);
+  }
+
+  if (body.decisionTargetType === "person") {
+    await validateElectionOptions(communityId, body.options, body.optionMemberAddresses);
+  } else if (body.optionMemberAddresses && body.optionMemberAddresses.length > 0) {
+    throw new InvalidElectionOptionsError("optionMemberAddresses is only valid for person-type proposals");
   }
 }
 
@@ -388,6 +438,7 @@ export async function confirmDirect(
       pollStartDate: body.pollStartDate,
       pollEndDate: body.pollEndDate,
       options: body.options ? JSON.stringify(body.options) : null,
+      optionMemberAddresses: body.optionMemberAddresses ? JSON.stringify(body.optionMemberAddresses) : null,
       createdAt: now,
       formalizedAt: now,
     })
