@@ -110,6 +110,31 @@ export const maciGovernanceConfigs = pgTable("maci_governance_configs", {
 export type MaciGovernanceConfig = typeof maciGovernanceConfigs.$inferSelect;
 export type NewMaciGovernanceConfig = typeof maciGovernanceConfigs.$inferInsert;
 
+// Governance restructure Phase 1 (2026-08-20 /plan-eng-review) — D1: governanceType generalizes
+// from a single fixed value into a real menu of decision adapters a community has attached.
+// This table is that menu. A community can have zero rows (no governance attached at all — an
+// accepted, permanent state, not a defect, per D2) or more than one once a second adapter exists
+// (Phase 1 only ever inserts adapterType: "maci"). Composite PK (communityId, adapterType)
+// mirrors unionMemberships' style below — the natural key IS this pair, no synthetic id needed
+// since nothing else FKs into an individual row yet. adapterType: "maci" today reads its actual
+// config from maciGovernanceConfigs (unchanged, still keyed by communityId alone) rather than
+// duplicating that config here — this table only tracks *which* adapters are attached, not their
+// per-adapter settings.
+export const communityDecisionAdapters = pgTable(
+  "community_decision_adapters",
+  {
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    adapterType: text("adapter_type").$type<"maci">().notNull(),
+    attachedAt: integer("attached_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.communityId, table.adapterType] })],
+);
+
+export type CommunityDecisionAdapter = typeof communityDecisionAdapters.$inferSelect;
+export type NewCommunityDecisionAdapter = typeof communityDecisionAdapters.$inferInsert;
+
 // Peer/federation relationship between fully independent communities — distinct from
 // parentCommunityId's hierarchy. A union has no governance of its own; it's a structural
 // grouping, same layer as communities themselves. id is always a server-generated UUID, never
