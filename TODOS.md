@@ -1,6 +1,16 @@
 # TODOS
 
-## ZuGov / Governance restructure Phase 2+ follow-ups (from 2026-08-20 `/plan-eng-review`, Phase 1 scope)
+## ZuGov / Governance restructure Phase 3+ follow-ups (from 2026-08-20 Phase 2 implementation)
+
+### Tally pipeline integration test coverage
+
+**What:** `tallyService.ts`'s `triggerTally`/`runTallyInBackground` have zero integration test coverage anywhere in the repo — pre-existing, not introduced by Phase 2. Phase 2 added direct unit coverage for the pure `resolveElectionWinner` function (the only new logic in the pipeline) but didn't build the coordinator-mocking harness (`vi.mock` on `coordinatorClient.ts`'s HTTP calls, a real `maciGovernanceConfigs` test row) needed to exercise `runTallyInBackground` end to end — no existing test file does this for any tally-related behavior, so it would be new test infrastructure, not an extension of an existing pattern.
+
+**Why:** The Phase 2 eng review's Test Review diagram flagged "non-person-type → electedWalletAddress stays null" and "tally fails → electedWalletAddress untouched" as regression-check gaps. Both turned out to be structurally guaranteed by the actual code (a ternary short-circuit for the first, the field being absent from the failure-path `.set()` call for the second) rather than genuine runtime risk — but that's true by code-reading, not by a test that would catch it if someone later changed the code and broke the guarantee.
+
+**Effort:** M (building the coordinator-mock + governance-config test harness is the real cost; the assertions themselves are simple once it exists)
+**Priority:** P2
+**Depends on:** None
 
 ### ~~Confirm MACI's `FULL` mode real semantics~~ — RESOLVED (2026-08-20 Phase 2 `/plan-eng-review`)
 
