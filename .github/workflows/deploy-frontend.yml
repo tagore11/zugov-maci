@@ -26,6 +26,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
         with:
@@ -39,7 +40,13 @@ jobs:
           cache: "pnpm"
 
       - name: Install
-        run: pnpm install --frozen-lockfile --filter '!./packages/testing'
+        # Scoped to the frontend's actual dependency closure (itself + its workspace deps),
+        # not the whole monorepo — the unscoped install previously pulled in packages/circuits
+        # (9.0GB on disk) and packages/cli (2.3GB), neither of which scripts/build-frontend.sh
+        # ever touches. The `...` suffix follows the real dependency graph, so a future change
+        # to the frontend's dependencies is picked up automatically instead of needing this
+        # filter list hand-maintained.
+        run: pnpm install --frozen-lockfile --filter "zugov..."
 
       - name: Build
         env:
@@ -65,3 +72,11 @@ jobs:
           ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
           rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" \
             apps/zugov-frontend/dist/ "$DEPLOY_USER@$DEPLOY_HOST:/var/www/zugov-frontend/"
+
+      - name: Verify site is serving
+        # Confirms the deployed files are actually being served correctly, not just that
+        # rsync completed without error — catches a bad build artifact or a broken nginx
+        # config that a clean rsync exit code wouldn't. Bounded retry window since nginx
+        # serves the synced files directly (no restart needed), but DNS/TLS/network blips
+        # shouldn't fail the deploy on the first attempt.
+        run: curl --fail --silent --show-error --retry 5 --retry-delay 5 https://zugov.xyz/ -o /dev/null
