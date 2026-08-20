@@ -23,7 +23,7 @@ const TEST_ACCOUNT = privateKeyToAccount(`0x${"22".repeat(32)}`);
 
 const DEFAULT_TIER = {
   label: "Regular",
-  canCreateGovernanceActions: false,
+  canCreateProposals: false,
   canVote: true,
   canManageMembership: false,
 };
@@ -152,17 +152,17 @@ describe("Tier mutation authority (FR-008, FR-011)", () => {
 
 // Regression coverage (2026-08-19 eng review, outside-voice finding): hasTierPermission's
 // SELECT was widened to add canCreateEvents alongside the pre-existing
-// canCreateGovernanceActions/canVote — this asserts the widened SELECT still returns correct
+// canCreateProposals/canVote — this asserts the widened SELECT still returns correct
 // values for the ORIGINAL two permissions, not just the new one, so a future permission
 // addition following this same pattern doesn't silently regress the ones already in use.
 describe("hasTierPermission (regression: widened for canCreateEvents)", () => {
-  it("returns correct values for canVote, canCreateGovernanceActions, and canCreateEvents on the same tier", async () => {
+  it("returns correct values for canVote, canCreateProposals, and canCreateEvents on the same tier", async () => {
     const { hasTierPermission } = await import("../src/services/membershipService.js");
 
     const creatorCookie = await getAuthCookie();
     const { community } = await registerIdentity(creatorCookie);
 
-    // DEFAULT_TIER (this file's "Regular" fixture): canVote true, canCreateGovernanceActions
+    // DEFAULT_TIER (this file's "Regular" fixture): canVote true, canCreateProposals
     // false, canCreateEvents unset in the fixture -> schema default true.
     const memberAccount = privateKeyToAccount(`0x${"44".repeat(32)}`);
     const memberCookie = await authCookieFor(memberAccount);
@@ -173,9 +173,7 @@ describe("hasTierPermission (regression: widened for canCreateEvents)", () => {
     expect(joinRes.status).toBe(200);
 
     await expect(hasTierPermission(community.id, memberAccount.address, "canVote")).resolves.toBe(true);
-    await expect(hasTierPermission(community.id, memberAccount.address, "canCreateGovernanceActions")).resolves.toBe(
-      false,
-    );
+    await expect(hasTierPermission(community.id, memberAccount.address, "canCreateProposals")).resolves.toBe(false);
     await expect(hasTierPermission(community.id, memberAccount.address, "canCreateEvents")).resolves.toBe(true);
   });
 
@@ -187,7 +185,7 @@ describe("hasTierPermission (regression: widened for canCreateEvents)", () => {
     const strangerAddress = privateKeyToAccount(`0x${"55".repeat(32)}`).address;
 
     await expect(hasTierPermission(community.id, strangerAddress, "canVote")).resolves.toBe(false);
-    await expect(hasTierPermission(community.id, strangerAddress, "canCreateGovernanceActions")).resolves.toBe(false);
+    await expect(hasTierPermission(community.id, strangerAddress, "canCreateProposals")).resolves.toBe(false);
     await expect(hasTierPermission(community.id, strangerAddress, "canCreateEvents")).resolves.toBe(false);
   });
 });

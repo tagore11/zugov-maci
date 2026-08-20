@@ -134,6 +134,13 @@
       "when": 1787217922892,
       "tag": "0018_clear_darwin",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1787218731528,
+      "tag": "0019_proposal_rename",
+      "breakpoints": true
     }
   ]
 }

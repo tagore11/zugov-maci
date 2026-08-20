@@ -20,13 +20,13 @@ const OUTSIDER = privateKeyToAccount(`0x${"33".repeat(32)}`);
 
 const MANAGE_TIER = {
   label: "Admin",
-  canCreateGovernanceActions: true,
+  canCreateProposals: true,
   canVote: true,
   canManageMembership: true,
 };
 const NO_MANAGE_TIER = {
   label: "Member",
-  canCreateGovernanceActions: false,
+  canCreateProposals: false,
   canVote: true,
   canManageMembership: false,
 };

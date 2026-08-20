@@ -347,11 +347,11 @@ export async function createIdentity(
       .returning();
 
     // The creator otherwise has no membership row at all, so tier-scoped permission checks
-    // (e.g. governanceActionService's canCreateGovernanceActions, or union invite's
+    // (e.g. governanceActionService's canCreateProposals, or union invite's
     // canManageMembership gate) would reject them on their own community. Enroll them at the
     // full-permission ("Admin"-equivalent) tier, not the default tier meant for new joiners —
     // those are frequently different (e.g. the wizard's own default is "Regular", which lacks
-    // canCreateGovernanceActions), and a creator locked out of their own community's governance
+    // canCreateProposals), and a creator locked out of their own community's governance
     // actions is a real, previously-reproducible bug.
     await db.insert(memberships).values({
       walletAddress: data.creatorAddress,

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const tierBodySchema = z.object({
   label: z.string().min(1).max(40),
-  canCreateGovernanceActions: z.boolean(),
+  canCreateProposals: z.boolean(),
   canVote: z.boolean(),
   canManageMembership: z.boolean(),
   canDelegate: z.boolean().optional().default(false),

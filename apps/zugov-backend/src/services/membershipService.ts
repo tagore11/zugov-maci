@@ -75,11 +75,11 @@ export async function isAuthorized(communityId: string, walletAddress: string): 
 export async function hasTierPermission(
   communityId: string,
   walletAddress: string,
-  permission: "canCreateGovernanceActions" | "canVote" | "canCreateEvents",
+  permission: "canCreateProposals" | "canVote" | "canCreateEvents",
 ): Promise<boolean> {
   const rows = await db
     .select({
-      canCreateGovernanceActions: membershipTiers.canCreateGovernanceActions,
+      canCreateProposals: membershipTiers.canCreateProposals,
       canVote: membershipTiers.canVote,
       canCreateEvents: membershipTiers.canCreateEvents,
     })
@@ -101,7 +101,7 @@ export async function createTiersForCommunity(
     id: randomUUID(),
     communityId,
     label: tier.label,
-    canCreateGovernanceActions: tier.canCreateGovernanceActions,
+    canCreateProposals: tier.canCreateProposals,
     canVote: tier.canVote,
     canManageMembership: tier.canManageMembership,
     canDelegate: tier.canDelegate,
@@ -121,7 +121,7 @@ export async function createTiersForCommunity(
   // every permission enabled, preferring one literally labeled "Admin" if several qualify, and
   // falling back to the default tier only if no full-permission tier exists at all.
   const fullPermissionTiers = inserted.filter(
-    (row) => row.canCreateGovernanceActions && row.canVote && row.canManageMembership && row.canCreateEvents,
+    (row) => row.canCreateProposals && row.canVote && row.canManageMembership && row.canCreateEvents,
   );
   const creatorTier = fullPermissionTiers.find((row) => row.label === "Admin") ?? fullPermissionTiers[0] ?? defaultTier;
 

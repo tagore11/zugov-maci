@@ -180,7 +180,7 @@ export const membershipTiers = pgTable("membership_tiers", {
   id: text("id").primaryKey(),
   communityId: text("community_id").notNull(),
   label: text("label").notNull(),
-  canCreateGovernanceActions: boolean("can_create_governance_actions").notNull(),
+  canCreateProposals: boolean("can_create_proposals").notNull(),
   canVote: boolean("can_vote").notNull(),
   canManageMembership: boolean("can_manage_membership").notNull(),
   canDelegate: boolean("can_delegate").notNull().default(false),
@@ -233,7 +233,12 @@ export const joinRequests = pgTable("join_requests", {
 export type JoinRequest = typeof joinRequests.$inferSelect;
 export type NewJoinRequest = typeof joinRequests.$inferInsert;
 
-export const governanceActions = pgTable("governance_actions", {
+// Governance restructure Phase 1 (2026-08-20 /plan-eng-review) — renamed from governanceActions.
+// "Proposal" is the one generic app-layer word for the thing a community decides on, matching
+// what users already see (the "Proposals" nav link, /proposals, CreateProposalModal) and
+// DAO-industry convention (Snapshot/Tally/Governor all call it this) — the backend previously
+// disagreed with its own frontend by calling the same object "governanceAction"/"poll".
+export const proposals = pgTable("proposals", {
   id: text("id").primaryKey(),
   communityId: text("community_id").notNull(),
   type: text("type").$type<"poll">().notNull().default("poll"),
@@ -241,7 +246,22 @@ export const governanceActions = pgTable("governance_actions", {
   description: text("description").notNull(),
   privacy: text("privacy").$type<"public" | "privacy_preserving">().notNull(),
   executionLocation: text("execution_location").$type<"onchain" | "offchain" | "hybrid">().notNull(),
-  tallyMechanism: text("tally_mechanism").$type<"simple" | "quadratic" | "ranked" | "weighted" | "full">().notNull(),
+  // Renamed from tallyMechanism — grounded in Snapshot's real documented "voting types" (ballot
+  // format/aggregation rule: single-choice, approval, weighted, quadratic, ranked-choice), not
+  // to be confused with "voting strategy" (voter-power computation — a distinct, currently
+  // unbuilt concept per the governance-terminology glossary). Existing values/behavior
+  // unchanged — this pass is a rename, not a fix for the ranked/weighted mode-mapping issue
+  // tracked separately in TODOS.md.
+  votingProtocolType: text("voting_protocol_type")
+    .$type<"simple" | "quadratic" | "ranked" | "weighted" | "full">()
+    .notNull(),
+  // What kind of decision this is — opinion (non-binding, e.g. a survey/straw-poll), policy
+  // (a binding decision on a proposal/rule — what every existing MACI-formalized vote already
+  // is), or person (electing/assigning someone to a role, not yet built anywhere). Classification
+  // only this pass — the post-proposal enactment behavior it should drive (e.g. registering an
+  // elected person) is deferred, see TODOS.md. Defaults to "policy" for the same reason existing
+  // rows get backfilled that way: every proposal that exists today already IS a binding decision.
+  decisionTargetType: text("decision_target_type").$type<"opinion" | "policy" | "person">().notNull().default("policy"),
   eligibleTierIds: text("eligible_tier_ids").notNull(), // JSON-stringified string[]
   status: text("status").$type<"draft" | "formalized">().notNull().default("draft"),
   creationPath: text("creation_path").$type<"draft" | "direct">().notNull().default("draft"),
@@ -275,21 +295,21 @@ export const governanceActions = pgTable("governance_actions", {
   tallyResult: text("tally_result"),
 });
 
-export type GovernanceAction = typeof governanceActions.$inferSelect;
-export type NewGovernanceAction = typeof governanceActions.$inferInsert;
+export type Proposal = typeof proposals.$inferSelect;
+export type NewProposal = typeof proposals.$inferInsert;
 
-export const governanceActionSponsors = pgTable(
-  "governance_action_sponsors",
+export const proposalSponsors = pgTable(
+  "proposal_sponsors",
   {
-    governanceActionId: text("governance_action_id").notNull(),
+    proposalId: text("proposal_id").notNull(),
     walletAddress: text("wallet_address").notNull(),
     sponsoredAt: integer("sponsored_at").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.governanceActionId, table.walletAddress] })],
+  (table) => [primaryKey({ columns: [table.proposalId, table.walletAddress] })],
 );
 
-export type GovernanceActionSponsor = typeof governanceActionSponsors.$inferSelect;
-export type NewGovernanceActionSponsor = typeof governanceActionSponsors.$inferInsert;
+export type ProposalSponsor = typeof proposalSponsors.$inferSelect;
+export type NewProposalSponsor = typeof proposalSponsors.$inferInsert;
 
 // Events (2026-08-19 eng review, see TODOS.md "Events" entries for the full design log).
 // Identity/structural layer, same as unions and parentCommunityId — anchored to
@@ -333,7 +353,7 @@ export type NewVenue = typeof venues.$inferInsert;
 // status: "active" | "cancelled", soft-cancel only (mirrors unionMemberships — cancel doesn't
 // delete the row). Editable/cancelable by the creator OR a wallet with canManageMembership on
 // the community (2026-08-19 review, outside-voice finding: creator-only broke
-// ENGINEERING.md's "authorization is one reusable pattern" rule — governanceActions already
+// ENGINEERING.md's "authorization is one reusable pattern" rule — proposals already
 // re-validates permission at mutation time for the same reason).
 export const events = pgTable(
   "events",
