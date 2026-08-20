@@ -32,6 +32,23 @@ jobs:
   # 12.4m). The deploy step now only pulls the images this job pushes.
   build:
     runs-on: ubuntu-latest
+    # Backend and coordinator have no build dependency on each other — matrixing them runs
+    # each on its own runner concurrently, instead of sequentially in one job (previously
+    # ~11m55s total: 3m12s backend + 7m59s coordinator, one after the other — see run
+    # 32371671162). `needs: build` on the deploy job below already waits for every matrix
+    # leg, so no other change is required there.
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - image: backend
+            dockerfile: apps/zugov-backend/Dockerfile
+            tag_env: BACKEND_IMAGE
+            cache_scope: backend
+          - image: coordinator
+            dockerfile: apps/coordinator/Dockerfile
+            tag_env: COORDINATOR_IMAGE
+            cache_scope: coordinator
     permissions:
       contents: read
       packages: write
@@ -48,33 +65,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend
+      - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: apps/zugov-backend/Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
-            ${{ env.BACKEND_IMAGE }}:latest
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
-
-      - name: Build and push coordinator
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: apps/coordinator/Dockerfile
-          push: true
-          tags: |
-            ${{ env.COORDINATOR_IMAGE }}:${{ github.sha }}
-            ${{ env.COORDINATOR_IMAGE }}:latest
-          cache-from: type=gha,scope=coordinator
-          cache-to: type=gha,mode=max,scope=coordinator
+            ${{ env[matrix.tag_env] }}:${{ github.sha }}
+            ${{ env[matrix.tag_env] }}:latest
+          cache-from: type=gha,scope=${{ matrix.cache_scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache_scope }}
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: read
@@ -114,6 +120,30 @@ jobs:
             docker compose pull backend coordinator
             docker compose run --rm backend node_modules/.bin/drizzle-kit migrate
             docker compose up -d
+            # Confirm backend/coordinator are actually healthy, not just started, before this
+            # deploy is allowed to report success — a container that starts but crash-loops or
+            # never becomes ready (bad build, migration left it in a bad state) would otherwise
+            # look identical to a real success. Bounded warm-up window (100s/service): both
+            # services' own `healthcheck:` (deploy/docker-compose.yml) already has a 15s
+            # start_period plus its own interval/retries, so this loop is generous headroom on
+            # top of that, not a replacement for it.
+            for svc in backend coordinator; do
+              healthy=0
+              for i in $(seq 1 20); do
+                cid=$(docker compose ps -q "$svc")
+                status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "starting")
+                if [ "$status" = "healthy" ]; then
+                  healthy=1
+                  break
+                fi
+                sleep 5
+              done
+              if [ "$healthy" -ne 1 ]; then
+                echo "::error::$svc did not report healthy within the warm-up window"
+                docker compose logs --tail=50 "$svc"
+                exit 1
+              fi
+            done
             # graph-node-config.toml is bind-mounted — compose only recreates a container when
             # the service definition itself changes, not when a mounted file's contents do, so
             # config edits (e.g. provider `features`) would otherwise never take effect on a

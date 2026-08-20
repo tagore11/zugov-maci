@@ -48,6 +48,16 @@ services:
     # sites on this box) reverse-proxies to this port. See deploy/nginx-api.conf.
     ports:
       - "127.0.0.1:3002:3001"
+    # Reuses the app's existing `GET /` route (already returns {ok: true} — app.ts),
+    # no new endpoint added. Lets the deploy workflow confirm the container is actually
+    # serving, not just started, and makes `condition: service_healthy` available to any
+    # future dependent service the same way postgres/graph-node already offer it.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
   graph-postgres:
     image: postgres:14-alpine
@@ -187,6 +197,16 @@ services:
     # 127.0.0.1 for host-side debugging.
     ports:
       - "127.0.0.1:3003:3001"
+    # Reuses the app's existing health module (ts/health) — no new endpoint added. See the
+    # `backend` service above for why this exists; coordinator's runtime image is node:20-slim
+    # (Debian-based), so wget comes from apt, not busybox — already present via the wget install
+    # in apps/coordinator/Dockerfile's runner stage.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/v1/health/check"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     # MessageProcessor/VoteTally zkeys (1GB+) used to be downloaded from upstream MACI's S3
     # bucket into the image at build time (apps/coordinator/Dockerfile) — slow on every
     # single build, a build-time dependency on that third-party bucket, and never actually
