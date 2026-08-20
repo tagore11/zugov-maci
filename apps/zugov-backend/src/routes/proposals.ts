@@ -19,6 +19,7 @@ import {
   ThresholdNotMetError,
   DirectDeploymentDisabledError,
   DraftPathDisabledError,
+  NoDecisionAdapterAttachedError,
 } from "../services/proposalService.js";
 import * as tallyService from "../services/tallyService.js";
 import {
@@ -46,6 +47,7 @@ proposalsRouter.post("/:id/proposals", requireAuth, async (c) => {
     return c.json(result, 201);
   } catch (err) {
     if (err instanceof DraftPathDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {
@@ -70,6 +72,7 @@ proposalsRouter.post("/:id/proposals/direct/authorize", requireAuth, async (c) =
     return c.json(result);
   } catch (err) {
     if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {
@@ -94,6 +97,7 @@ proposalsRouter.post("/:id/proposals/direct/confirm", requireAuth, async (c) => 
     return c.json({ proposal }, 201);
   } catch (err) {
     if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {

@@ -4,7 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { encodeFunctionResult } from "viem";
 import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
-import { communities, maciGovernanceConfigs } from "../src/db/schema.js";
+import { communities, maciGovernanceConfigs, communityDecisionAdapters } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -639,6 +639,25 @@ describe("POST /api/communities/:id/governance", () => {
     expect(res.status).toBe(201);
     const { community: attached } = (await res.json()) as { community: { governanceConfigured: boolean } };
     expect(attached.governanceConfigured).toBe(true);
+  });
+
+  // Governance restructure Phase 1 (2026-08-20) — attachGovernance also registers "maci" as an
+  // available decision adapter, which is what actually unblocks proposal creation now (see
+  // proposalService's decision-adapter gate). Verified directly against the new table rather
+  // than through proposal creation here, to keep this test scoped to attachGovernance's own
+  // side effect.
+  it("registers maci as an available decision adapter", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(201);
+
+    const rows = await testDb
+      .select()
+      .from(communityDecisionAdapters)
+      .where(eq(communityDecisionAdapters.communityId, community.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.adapterType).toBe("maci");
   });
 
   it("returns 409 on double-attach (race between two tabs finishing setup)", async () => {

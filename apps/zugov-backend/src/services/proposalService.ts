@@ -5,6 +5,9 @@ import { communities, memberships, membershipTiers, proposals, proposalSponsors,
 import type { CreateDraftBody } from "../validators/proposalSchema.js";
 import { isExecutableCombination } from "./proposalConstants.js";
 import * as membershipService from "./membershipService.js";
+import { assertHasAnyAdapterAttached, NoDecisionAdapterAttachedError } from "./decisionAdapterService.js";
+
+export { NoDecisionAdapterAttachedError };
 
 export class NotAuthorizedToCreateError extends Error {
   constructor() {
@@ -111,6 +114,13 @@ async function getDirectDeploymentEnabled(communityId: string): Promise<boolean>
  * for who may create a governance action, and what it may contain, don't change based on which path
  * (draft vs. direct) creates it. */
 async function validateTierAndAxis(communityId: string, creatorAddress: string, body: CreateDraftBody): Promise<void> {
+  // Governance restructure Phase 1 (2026-08-20) — a community with no decision adapter attached
+  // (governance never configured, D2's accepted "loses proposal mechanisms" tradeoff) cannot
+  // create a proposal at all. Checked first, before the authorization/axis checks below, so the
+  // error a caller sees names the actual reason (no governance configured) rather than a
+  // confusing permission or axis-combination failure.
+  await assertHasAnyAdapterAttached(communityId);
+
   if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateProposals"))) {
     throw new NotAuthorizedToCreateError();
   }

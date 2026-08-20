@@ -13,6 +13,7 @@ import type { IdentityBody, GovernanceBody, PollDeployConfigBody } from "../vali
 import { getRpcUrl } from "./chainRpc.js";
 import { createTiersForCommunity, listTiers } from "./membershipService.js";
 import { deployCommunitySubgraph, subgraphQueryUrlFor } from "./subgraphDeployService.js";
+import { attach as attachDecisionAdapter } from "./decisionAdapterService.js";
 
 const SIGN_UP_POLICY_ABI = [
   { type: "function", name: "signUpPolicy", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
@@ -411,6 +412,13 @@ export async function attachGovernance(id: string, data: GovernanceBody): Promis
     if (isUniqueViolation) throw new GovernanceAlreadyConfiguredError(id);
     throw err;
   }
+
+  // Governance restructure Phase 1 (2026-08-20) — the community now has a real decision adapter
+  // available, not just a maciGovernanceConfigs row. This is the one place attaching governance
+  // actually persists, shared by every entry point (wizard-adjacent deploy, edit page's advanced
+  // setting) — decisionAdapterService.attach is idempotent, so this is safe even if a caller
+  // somehow retries attachGovernance after a partial failure elsewhere in this function.
+  await attachDecisionAdapter(id, "maci");
 
   // Fire-and-forget: deploying the community's subgraph shouldn't block or fail attach.
   // deployCommunitySubgraph never throws — failures land in subgraphStatus for the retry

@@ -43,7 +43,10 @@ const NO_RIGHTS_TIER = {
 // Governance actions (drafts, sponsorship, formalize, vote-eligibility) are purely tier/
 // membership bookkeeping — proposalService never touches MACI/governance-config fields
 // (formalize just records a caller-supplied pollAddress/pollId; the actual on-chain deploy
-// happens elsewhere). Every community in this file is identity-only, no governance attached.
+// happens elsewhere). Every community in this file has a "maci" decision adapter attached
+// (createCommunityWithTiers inserts the row directly — see below) but never a real
+// maciGovernanceConfigs row; that decoupling is deliberate, matching decisionAdapterService's
+// own design (it tracks which adapters are attached, not each adapter's actual config).
 function identityBody(overrides: Record<string, unknown> = {}) {
   return {
     displayName: "Test Governance Community",
@@ -103,6 +106,15 @@ async function createCommunityWithTiers(
   const { community } = (await res.json()) as { community: { id: string } };
   const tiersRes = await app.request(`/api/communities/${community.id}/tiers`);
   const { tiers: created } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+
+  // Governance restructure Phase 1 (2026-08-20) — proposalService now gates creation on at
+  // least one decision adapter being attached. Inserted directly rather than going through the
+  // real governance-attach flow (which needs a full maciGovernanceConfigs payload this file
+  // deliberately doesn't set up — see the file-level comment above).
+  await testDb
+    .insert(schema.communityDecisionAdapters)
+    .values({ communityId: community.id, adapterType: "maci", attachedAt: Math.floor(Date.now() / 1000) });
+
   return { communityId: community.id, tierIds: Object.fromEntries(created.map((t) => [t.label, t.id])) };
 }
 
@@ -138,6 +150,30 @@ describe("POST /api/communities/:id/proposals (US1, FR-001/FR-002/FR-003)", () =
       body: JSON.stringify(DRAFT_BODY),
     });
     expect(res.status).toBe(401);
+  });
+
+  // Governance restructure Phase 1 (2026-08-20) — a community with no decision adapter attached
+  // (governance never configured) cannot create a proposal at all, even if the caller's tier
+  // otherwise grants canCreateProposals. Deliberately bypasses createCommunityWithTiers (which
+  // inserts a communityDecisionAdapters row for every other test in this file) to exercise the
+  // gate itself.
+  it("returns 403 with no decision adapter attached, even for an otherwise-authorized creator", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const res0 = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify(identityBody()),
+    });
+    const { community } = (await res0.json()) as { community: { id: string; defaultTierId: string } };
+
+    const res = await app.request(`/api/communities/${community.id}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [community.defaultTierId] }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/no decision adapter attached/i);
   });
 
   it("creates a draft with auto-sponsorship when the creator's tier grants the right", async () => {
@@ -192,6 +228,9 @@ describe("POST /api/communities/:id/proposals (US1, FR-001/FR-002/FR-003)", () =
       body: JSON.stringify(identityBody({ tiers: [REGULAR_TIER, ADMIN_TIER], defaultTierLabel: "Regular" })),
     });
     const { community } = (await res0.json()) as { community: { id: string } };
+    await testDb
+      .insert(schema.communityDecisionAdapters)
+      .values({ communityId: community.id, adapterType: "maci", attachedAt: Math.floor(Date.now() / 1000) });
 
     const tiersRes = await app.request(`/api/communities/${community.id}/tiers`);
     const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
