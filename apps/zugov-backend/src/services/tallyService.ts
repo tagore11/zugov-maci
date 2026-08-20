@@ -87,7 +87,12 @@ async function getActionOrThrow(communityId: string, actionId: string): Promise<
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
+): Promise<
+  Pick<
+    Proposal,
+    "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult" | "electedWalletAddress"
+  >
+> {
   const action = await getActionOrThrow(communityId, actionId);
   return {
     tallyStatus: action.tallyStatus,
@@ -95,6 +100,11 @@ export async function getTallyStatus(
     tallyRequestedAt: action.tallyRequestedAt,
     tallyCompletedAt: action.tallyCompletedAt,
     tallyResult: action.tallyResult,
+    // "Person"-type only (governance restructure Phase 2) — surfaced here, not just on the base
+    // proposal read, because this is the query the frontend actually polls while a tally is in
+    // progress (ProposalsList.tsx's TallySection); the outer proposal-list query is fetched once
+    // and never invalidated when a background tally completes.
+    electedWalletAddress: action.electedWalletAddress,
   };
 }
 

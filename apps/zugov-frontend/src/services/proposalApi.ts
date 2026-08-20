@@ -187,7 +187,12 @@ export async function triggerTally(communityId: string, actionId: string): Promi
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
+): Promise<
+  Pick<
+    Proposal,
+    "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult" | "electedWalletAddress"
+  >
+> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/tally`, {
     credentials: "include",
   });
