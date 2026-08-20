@@ -5,12 +5,12 @@ import type { TierDraft } from "@/src/services/checkpointStore";
 // admin customizes from; also used as the fixed default for the "register existing community"
 // manual path, which doesn't build its own tier editor.
 export const DEFAULT_MEMBERSHIP_TIERS: TierDraft[] = [
-  { label: "Guest", canCreateGovernanceActions: false, canVote: false, canManageMembership: false },
-  { label: "Visitor", canCreateGovernanceActions: false, canVote: false, canManageMembership: false },
-  { label: "Regular", canCreateGovernanceActions: false, canVote: true, canManageMembership: false },
-  { label: "OG", canCreateGovernanceActions: true, canVote: true, canManageMembership: false },
-  { label: "Manager", canCreateGovernanceActions: true, canVote: true, canManageMembership: true },
-  { label: "Admin", canCreateGovernanceActions: true, canVote: true, canManageMembership: true },
+  { label: "Guest", canCreateProposals: false, canVote: false, canManageMembership: false },
+  { label: "Visitor", canCreateProposals: false, canVote: false, canManageMembership: false },
+  { label: "Regular", canCreateProposals: false, canVote: true, canManageMembership: false },
+  { label: "OG", canCreateProposals: true, canVote: true, canManageMembership: false },
+  { label: "Manager", canCreateProposals: true, canVote: true, canManageMembership: true },
+  { label: "Admin", canCreateProposals: true, canVote: true, canManageMembership: true },
 ];
 
 // Maps to EPolicy enum in @maci-protocol/core

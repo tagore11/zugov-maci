@@ -9,8 +9,8 @@ vi.mock("wagmi", () => ({
   useChainId: () => 11155111,
 }));
 
-// Avoids GovernanceActionsList's transitive useDeployPoll -> wagmiConfig.ts import, which needs
-// a fuller wagmi/viem mock than this test cares about (mirrors GovernanceActionsList.test.tsx).
+// Avoids ProposalsList's transitive useDeployPoll -> wagmiConfig.ts import, which needs
+// a fuller wagmi/viem mock than this test cares about (mirrors ProposalsList.test.tsx).
 vi.mock("@/src/hooks/useDeployPoll", () => ({
   useDeployPoll: () => ({ isDeploying: false, deployStep: null, deployError: null, deployPoll: vi.fn() }),
   getEthersSigner: () => Promise.resolve({}),

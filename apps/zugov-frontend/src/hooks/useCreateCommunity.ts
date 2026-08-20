@@ -14,7 +14,6 @@ import {
   savePendingCheckpoint,
   getPendingCheckpoint,
   clearPendingCheckpoint,
-  findAnyPendingCheckpoint,
   type DeployPhase,
   type MACIDeploymentConfig,
   type MembershipPolicy,
@@ -32,8 +31,8 @@ import {
 // Still the starting point offered to a creator in the tier-editor step (2026-08-19
 // community-creation-rework review, D3) — now editable rather than fixed.
 export const RESIDENT_ORGANIZER_TIERS: TierDraft[] = Object.freeze([
-  Object.freeze({ label: "Resident", canCreateGovernanceActions: false, canVote: true, canManageMembership: false }),
-  Object.freeze({ label: "Organizer", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }),
+  Object.freeze({ label: "Resident", canCreateProposals: false, canVote: true, canManageMembership: false }),
+  Object.freeze({ label: "Organizer", canCreateProposals: true, canVote: true, canManageMembership: true }),
 ]) as TierDraft[];
 
 // Sensible zero-config defaults for the collapsed Advanced section — FreeForAll is the only
@@ -55,15 +54,7 @@ import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZuGovRegistry";
 
-export type WizardStep =
-  | "community_info"
-  | "community_setup"
-  | "eligibility"
-  | "network_check"
-  | "review"
-  | "deploying"
-  | "success"
-  | "error";
+export type WizardStep = "community_info" | "community_setup" | "eligibility" | "success";
 
 export interface DeploymentSummary {
   displayName: string;
@@ -481,20 +472,15 @@ export interface WizardState {
   step: WizardStep;
   config: Partial<MACIDeploymentConfig>;
   // The community's identity id (server-generated UUID), created at the community_setup step
-  // — before any on-chain deployment starts (Architecture 1A/1B). Doubles as the id passed to
-  // useDeployGovernance once the resident opts into deploying governance (2026-08-19
-  // community-creation-rework review, D1/D2) — the wizard's success screen offers that as an
-  // explicit choice rather than always deploying.
+  // — before any on-chain deployment starts (Architecture 1A/1B). Governance restructure Phase 1
+  // (2026-08-20, D2): deploying governance is no longer reachable from the wizard at all — it's
+  // an advanced setting on the edit page (DeployGovernanceSection), which calls
+  // useDeployGovernance directly rather than through this hook.
   identityCommunityId: string | undefined;
-  // Discovered on mount, not applied automatically — the recovery banner offers Resume/Dismiss
-  // as a deliberate choice, matching the pre-rework UX exactly (2026-08-19 review keeps this,
-  // only the underlying per-community checkpoint lookup changed).
-  pendingCheckpoint: { communityId: string; checkpoint: PendingDeploymentCheckpoint } | null;
 }
 
 export interface UseCreateCommunityResult {
   state: WizardState;
-  deploy: UseDeployGovernanceResult;
   goToStep: (step: WizardStep) => void;
   goBack: () => void;
   setCommunityInfo: (
@@ -509,84 +495,19 @@ export interface UseCreateCommunityResult {
     defaultTierLabel: string;
     advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
   }) => Promise<void>;
-  resumeCheckpoint: () => void;
-  dismissCheckpoint: () => void;
   reset: () => void;
 }
 
-const STEP_ORDER: WizardStep[] = [
-  "community_info",
-  "community_setup",
-  "eligibility",
-  "network_check",
-  "review",
-  "deploying",
-  "success",
-];
+const STEP_ORDER: WizardStep[] = ["community_info", "community_setup", "eligibility", "success"];
 
 const INITIAL_STATE: WizardState = {
   step: "community_info",
   config: {},
   identityCommunityId: undefined,
-  pendingCheckpoint: null,
 };
 
 export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateCommunityResult {
-  const { address } = useAccount();
   const [state, setState] = useState<WizardState>(INITIAL_STATE);
-
-  const deployConfig: DeployGovernanceConfig | undefined = state.config.displayName
-    ? {
-        displayName: state.config.displayName,
-        signUpPolicy: state.config.signUpPolicy ?? DEFAULT_ADVANCED_CONFIG.signUpPolicy,
-        allowedPolicies: state.config.allowedPolicies ?? DEFAULT_ADVANCED_CONFIG.allowedPolicies,
-        supportedModes: state.config.supportedModes ?? DEFAULT_ADVANCED_CONFIG.supportedModes,
-      }
-    : undefined;
-  const deploy = useDeployGovernance(state.identityCommunityId, deployConfig, siwe);
-
-  // useDeployGovernance owns its own success/error state, decoupled from the wizard's step
-  // (D1 — it's shared with the edit page, which has no WizardStep concept at all). When a
-  // deploy this hook composes finishes, advance the wizard to its success screen.
-  useEffect(() => {
-    if (deploy.state.isDeployed) {
-      setState((prev) => (prev.step === "success" ? prev : { ...prev, step: "success" }));
-    }
-  }, [deploy.state.isDeployed]);
-
-  // On mount: discover any in-progress deployment for the current wallet, regardless of which
-  // community it belongs to (findAnyPendingCheckpoint — this runs before any community is known,
-  // see checkpointStore.ts's per-community keying, D5). Stored for the recovery banner to offer
-  // Resume/Dismiss as a deliberate choice — not applied automatically.
-  useEffect(() => {
-    if (!address) return;
-    const found = findAnyPendingCheckpoint(address as Hex);
-    if (!found) return;
-    setState((prev) => ({ ...prev, pendingCheckpoint: found }));
-  }, [address]);
-
-  const resumeCheckpoint = useCallback(() => {
-    setState((prev) => {
-      if (!prev.pendingCheckpoint) return prev;
-      const { communityId, checkpoint } = prev.pendingCheckpoint;
-      return {
-        ...prev,
-        step: "deploying",
-        config: checkpoint.config,
-        identityCommunityId: communityId,
-        pendingCheckpoint: null,
-      };
-    });
-  }, []);
-
-  const dismissCheckpoint = useCallback(() => {
-    setState((prev) => {
-      if (address && prev.pendingCheckpoint) {
-        clearPendingCheckpoint(address as Hex, prev.pendingCheckpoint.communityId);
-      }
-      return { ...prev, pendingCheckpoint: null };
-    });
-  }, [address]);
 
   const goToStep = useCallback((step: WizardStep) => {
     setState((prev) => ({ ...prev, step }));
@@ -691,13 +612,10 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
 
   return {
     state,
-    deploy,
     goToStep,
     goBack,
     setCommunityInfo,
     setCommunitySetup,
-    resumeCheckpoint,
-    dismissCheckpoint,
     reset,
   };
 }

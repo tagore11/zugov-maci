@@ -10,7 +10,7 @@ import { appConstants, type GovernanceType } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
 import { JoinSection } from "./JoinSection";
 import { UnionsSection } from "./UnionsSection";
-import { GovernanceActionsList } from "../../components/GovernanceActionsList";
+import { ProposalsList } from "../../components/ProposalsList";
 import { EventsSection } from "../../components/EventsSection";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
@@ -294,7 +294,7 @@ export default function CommunityPage() {
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-            <GovernanceActionsList communityId={dc.id} connected={!!address} />
+            <ProposalsList communityId={dc.id} connected={!!address} />
           </div>
         </main>
       </div>

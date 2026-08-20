@@ -51,7 +51,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   const [error, setError] = useState<string | null>(null);
 
   // Reset/prefill whenever the modal opens (this instance is reused across opens) — matches
-  // CreateGovernanceActionModal's own reset-on-close convention.
+  // CreateProposalModal's own reset-on-close convention.
   useEffect(() => {
     if (!isOpen) return;
     if (editingEvent) {

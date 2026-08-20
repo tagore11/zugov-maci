@@ -1,9 +1,9 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { maciGovernanceConfigs, governanceActions, type GovernanceAction } from "../db/schema.js";
+import { maciGovernanceConfigs, proposals, type Proposal } from "../db/schema.js";
 import { runTallyPipeline } from "./coordinatorClient.js";
 import { isAuthorized } from "./membershipService.js";
-import { GovernanceActionNotFoundError } from "./governanceActionService.js";
+import { ProposalNotFoundError } from "./proposalService.js";
 
 export class NotAuthorizedToTallyError extends Error {
   constructor() {
@@ -37,9 +37,9 @@ export class UnsupportedChainForTallyError extends Error {
 }
 
 // DomainObjs.Mode values (see apps/zugov-frontend/src/hooks/useDeployPoll.ts's EMode and
-// GovernanceActionsList.tsx's TALLY_MECHANISM_TO_MODE — kept in sync manually, no shared package
+// ProposalsList.tsx's VOTING_PROTOCOL_TYPE_TO_MODE — kept in sync manually, no shared package
 // between frontend/backend for this small an enum).
-const TALLY_MECHANISM_TO_MODE: Record<GovernanceAction["tallyMechanism"], number> = {
+const VOTING_PROTOCOL_TYPE_TO_MODE: Record<Proposal["votingProtocolType"], number> = {
   quadratic: 0,
   simple: 1,
   full: 2,
@@ -49,22 +49,20 @@ const TALLY_MECHANISM_TO_MODE: Record<GovernanceAction["tallyMechanism"], number
 
 const SEPOLIA_CHAIN_ID = 11155111;
 
-async function getActionOrThrow(communityId: string, actionId: string): Promise<GovernanceAction> {
+async function getActionOrThrow(communityId: string, actionId: string): Promise<Proposal> {
   const [row] = await db
     .select()
-    .from(governanceActions)
-    .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
+    .from(proposals)
+    .where(and(eq(proposals.id, actionId), eq(proposals.communityId, communityId)))
     .limit(1);
-  if (!row) throw new GovernanceActionNotFoundError();
+  if (!row) throw new ProposalNotFoundError();
   return row;
 }
 
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<
-  Pick<GovernanceAction, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">
-> {
+): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
   const action = await getActionOrThrow(communityId, actionId);
   return {
     tallyStatus: action.tallyStatus,
@@ -97,49 +95,49 @@ export async function triggerTally(communityId: string, actionId: string, wallet
     .from(maciGovernanceConfigs)
     .where(eq(maciGovernanceConfigs.communityId, communityId))
     .limit(1);
-  if (!governanceConfig || !governanceConfig.contractAddress) throw new GovernanceActionNotFoundError();
+  if (!governanceConfig || !governanceConfig.contractAddress) throw new ProposalNotFoundError();
   if (governanceConfig.chainId !== SEPOLIA_CHAIN_ID) throw new UnsupportedChainForTallyError();
 
   const now = Math.floor(Date.now() / 1000);
   await db
-    .update(governanceActions)
+    .update(proposals)
     .set({ tallyStatus: "pending", tallyRequestedAt: now, tallyError: null, tallyResult: null })
-    .where(eq(governanceActions.id, actionId));
+    .where(eq(proposals.id, actionId));
 
-  void runTallyInBackground(actionId, governanceConfig.contractAddress, action.pollId, action.tallyMechanism);
+  void runTallyInBackground(actionId, governanceConfig.contractAddress, action.pollId, action.votingProtocolType);
 }
 
 async function runTallyInBackground(
   actionId: string,
   maciContractAddress: string,
   pollId: string,
-  tallyMechanism: GovernanceAction["tallyMechanism"],
+  votingProtocolType: Proposal["votingProtocolType"],
 ): Promise<void> {
   try {
-    await db.update(governanceActions).set({ tallyStatus: "processing" }).where(eq(governanceActions.id, actionId));
+    await db.update(proposals).set({ tallyStatus: "processing" }).where(eq(proposals.id, actionId));
 
     const result = await runTallyPipeline({
       maciContractAddress,
       pollId: Number(pollId),
-      mode: TALLY_MECHANISM_TO_MODE[tallyMechanism],
+      mode: VOTING_PROTOCOL_TYPE_TO_MODE[votingProtocolType],
     });
 
     await db
-      .update(governanceActions)
+      .update(proposals)
       .set({
         tallyStatus: "completed",
         tallyCompletedAt: Math.floor(Date.now() / 1000),
         tallyResult: JSON.stringify(result.tallyData),
       })
-      .where(eq(governanceActions.id, actionId));
+      .where(eq(proposals.id, actionId));
   } catch (err) {
     console.error(`[tallyService] Tally failed for governance action ${actionId}:`, err);
     await db
-      .update(governanceActions)
+      .update(proposals)
       .set({
         tallyStatus: "failed",
         tallyError: err instanceof Error ? err.message : String(err),
       })
-      .where(eq(governanceActions.id, actionId));
+      .where(eq(proposals.id, actionId));
   }
 }

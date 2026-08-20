@@ -33,7 +33,7 @@ export function pollStatusLabel(status: PollStatus): string {
   return POLL_STATUS_LABELS[status];
 }
 
-/** Text color for dark backgrounds (community detail page's dark cards, GovernanceActionsList). */
+/** Text color for dark backgrounds (community detail page's dark cards, ProposalsList). */
 export function pollStatusClass(status: PollStatus): string {
   return POLL_STATUS_CLASSES[status];
 }

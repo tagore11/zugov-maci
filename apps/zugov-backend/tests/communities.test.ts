@@ -4,7 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { encodeFunctionResult } from "viem";
 import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
-import { communities, maciGovernanceConfigs } from "../src/db/schema.js";
+import { communities, maciGovernanceConfigs, communityDecisionAdapters } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -75,7 +75,7 @@ const IDENTITY_BODY = {
   description: "A test community",
   membershipPolicy: "open",
   tierChangesRequireVote: false,
-  tiers: [{ label: "Member", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }],
+  tiers: [{ label: "Member", canCreateProposals: true, canVote: true, canManageMembership: true }],
   defaultTierLabel: "Member",
 };
 
@@ -202,6 +202,21 @@ describe("GET /api/communities", () => {
     const body = (await res.json()) as { communities: { id: string; governanceConfigured: boolean }[] };
     const found = body.communities.find((c) => c.id === community.id);
     expect(found?.governanceConfigured).toBe(false);
+  });
+
+  // Governance-restructure Phase 1 review (2026-08-20) — documents intentional behavior, not a
+  // bug: chainId=X means "communities deployed on chain X," and an ungoverned community has no
+  // chain at all, so excluding it here is correct. The real bug was a DIFFERENT call site
+  // (the create-community wizard's parent-community picker, StepCommunityInfo.tsx) using this
+  // chain-specific filter for a task — parent/child nesting — that has nothing to do with chain
+  // at all. Fixed there by dropping the chainId argument, not by changing this filter's
+  // semantics (see StepCommunityInfo.tsx's own comment for the frontend side of this fix).
+  it("excludes an ungoverned community from a chainId-filtered listing (no chain to match against)", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request("/api/communities?chainId=534351");
+    const body = (await res.json()) as { communities: { id: string }[] };
+    expect(body.communities.some((c) => c.id === community.id)).toBe(false);
   });
 });
 
@@ -624,6 +639,25 @@ describe("POST /api/communities/:id/governance", () => {
     expect(res.status).toBe(201);
     const { community: attached } = (await res.json()) as { community: { governanceConfigured: boolean } };
     expect(attached.governanceConfigured).toBe(true);
+  });
+
+  // Governance restructure Phase 1 (2026-08-20) — attachGovernance also registers "maci" as an
+  // available decision adapter, which is what actually unblocks proposal creation now (see
+  // proposalService's decision-adapter gate). Verified directly against the new table rather
+  // than through proposal creation here, to keep this test scoped to attachGovernance's own
+  // side effect.
+  it("registers maci as an available decision adapter", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(201);
+
+    const rows = await testDb
+      .select()
+      .from(communityDecisionAdapters)
+      .where(eq(communityDecisionAdapters.communityId, community.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.adapterType).toBe("maci");
   });
 
   it("returns 409 on double-attach (race between two tabs finishing setup)", async () => {

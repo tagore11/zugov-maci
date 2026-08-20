@@ -20,7 +20,7 @@ const TEST_ACCOUNT = privateKeyToAccount(`0x${"66".repeat(32)}`);
 
 const DEFAULT_TIER = {
   label: "Regular",
-  canCreateGovernanceActions: false,
+  canCreateProposals: false,
   canVote: true,
   canManageMembership: false,
 };

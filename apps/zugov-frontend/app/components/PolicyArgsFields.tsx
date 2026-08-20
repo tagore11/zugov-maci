@@ -130,7 +130,7 @@ export function buildPolicyArgs(policyType: SignUpPolicyType, inputs: PolicyInpu
   }
 }
 
-/** Every call site (CreateCommunityWizard's StepCommunitySetup, CreateGovernanceActionModal) now
+/** Every call site (CreateCommunityWizard's StepCommunitySetup, CreateProposalModal) now
  * renders inside a dark modal/panel per DESIGN.md — "light" is kept only so a future light-toggle
  * surface doesn't need this component's plumbing rebuilt, not because anything uses it today.
  * Defaults to "dark" to match every current call site. */

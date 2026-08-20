@@ -20,8 +20,8 @@ export const testDb = getTestDb();
 // up a duplicate-labeled tier from a previous run instead of the one just created). Clear every
 // dependent table first, then communities.
 export async function clearCommunities() {
-  await testDb.delete(schema.governanceActionSponsors);
-  await testDb.delete(schema.governanceActions);
+  await testDb.delete(schema.proposalSponsors);
+  await testDb.delete(schema.proposals);
   // eligibilityRules.targetTierId FKs to membershipTiers.id with no ON DELETE action (RESTRICT
   // by default) — must clear before membershipTiers or that delete fails with a FK violation.
   await testDb.delete(schema.eligibilityRules);
@@ -32,6 +32,7 @@ export async function clearCommunities() {
   await testDb.delete(schema.unionMemberships);
   await testDb.delete(schema.unions);
   await testDb.delete(schema.maciGovernanceConfigs);
+  await testDb.delete(schema.communityDecisionAdapters);
   await testDb.delete(schema.communities);
 }
 

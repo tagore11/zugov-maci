@@ -3,12 +3,8 @@ import { useChainId } from "wagmi";
 import { Plus } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JsonRpcProvider } from "ethers";
-import * as governanceActionApi from "@/src/services/governanceActionApi";
-import type {
-  GovernanceActionWithMeta,
-  GovernanceActionTallyMechanism,
-  VoteEligibilityReason,
-} from "@/src/services/governanceActionApi";
+import * as proposalApi from "@/src/services/proposalApi";
+import type { ProposalWithMeta, ProposalVotingProtocolType, VoteEligibilityReason } from "@/src/services/proposalApi";
 import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
 import { useDeployPoll, getEthersSigner } from "@/src/hooks/useDeployPoll";
@@ -17,7 +13,7 @@ import { deployPolicyContract } from "@/src/services/policyDeploy";
 import { GovernanceTypes, appConstants, type SignUpPolicyType } from "@/src/config";
 import { Poll__factory } from "@/src/poll-factory-shim";
 import type { SubgraphPoll, PollMode } from "@/src/services/subgraph";
-import { CreateGovernanceActionModal, policyIdToType } from "./CreateGovernanceActionModal";
+import { CreateProposalModal, policyIdToType } from "./CreateProposalModal";
 import { VoteModal } from "./VoteModal";
 import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
 import {
@@ -28,7 +24,7 @@ import {
   type PolicyInputState,
 } from "./PolicyArgsFields";
 
-interface GovernanceActionsListProps {
+interface ProposalsListProps {
   communityId: string;
   connected: boolean;
 }
@@ -44,7 +40,7 @@ const VOTE_REASON_LABELS: Record<VoteEligibilityReason, string> = {
 function VoteEligibilityBadge({ communityId, actionId }: { communityId: string; actionId: string }) {
   const { data } = useQuery({
     queryKey: ["voteEligibility", communityId, actionId],
-    queryFn: () => governanceActionApi.checkVoteEligibility(communityId, actionId),
+    queryFn: () => proposalApi.checkVoteEligibility(communityId, actionId),
   });
   if (!data) return null;
   if (data.eligible) {
@@ -72,7 +68,7 @@ function DeployPollPrompt({
 }: {
   communityId: string;
   community: Community;
-  action: GovernanceActionWithMeta;
+  action: ProposalWithMeta;
   maciAddress: string;
   pollDeployConfig: NonNullable<Community["pollDeployConfig"]>;
   onDeployed: () => void;
@@ -113,14 +109,14 @@ function DeployPollPrompt({
         formData: {
           title: action.title,
           description: action.description,
-          votingMechanism: action.tallyMechanism,
+          votingMechanism: action.votingProtocolType,
           startDate,
           endDate,
           eligibility: eligibilityPolicyType,
           options,
         },
       });
-      await governanceActionApi.confirmFormalize(communityId, action.id, {
+      await proposalApi.confirmFormalize(communityId, action.id, {
         pollAddress,
         pollId,
         txHash,
@@ -218,7 +214,7 @@ function DeployPollPrompt({
 
 // FR-002's executable combination is always onchain + (simple|quadratic|ranked|full) — "weighted"
 // can never reach a formalized action, per the axis-combination validation at draft creation.
-const TALLY_MECHANISM_TO_MODE: Record<GovernanceActionTallyMechanism, PollMode> = {
+const VOTING_PROTOCOL_TYPE_TO_MODE: Record<ProposalVotingProtocolType, PollMode> = {
   simple: "1",
   quadratic: "0",
   ranked: "3",
@@ -233,7 +229,7 @@ const TALLY_MECHANISM_TO_MODE: Record<GovernanceActionTallyMechanism, PollMode> 
  * contract itself only exposes the option count, never the label strings). VoteModal still falls
  * back to "Option 1"/"Option 2"... placeholders for the rare case `options` is null (e.g. actions
  * formalized before this column existed). */
-async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: string): Promise<SubgraphPoll> {
+async function loadPollForVoting(action: ProposalWithMeta, rpcUrl: string): Promise<SubgraphPoll> {
   if (!action.pollAddress) throw new Error("Governance action has no deployed poll");
   const provider = new JsonRpcProvider(rpcUrl);
   const poll = Poll__factory.connect(action.pollAddress, provider);
@@ -248,15 +244,15 @@ async function loadPollForVoting(action: GovernanceActionWithMeta, rpcUrl: strin
     endDate: action.pollEndDate?.toString() ?? "",
     voteOptions: voteOptions.toString(),
     options: action.options,
-    mode: TALLY_MECHANISM_TO_MODE[action.tallyMechanism],
+    mode: VOTING_PROTOCOL_TYPE_TO_MODE[action.votingProtocolType],
     policyType: "",
     policy: "",
   };
 }
 
-const IN_PROGRESS_TALLY_STATUSES: governanceActionApi.TallyStatus[] = ["pending", "processing"];
+const IN_PROGRESS_TALLY_STATUSES: proposalApi.TallyStatus[] = ["pending", "processing"];
 
-function TallySection({ communityId, action }: { communityId: string; action: GovernanceActionWithMeta }) {
+function TallySection({ communityId, action }: { communityId: string; action: ProposalWithMeta }) {
   const queryClient = useQueryClient();
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
@@ -264,7 +260,7 @@ function TallySection({ communityId, action }: { communityId: string; action: Go
 
   const { data: status } = useQuery({
     queryKey: ["tallyStatus", communityId, action.id],
-    queryFn: () => governanceActionApi.getTallyStatus(communityId, action.id),
+    queryFn: () => proposalApi.getTallyStatus(communityId, action.id),
     initialData: action,
     // Merge → generate → submit can take minutes to hours for a real-size poll — poll for
     // updates while it's actually running, stop once it lands on a terminal state.
@@ -282,7 +278,7 @@ function TallySection({ communityId, action }: { communityId: string; action: Go
     setTriggerError(null);
     setIsTriggering(true);
     try {
-      await governanceActionApi.triggerTally(communityId, action.id);
+      await proposalApi.triggerTally(communityId, action.id);
       await queryClient.invalidateQueries({ queryKey: ["tallyStatus", communityId, action.id] });
     } catch (err) {
       setTriggerError(err instanceof Error ? err.message : "Failed to trigger tallying");
@@ -322,11 +318,11 @@ function FormalizedActionRow({
 }: {
   communityId: string;
   community: Community | undefined;
-  action: GovernanceActionWithMeta;
+  action: ProposalWithMeta;
 }) {
   const { data: eligibility } = useQuery({
     queryKey: ["voteEligibility", communityId, action.id],
-    queryFn: () => governanceActionApi.checkVoteEligibility(communityId, action.id),
+    queryFn: () => proposalApi.checkVoteEligibility(communityId, action.id),
   });
   const [votingPoll, setVotingPoll] = useState<SubgraphPoll | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -409,7 +405,7 @@ function DraftRow({
 }: {
   communityId: string;
   community: Community | undefined;
-  action: GovernanceActionWithMeta;
+  action: ProposalWithMeta;
   sponsorCount: number;
   thresholdMet: boolean;
   onFormalized: () => void;
@@ -423,7 +419,7 @@ function DraftRow({
   const runAuthorizeIfReady = async (met: boolean) => {
     if (!met) return;
     try {
-      await governanceActionApi.authorizeFormalize(communityId, action.id);
+      await proposalApi.authorizeFormalize(communityId, action.id);
       setAuthorizeState("authorized");
     } catch (err) {
       setAuthorizeState("rejected");
@@ -435,8 +431,8 @@ function DraftRow({
     setIsSponsoring(true);
     setSponsorError(null);
     try {
-      const result = await governanceActionApi.sponsor(communityId, action.id);
-      queryClient.invalidateQueries({ queryKey: ["governanceActions", communityId] });
+      const result = await proposalApi.sponsor(communityId, action.id);
+      queryClient.invalidateQueries({ queryKey: ["proposals", communityId] });
       await runAuthorizeIfReady(result.thresholdMet);
     } catch (err) {
       setSponsorError(err instanceof Error ? err.message : "Failed to sponsor");
@@ -498,13 +494,13 @@ function DraftRow({
   );
 }
 
-export function GovernanceActionsList({ communityId, connected }: GovernanceActionsListProps) {
+export function ProposalsList({ communityId, connected }: ProposalsListProps) {
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const { data } = useQuery({
-    queryKey: ["governanceActions", communityId],
-    queryFn: () => governanceActionApi.list(communityId),
+    queryKey: ["proposals", communityId],
+    queryFn: () => proposalApi.list(communityId),
     enabled: connected,
   });
 
@@ -517,7 +513,7 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
     enabled: connected,
   });
 
-  const actions = data?.governanceActions ?? [];
+  const actions = data?.proposals ?? [];
   const drafts = actions.filter((a) => a.status === "draft");
   const formalized = actions.filter((a) => a.status === "formalized");
 
@@ -556,7 +552,7 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
           action={action}
           sponsorCount={action.sponsorCount}
           thresholdMet={action.thresholdMet}
-          onFormalized={() => queryClient.invalidateQueries({ queryKey: ["governanceActions", communityId] })}
+          onFormalized={() => queryClient.invalidateQueries({ queryKey: ["proposals", communityId] })}
         />
       ))}
 
@@ -569,10 +565,10 @@ export function GovernanceActionsList({ communityId, connected }: GovernanceActi
         />
       ))}
 
-      <CreateGovernanceActionModal
+      <CreateProposalModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
-        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["governanceActions", communityId] })}
+        onSuccess={() => queryClient.invalidateQueries({ queryKey: ["proposals", communityId] })}
         communityId={communityId}
         directDeploymentEnabled={community?.directDeploymentEnabled}
         pollDeployConfig={community?.pollDeployConfig}

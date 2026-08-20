@@ -49,7 +49,7 @@ async function insertTier(communityId: string, overrides: Partial<typeof schema.
   await testDb.insert(schema.membershipTiers).values({
     communityId,
     label: "Tier",
-    canCreateGovernanceActions: false,
+    canCreateProposals: false,
     canVote: true,
     canManageMembership: false,
     createdAt: Math.floor(Date.now() / 1000),

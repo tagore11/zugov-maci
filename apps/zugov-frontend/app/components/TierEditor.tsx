@@ -30,7 +30,7 @@ export function TierEditor({ tiers, onChange, locked = false }: Props) {
       ...tiers,
       {
         label: `Tier ${tiers.length + 1}`,
-        canCreateGovernanceActions: false,
+        canCreateProposals: false,
         canVote: false,
         canManageMembership: false,
       },
@@ -71,8 +71,8 @@ export function TierEditor({ tiers, onChange, locked = false }: Props) {
                 <input
                   type="checkbox"
                   disabled={locked}
-                  checked={tier.canCreateGovernanceActions}
-                  onChange={(e) => updateTierField(i, { canCreateGovernanceActions: e.target.checked })}
+                  checked={tier.canCreateProposals}
+                  onChange={(e) => updateTierField(i, { canCreateProposals: e.target.checked })}
                 />
                 Can create polls
               </label>

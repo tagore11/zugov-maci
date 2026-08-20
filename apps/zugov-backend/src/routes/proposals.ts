@@ -6,20 +6,21 @@ import {
   formalizeConfirmBodySchema,
   directAuthorizeBodySchema,
   directConfirmBodySchema,
-} from "../validators/governanceActionSchema.js";
-import * as governanceActionService from "../services/governanceActionService.js";
+} from "../validators/proposalSchema.js";
+import * as proposalService from "../services/proposalService.js";
 import {
   NotAuthorizedToCreateError,
   NonExecutableAxisCombinationError,
   IneligibleTiersError,
-  GovernanceActionNotFoundError,
+  ProposalNotFoundError,
   NotAuthorizedToSponsorError,
   AlreadyFormalizedError,
   CreatorNoLongerAuthorizedError,
   ThresholdNotMetError,
   DirectDeploymentDisabledError,
   DraftPathDisabledError,
-} from "../services/governanceActionService.js";
+  NoDecisionAdapterAttachedError,
+} from "../services/proposalService.js";
 import * as tallyService from "../services/tallyService.js";
 import {
   NotAuthorizedToTallyError,
@@ -29,9 +30,9 @@ import {
   UnsupportedChainForTallyError,
 } from "../services/tallyService.js";
 
-export const governanceActionsRouter = new Hono();
+export const proposalsRouter = new Hono();
 
-governanceActionsRouter.post("/:id/governance-actions", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
 
@@ -42,10 +43,11 @@ governanceActionsRouter.post("/:id/governance-actions", requireAuth, async (c) =
   }
 
   try {
-    const result = await governanceActionService.createDraft(communityId, session.address!, parsed.data);
+    const result = await proposalService.createDraft(communityId, session.address!, parsed.data);
     return c.json(result, 201);
   } catch (err) {
     if (err instanceof DraftPathDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {
@@ -55,7 +57,7 @@ governanceActionsRouter.post("/:id/governance-actions", requireAuth, async (c) =
   }
 });
 
-governanceActionsRouter.post("/:id/governance-actions/direct/authorize", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/direct/authorize", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
 
@@ -66,10 +68,11 @@ governanceActionsRouter.post("/:id/governance-actions/direct/authorize", require
   }
 
   try {
-    const result = await governanceActionService.authorizeDirect(communityId, session.address!, parsed.data);
+    const result = await proposalService.authorizeDirect(communityId, session.address!, parsed.data);
     return c.json(result);
   } catch (err) {
     if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {
@@ -79,7 +82,7 @@ governanceActionsRouter.post("/:id/governance-actions/direct/authorize", require
   }
 });
 
-governanceActionsRouter.post("/:id/governance-actions/direct/confirm", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/direct/confirm", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
 
@@ -90,10 +93,11 @@ governanceActionsRouter.post("/:id/governance-actions/direct/confirm", requireAu
   }
 
   try {
-    const governanceAction = await governanceActionService.confirmDirect(communityId, session.address!, parsed.data);
-    return c.json({ governanceAction }, 201);
+    const proposal = await proposalService.confirmDirect(communityId, session.address!, parsed.data);
+    return c.json({ proposal }, 201);
   } catch (err) {
     if (err instanceof DirectDeploymentDisabledError) return c.json({ error: err.message }, 403);
+    if (err instanceof NoDecisionAdapterAttachedError) return c.json({ error: err.message }, 403);
     if (err instanceof NotAuthorizedToCreateError) return c.json({ error: err.message }, 403);
     if (err instanceof NonExecutableAxisCombinationError) return c.json({ error: err.message }, 422);
     if (err instanceof IneligibleTiersError) {
@@ -103,42 +107,42 @@ governanceActionsRouter.post("/:id/governance-actions/direct/confirm", requireAu
   }
 });
 
-governanceActionsRouter.get("/:id/governance-actions", requireAuth, async (c) => {
+proposalsRouter.get("/:id/proposals", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
-  const governanceActionsList = await governanceActionService.listForViewer(communityId, session.address!);
-  return c.json({ governanceActions: governanceActionsList });
+  const proposalsList = await proposalService.listForViewer(communityId, session.address!);
+  return c.json({ proposals: proposalsList });
 });
 
-governanceActionsRouter.get("/:id/governance-actions/:actionId", requireAuth, async (c) => {
+proposalsRouter.get("/:id/proposals/:actionId", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
-  const result = await governanceActionService.getForViewer(communityId, c.req.param("actionId"), session.address!);
+  const result = await proposalService.getForViewer(communityId, c.req.param("actionId"), session.address!);
   if (!result) return c.json({ error: "Not found" }, 404);
   return c.json(result);
 });
 
-governanceActionsRouter.post("/:id/governance-actions/:actionId/sponsor", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/:actionId/sponsor", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
   try {
-    const result = await governanceActionService.sponsor(communityId, c.req.param("actionId"), session.address!);
+    const result = await proposalService.sponsor(communityId, c.req.param("actionId"), session.address!);
     return c.json(result);
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof NotAuthorizedToSponsorError) return c.json({ error: err.message }, 403);
     if (err instanceof AlreadyFormalizedError) return c.json({ error: err.message }, 409);
     throw err;
   }
 });
 
-governanceActionsRouter.post("/:id/governance-actions/:actionId/formalize/authorize", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/:actionId/formalize/authorize", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   try {
-    const result = await governanceActionService.authorizeFormalize(communityId, c.req.param("actionId"));
+    const result = await proposalService.authorizeFormalize(communityId, c.req.param("actionId"));
     return c.json(result);
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof CreatorNoLongerAuthorizedError) return c.json({ error: err.message }, 403);
     if (err instanceof AlreadyFormalizedError || err instanceof ThresholdNotMetError) {
       return c.json({ error: err.message }, 409);
@@ -147,7 +151,7 @@ governanceActionsRouter.post("/:id/governance-actions/:actionId/formalize/author
   }
 });
 
-governanceActionsRouter.post("/:id/governance-actions/:actionId/formalize/confirm", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/:actionId/formalize/confirm", requireAuth, async (c) => {
   const communityId = c.req.param("id");
 
   const body = await c.req.json();
@@ -157,14 +161,10 @@ governanceActionsRouter.post("/:id/governance-actions/:actionId/formalize/confir
   }
 
   try {
-    const governanceAction = await governanceActionService.confirmFormalize(
-      communityId,
-      c.req.param("actionId"),
-      parsed.data,
-    );
-    return c.json({ governanceAction });
+    const proposal = await proposalService.confirmFormalize(communityId, c.req.param("actionId"), parsed.data);
+    return c.json({ proposal });
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof CreatorNoLongerAuthorizedError) return c.json({ error: err.message }, 403);
     if (err instanceof AlreadyFormalizedError || err instanceof ThresholdNotMetError) {
       return c.json({ error: err.message }, 409);
@@ -173,30 +173,26 @@ governanceActionsRouter.post("/:id/governance-actions/:actionId/formalize/confir
   }
 });
 
-governanceActionsRouter.get("/:id/governance-actions/:actionId/vote-eligibility", requireAuth, async (c) => {
+proposalsRouter.get("/:id/proposals/:actionId/vote-eligibility", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
   try {
-    const result = await governanceActionService.checkVoteEligibility(
-      communityId,
-      c.req.param("actionId"),
-      session.address!,
-    );
+    const result = await proposalService.checkVoteEligibility(communityId, c.req.param("actionId"), session.address!);
     return c.json(result);
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     throw err;
   }
 });
 
-governanceActionsRouter.post("/:id/governance-actions/:actionId/tally", requireAuth, async (c) => {
+proposalsRouter.post("/:id/proposals/:actionId/tally", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
   try {
     await tallyService.triggerTally(communityId, c.req.param("actionId"), session.address!);
     return c.json({ tallyStatus: "pending" }, 202);
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof NotAuthorizedToTallyError) return c.json({ error: err.message }, 403);
     if (err instanceof PollNotDeployedError || err instanceof PollNotClosedError) {
       return c.json({ error: err.message }, 409);
@@ -207,13 +203,13 @@ governanceActionsRouter.post("/:id/governance-actions/:actionId/tally", requireA
   }
 });
 
-governanceActionsRouter.get("/:id/governance-actions/:actionId/tally", requireAuth, async (c) => {
+proposalsRouter.get("/:id/proposals/:actionId/tally", requireAuth, async (c) => {
   const communityId = c.req.param("id");
   try {
     const result = await tallyService.getTallyStatus(communityId, c.req.param("actionId"));
     return c.json(result);
   } catch (err) {
-    if (err instanceof GovernanceActionNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
     throw err;
   }
 });

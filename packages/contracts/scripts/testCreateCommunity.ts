@@ -169,7 +169,7 @@ async function main(): Promise<void> {
     source: "wizard",
     membershipPolicy: "open",
     tierChangesRequireVote: false,
-    tiers: [{ label: "Member", canCreateGovernanceActions: true, canVote: true, canManageMembership: true }],
+    tiers: [{ label: "Member", canCreateProposals: true, canVote: true, canManageMembership: true }],
     defaultTierLabel: "Member",
   };
 

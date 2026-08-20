@@ -203,7 +203,7 @@ export default function EditCommunityPage() {
           if (tier.id) {
             await membershipApi.updateTier(communityId, tier.id, {
               label: tier.label,
-              canCreateGovernanceActions: tier.canCreateGovernanceActions,
+              canCreateProposals: tier.canCreateProposals,
               canVote: tier.canVote,
               canManageMembership: tier.canManageMembership,
             });

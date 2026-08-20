@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { GovernanceActionsList } from "./GovernanceActionsList";
+import { ProposalsList } from "./ProposalsList";
 
 const listMock = vi.fn();
 const sponsorMock = vi.fn();
@@ -9,7 +9,7 @@ const authorizeFormalizeMock = vi.fn();
 const checkVoteEligibilityMock = vi.fn();
 const confirmFormalizeMock = vi.fn();
 
-vi.mock("@/src/services/governanceActionApi", () => ({
+vi.mock("@/src/services/proposalApi", () => ({
   list: (...args: unknown[]) => listMock(...args),
   sponsor: (...args: unknown[]) => sponsorMock(...args),
   authorizeFormalize: (...args: unknown[]) => authorizeFormalizeMock(...args),
@@ -78,7 +78,7 @@ const DRAFT_ACTION = {
   description: "Details",
   privacy: "privacy_preserving" as const,
   executionLocation: "onchain" as const,
-  tallyMechanism: "simple" as const,
+  votingProtocolType: "simple" as const,
   eligibleTierIds: ["tier-voter"],
   status: "draft" as const,
   creatorAddress: "0xcreator",
@@ -115,18 +115,18 @@ beforeEach(() => {
   castVoteMock.mockReset();
 });
 
-describe("GovernanceActionsList", () => {
+describe("ProposalsList", () => {
   it("shows a prompt instead of fetching when not connected", () => {
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={false} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={false} />);
     expect(screen.getByText(/Connect your wallet/)).toBeInTheDocument();
     expect(listMock).not.toHaveBeenCalled();
   });
 
   it("shows a not-configured message instead of the actions list when governance isn't set up yet", async () => {
-    listMock.mockResolvedValue({ governanceActions: [] });
+    listMock.mockResolvedValue({ proposals: [] });
     communityGetMock.mockResolvedValue({ id: "0xabc", governanceConfigured: false, contractAddress: null });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() =>
       expect(screen.getByText(/Governance not yet configured for this community/)).toBeInTheDocument(),
@@ -135,10 +135,10 @@ describe("GovernanceActionsList", () => {
   });
 
   it("updates the sponsor count after a successful sponsor click, without double-counting a repeat", async () => {
-    listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: false });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Sponsor"));
@@ -149,12 +149,12 @@ describe("GovernanceActionsList", () => {
   });
 
   it("shows the static 'not linked' message when the community has no saved pollDeployConfig", async () => {
-    listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
     communityGetMock.mockResolvedValue({ id: "0xabc", governanceConfigured: true, contractAddress: "0xabc" }); // no pollDeployConfig field
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Sponsor"));
@@ -166,7 +166,7 @@ describe("GovernanceActionsList", () => {
   });
 
   it("disables Deploy Poll until at least two options are filled in", async () => {
-    listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
     communityGetMock.mockResolvedValue({
@@ -176,7 +176,7 @@ describe("GovernanceActionsList", () => {
       pollDeployConfig: POLL_DEPLOY_CONFIG,
     });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Sponsor"));
@@ -199,7 +199,7 @@ describe("GovernanceActionsList", () => {
   });
 
   it("shows a real deploy prompt and confirms formalization when the community has a saved pollDeployConfig", async () => {
-    listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockResolvedValue({ authorized: true });
     communityGetMock.mockResolvedValue({
@@ -209,9 +209,9 @@ describe("GovernanceActionsList", () => {
       pollDeployConfig: POLL_DEPLOY_CONFIG,
     });
     deployPollMock.mockResolvedValue({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" });
-    confirmFormalizeMock.mockResolvedValue({ governanceAction: { ...DRAFT_ACTION, status: "formalized" } });
+    confirmFormalizeMock.mockResolvedValue({ proposal: { ...DRAFT_ACTION, status: "formalized" } });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Sponsor"));
@@ -241,11 +241,11 @@ describe("GovernanceActionsList", () => {
   });
 
   it("shows the rejection reason when authorize fails after threshold is met", async () => {
-    listMock.mockResolvedValue({ governanceActions: [DRAFT_ACTION] });
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
     authorizeFormalizeMock.mockRejectedValue(new Error("Co-sponsorship threshold not met"));
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Sponsor"));
@@ -255,18 +255,18 @@ describe("GovernanceActionsList", () => {
 
   it("shows vote eligibility for formalized actions", async () => {
     listMock.mockResolvedValue({
-      governanceActions: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
+      proposals: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
     });
     checkVoteEligibilityMock.mockResolvedValue({ eligible: true });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("You can vote")).toBeInTheDocument());
   });
 
   it("opens a real ballot when eligible to vote on a formalized action", async () => {
     listMock.mockResolvedValue({
-      governanceActions: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll", pollId: "3" }],
+      proposals: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll", pollId: "3" }],
     });
     checkVoteEligibilityMock.mockResolvedValue({ eligible: true });
     communityGetMock.mockResolvedValue({
@@ -277,7 +277,7 @@ describe("GovernanceActionsList", () => {
     });
     voteOptionsMock.mockResolvedValue(2n);
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Vote")).toBeInTheDocument());
     fireEvent.click(screen.getByText("Vote"));
@@ -286,7 +286,7 @@ describe("GovernanceActionsList", () => {
     // VoteModal (real, unmodified component) renders with a fallback "Option 1"/"Option 2" ballot
     // since this feature reads only the on-chain vote-option count, not label text (no subgraph
     // exists for backend-registered communities, and the deployed Poll contract only exposes the
-    // count — see loadPollForVoting's comment in GovernanceActionsList.tsx).
+    // count — see loadPollForVoting's comment in ProposalsList.tsx).
     await waitFor(() => expect(screen.getByText("Select one option to cast your vote.")).toBeInTheDocument());
     expect(screen.getByText("Option 1")).toBeInTheDocument();
     expect(screen.getByText("Option 2")).toBeInTheDocument();
@@ -294,11 +294,11 @@ describe("GovernanceActionsList", () => {
 
   it("does not show a Vote button for a formalized action the viewer isn't eligible for", async () => {
     listMock.mockResolvedValue({
-      governanceActions: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
+      proposals: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
     });
     checkVoteEligibilityMock.mockResolvedValue({ eligible: false, reason: "tier_lacks_voting_rights" });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Your current tier doesn't grant voting rights.")).toBeInTheDocument());
     expect(screen.queryByText("Vote")).not.toBeInTheDocument();
@@ -306,11 +306,11 @@ describe("GovernanceActionsList", () => {
 
   it("shows the ineligibility reason for formalized actions the viewer can't vote on", async () => {
     listMock.mockResolvedValue({
-      governanceActions: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
+      proposals: [{ ...DRAFT_ACTION, status: "formalized", pollAddress: "0xPoll" }],
     });
     checkVoteEligibilityMock.mockResolvedValue({ eligible: false, reason: "tier_lacks_voting_rights" });
 
-    renderWithProviders(<GovernanceActionsList communityId="0xabc" connected={true} />);
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Your current tier doesn't grant voting rights.")).toBeInTheDocument());
   });

@@ -1,26 +1,26 @@
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-export type GovernanceActionPrivacy = "public" | "privacy_preserving";
-export type GovernanceActionExecutionLocation = "onchain" | "offchain" | "hybrid";
-export type GovernanceActionTallyMechanism = "simple" | "quadratic" | "ranked" | "weighted" | "full";
-export type GovernanceActionStatus = "draft" | "formalized";
+export type ProposalPrivacy = "public" | "privacy_preserving";
+export type ProposalExecutionLocation = "onchain" | "offchain" | "hybrid";
+export type ProposalVotingProtocolType = "simple" | "quadratic" | "ranked" | "weighted" | "full";
+export type ProposalStatus = "draft" | "formalized";
 
-export type GovernanceActionCreationPath = "draft" | "direct";
+export type ProposalCreationPath = "draft" | "direct";
 
 export type TallyStatus = "not_started" | "pending" | "processing" | "completed" | "failed";
 
-export interface GovernanceAction {
+export interface Proposal {
   id: string;
   communityId: string;
   type: "poll";
   title: string;
   description: string;
-  privacy: GovernanceActionPrivacy;
-  executionLocation: GovernanceActionExecutionLocation;
-  tallyMechanism: GovernanceActionTallyMechanism;
+  privacy: ProposalPrivacy;
+  executionLocation: ProposalExecutionLocation;
+  votingProtocolType: ProposalVotingProtocolType;
   eligibleTierIds: string[];
-  status: GovernanceActionStatus;
-  creationPath: GovernanceActionCreationPath;
+  status: ProposalStatus;
+  creationPath: ProposalCreationPath;
   creatorAddress: string;
   pollAddress: string | null;
   pollId: string | null;
@@ -36,14 +36,14 @@ export interface GovernanceAction {
   tallyResult: string | null;
 }
 
-export type GovernanceActionWithMeta = GovernanceAction & { sponsorCount: number; thresholdMet: boolean };
+export type ProposalWithMeta = Proposal & { sponsorCount: number; thresholdMet: boolean };
 
 export interface CreateDraftInput {
   title: string;
   description: string;
-  privacy: GovernanceActionPrivacy;
-  executionLocation: GovernanceActionExecutionLocation;
-  tallyMechanism: GovernanceActionTallyMechanism;
+  privacy: ProposalPrivacy;
+  executionLocation: ProposalExecutionLocation;
+  votingProtocolType: ProposalVotingProtocolType;
   eligibleTierIds: string[];
 }
 
@@ -58,8 +58,8 @@ async function parseErrorOr<T>(res: Response, fallback: string): Promise<T> {
 export async function createDraft(
   communityId: string,
   input: CreateDraftInput,
-): Promise<{ governanceAction: GovernanceAction; sponsorCount: number; thresholdMet: boolean }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions`, {
+): Promise<{ proposal: Proposal; sponsorCount: number; thresholdMet: boolean }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -68,8 +68,8 @@ export async function createDraft(
   return parseErrorOr(res, `Failed to create draft: ${res.status}`);
 }
 
-export async function list(communityId: string): Promise<{ governanceActions: GovernanceActionWithMeta[] }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions`, {
+export async function list(communityId: string): Promise<{ proposals: ProposalWithMeta[] }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals`, {
     credentials: "include",
   });
   return parseErrorOr(res, `Failed to list governance actions: ${res.status}`);
@@ -78,8 +78,8 @@ export async function list(communityId: string): Promise<{ governanceActions: Go
 export async function get(
   communityId: string,
   actionId: string,
-): Promise<{ governanceAction: GovernanceAction; sponsorCount: number; thresholdMet: boolean }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}`, {
+): Promise<{ proposal: Proposal; sponsorCount: number; thresholdMet: boolean }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}`, {
     credentials: "include",
   });
   return parseErrorOr(res, `Failed to fetch governance action: ${res.status}`);
@@ -89,7 +89,7 @@ export async function sponsor(
   communityId: string,
   actionId: string,
 ): Promise<{ sponsorCount: number; thresholdMet: boolean }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/sponsor`, {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/sponsor`, {
     method: "POST",
     credentials: "include",
   });
@@ -97,10 +97,10 @@ export async function sponsor(
 }
 
 export async function authorizeFormalize(communityId: string, actionId: string): Promise<{ authorized: true }> {
-  const res = await fetch(
-    `${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/formalize/authorize`,
-    { method: "POST", credentials: "include" },
-  );
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/formalize/authorize`, {
+    method: "POST",
+    credentials: "include",
+  });
   return parseErrorOr(res, `Failed to authorize formalization: ${res.status}`);
 }
 
@@ -115,30 +115,27 @@ export async function confirmFormalize(
     pollEndDate: number;
     options?: string[];
   },
-): Promise<{ governanceAction: GovernanceAction }> {
-  const res = await fetch(
-    `${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/formalize/confirm`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(input),
-    },
-  );
+): Promise<{ proposal: Proposal }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/formalize/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
   return parseErrorOr(res, `Failed to confirm formalization: ${res.status}`);
 }
 
 export interface DirectDeployInput {
   title: string;
   description: string;
-  privacy: GovernanceActionPrivacy;
-  executionLocation: GovernanceActionExecutionLocation;
-  tallyMechanism: GovernanceActionTallyMechanism;
+  privacy: ProposalPrivacy;
+  executionLocation: ProposalExecutionLocation;
+  votingProtocolType: ProposalVotingProtocolType;
   eligibleTierIds: string[];
 }
 
 export async function authorizeDirect(communityId: string, input: DirectDeployInput): Promise<{ authorized: true }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/authorize`, {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/direct/authorize`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -157,8 +154,8 @@ export async function confirmDirect(
     pollEndDate: number;
     options?: string[];
   },
-): Promise<{ governanceAction: GovernanceAction }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/direct/confirm`, {
+): Promise<{ proposal: Proposal }> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/direct/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -168,7 +165,7 @@ export async function confirmDirect(
 }
 
 export async function triggerTally(communityId: string, actionId: string): Promise<{ tallyStatus: TallyStatus }> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/tally`, {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/tally`, {
     method: "POST",
     credentials: "include",
   });
@@ -178,10 +175,8 @@ export async function triggerTally(communityId: string, actionId: string): Promi
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<
-  Pick<GovernanceAction, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">
-> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/tally`, {
+): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/tally`, {
     credentials: "include",
   });
   return parseErrorOr(res, `Failed to fetch tally status: ${res.status}`);
@@ -198,9 +193,8 @@ export async function checkVoteEligibility(
   communityId: string,
   actionId: string,
 ): Promise<{ eligible: boolean; reason?: VoteEligibilityReason }> {
-  const res = await fetch(
-    `${BASE_URL}/api/communities/${communityId}/governance-actions/${actionId}/vote-eligibility`,
-    { credentials: "include" },
-  );
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/vote-eligibility`, {
+    credentials: "include",
+  });
   return parseErrorOr(res, `Failed to check vote eligibility: ${res.status}`);
 }

@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "./client.js";
-import { governanceActions, membershipTiers } from "./schema.js";
+import { proposals, membershipTiers } from "./schema.js";
 
 /**
  * One-off backfill for governance actions formalized before confirmFormalize started stamping
@@ -10,9 +10,9 @@ import { governanceActions, membershipTiers } from "./schema.js";
  */
 async function backfill(): Promise<void> {
   const formalized = await db
-    .select({ id: governanceActions.id, communityId: governanceActions.communityId })
-    .from(governanceActions)
-    .where(eq(governanceActions.status, "formalized"));
+    .select({ id: proposals.id, communityId: proposals.communityId })
+    .from(proposals)
+    .where(eq(proposals.status, "formalized"));
 
   let updated = 0;
   for (const action of formalized) {
@@ -23,9 +23,9 @@ async function backfill(): Promise<void> {
     const eligibleTierIds = tiers.filter((t) => t.canVote).map((t) => t.id);
 
     await db
-      .update(governanceActions)
+      .update(proposals)
       .set({ eligibleTierIds: JSON.stringify(eligibleTierIds) })
-      .where(eq(governanceActions.id, action.id));
+      .where(eq(proposals.id, action.id));
     updated += 1;
   }
 

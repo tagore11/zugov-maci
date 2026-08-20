@@ -1,17 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import {
-  communities,
-  memberships,
-  membershipTiers,
-  governanceActions,
-  governanceActionSponsors,
-  type GovernanceAction,
-} from "../db/schema.js";
-import type { CreateDraftBody } from "../validators/governanceActionSchema.js";
-import { isExecutableCombination } from "./governanceActionConstants.js";
+import { communities, memberships, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
+import type { CreateDraftBody } from "../validators/proposalSchema.js";
+import { isExecutableCombination } from "./proposalConstants.js";
 import * as membershipService from "./membershipService.js";
+import { assertHasAnyAdapterAttached, NoDecisionAdapterAttachedError } from "./decisionAdapterService.js";
+
+export { NoDecisionAdapterAttachedError };
 
 export class NotAuthorizedToCreateError extends Error {
   constructor() {
@@ -33,7 +29,7 @@ export class IneligibleTiersError extends Error {
   }
 }
 
-export class GovernanceActionNotFoundError extends Error {
+export class ProposalNotFoundError extends Error {
   constructor() {
     super("Not found");
   }
@@ -75,12 +71,12 @@ export class DraftPathDisabledError extends Error {
   }
 }
 
-type ViewableGovernanceAction = Omit<GovernanceAction, "eligibleTierIds" | "options"> & {
+type ViewableProposal = Omit<Proposal, "eligibleTierIds" | "options"> & {
   eligibleTierIds: string[];
   options: string[] | null;
 };
 
-function deserialize(row: GovernanceAction): ViewableGovernanceAction {
+function deserialize(row: Proposal): ViewableProposal {
   return {
     ...row,
     eligibleTierIds: JSON.parse(row.eligibleTierIds) as string[],
@@ -88,11 +84,11 @@ function deserialize(row: GovernanceAction): ViewableGovernanceAction {
   };
 }
 
-async function getSponsorCount(governanceActionId: string): Promise<number> {
+async function getSponsorCount(proposalId: string): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
-    .from(governanceActionSponsors)
-    .where(eq(governanceActionSponsors.governanceActionId, governanceActionId));
+    .from(proposalSponsors)
+    .where(eq(proposalSponsors.proposalId, proposalId));
   return row?.count ?? 0;
 }
 
@@ -118,11 +114,18 @@ async function getDirectDeploymentEnabled(communityId: string): Promise<boolean>
  * for who may create a governance action, and what it may contain, don't change based on which path
  * (draft vs. direct) creates it. */
 async function validateTierAndAxis(communityId: string, creatorAddress: string, body: CreateDraftBody): Promise<void> {
-  if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateGovernanceActions"))) {
+  // Governance restructure Phase 1 (2026-08-20) — a community with no decision adapter attached
+  // (governance never configured, D2's accepted "loses proposal mechanisms" tradeoff) cannot
+  // create a proposal at all. Checked first, before the authorization/axis checks below, so the
+  // error a caller sees names the actual reason (no governance configured) rather than a
+  // confusing permission or axis-combination failure.
+  await assertHasAnyAdapterAttached(communityId);
+
+  if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateProposals"))) {
     throw new NotAuthorizedToCreateError();
   }
 
-  if (!isExecutableCombination(body.privacy, body.executionLocation, body.tallyMechanism)) {
+  if (!isExecutableCombination(body.privacy, body.executionLocation, body.votingProtocolType)) {
     throw new NonExecutableAxisCombinationError();
   }
 
@@ -162,7 +165,7 @@ async function getVotingTierIds(communityId: string): Promise<string[]> {
   return tiers.filter((t) => t.canVote).map((t) => t.id);
 }
 
-async function canView(action: ViewableGovernanceAction, viewerAddress: string): Promise<boolean> {
+async function canView(action: ViewableProposal, viewerAddress: string): Promise<boolean> {
   if (action.creatorAddress.toLowerCase() === viewerAddress.toLowerCase()) return true;
   const tier = await getMemberTier(action.communityId, viewerAddress);
   if (!tier) return false;
@@ -173,7 +176,7 @@ export async function createDraft(
   communityId: string,
   creatorAddress: string,
   body: CreateDraftBody,
-): Promise<{ governanceAction: ViewableGovernanceAction; sponsorCount: number; thresholdMet: boolean }> {
+): Promise<{ proposal: ViewableProposal; sponsorCount: number; thresholdMet: boolean }> {
   if (await getDirectDeploymentEnabled(communityId)) {
     throw new DraftPathDisabledError();
   }
@@ -183,7 +186,7 @@ export async function createDraft(
   const id = randomUUID();
 
   const [inserted] = await db
-    .insert(governanceActions)
+    .insert(proposals)
     .values({
       id,
       communityId,
@@ -192,7 +195,7 @@ export async function createDraft(
       description: body.description,
       privacy: body.privacy,
       executionLocation: body.executionLocation,
-      tallyMechanism: body.tallyMechanism,
+      votingProtocolType: body.votingProtocolType,
       eligibleTierIds: JSON.stringify(body.eligibleTierIds),
       status: "draft",
       creationPath: "draft",
@@ -204,13 +207,11 @@ export async function createDraft(
     })
     .returning();
 
-  await db
-    .insert(governanceActionSponsors)
-    .values({ governanceActionId: id, walletAddress: creatorAddress, sponsoredAt: now });
+  await db.insert(proposalSponsors).values({ proposalId: id, walletAddress: creatorAddress, sponsoredAt: now });
 
   const threshold = await getCosponsorshipThreshold(communityId);
   return {
-    governanceAction: deserialize(inserted!),
+    proposal: deserialize(inserted!),
     sponsorCount: 1,
     thresholdMet: 1 >= threshold,
   };
@@ -219,11 +220,11 @@ export async function createDraft(
 export async function listForViewer(
   communityId: string,
   viewerAddress: string,
-): Promise<(ViewableGovernanceAction & { sponsorCount: number; thresholdMet: boolean })[]> {
-  const rows = await db.select().from(governanceActions).where(eq(governanceActions.communityId, communityId));
+): Promise<(ViewableProposal & { sponsorCount: number; thresholdMet: boolean })[]> {
+  const rows = await db.select().from(proposals).where(eq(proposals.communityId, communityId));
   const threshold = await getCosponsorshipThreshold(communityId);
 
-  const viewable: (ViewableGovernanceAction & { sponsorCount: number; thresholdMet: boolean })[] = [];
+  const viewable: (ViewableProposal & { sponsorCount: number; thresholdMet: boolean })[] = [];
   for (const row of rows) {
     const action = deserialize(row);
     if (!(await canView(action, viewerAddress))) continue;
@@ -237,11 +238,11 @@ export async function getForViewer(
   communityId: string,
   actionId: string,
   viewerAddress: string,
-): Promise<(ViewableGovernanceAction & { sponsorCount: number; thresholdMet: boolean }) | null> {
+): Promise<(ViewableProposal & { sponsorCount: number; thresholdMet: boolean }) | null> {
   const [row] = await db
     .select()
-    .from(governanceActions)
-    .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
+    .from(proposals)
+    .where(and(eq(proposals.id, actionId), eq(proposals.communityId, communityId)))
     .limit(1);
   if (!row) return null;
 
@@ -253,13 +254,13 @@ export async function getForViewer(
   return { ...action, sponsorCount, thresholdMet: sponsorCount >= threshold };
 }
 
-async function getActionOrThrow(communityId: string, actionId: string): Promise<ViewableGovernanceAction> {
+async function getActionOrThrow(communityId: string, actionId: string): Promise<ViewableProposal> {
   const [row] = await db
     .select()
-    .from(governanceActions)
-    .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
+    .from(proposals)
+    .where(and(eq(proposals.id, actionId), eq(proposals.communityId, communityId)))
     .limit(1);
-  if (!row) throw new GovernanceActionNotFoundError();
+  if (!row) throw new ProposalNotFoundError();
   return deserialize(row);
 }
 
@@ -278,8 +279,8 @@ export async function sponsor(
 
   const now = Math.floor(Date.now() / 1000);
   await db
-    .insert(governanceActionSponsors)
-    .values({ governanceActionId: actionId, walletAddress, sponsoredAt: now })
+    .insert(proposalSponsors)
+    .values({ proposalId: actionId, walletAddress, sponsoredAt: now })
     .onConflictDoNothing();
 
   const sponsorCount = await getSponsorCount(actionId);
@@ -287,11 +288,11 @@ export async function sponsor(
   return { sponsorCount, thresholdMet: sponsorCount >= threshold };
 }
 
-async function assertReadyToFormalize(communityId: string, actionId: string): Promise<ViewableGovernanceAction> {
+async function assertReadyToFormalize(communityId: string, actionId: string): Promise<ViewableProposal> {
   const action = await getActionOrThrow(communityId, actionId);
   if (action.status !== "draft") throw new AlreadyFormalizedError();
 
-  if (!(await membershipService.hasTierPermission(communityId, action.creatorAddress, "canCreateGovernanceActions"))) {
+  if (!(await membershipService.hasTierPermission(communityId, action.creatorAddress, "canCreateProposals"))) {
     throw new CreatorNoLongerAuthorizedError();
   }
 
@@ -318,13 +319,13 @@ export async function confirmFormalize(
     pollEndDate: number;
     options?: string[];
   },
-): Promise<ViewableGovernanceAction> {
+): Promise<ViewableProposal> {
   await assertReadyToFormalize(communityId, actionId);
 
   const now = Math.floor(Date.now() / 1000);
   const eligibleTierIds = await getVotingTierIds(communityId);
   const [updated] = await db
-    .update(governanceActions)
+    .update(proposals)
     .set({
       status: "formalized",
       pollAddress: result.pollAddress,
@@ -335,7 +336,7 @@ export async function confirmFormalize(
       formalizedAt: now,
       ...(result.options ? { options: JSON.stringify(result.options) } : {}),
     })
-    .where(and(eq(governanceActions.id, actionId), eq(governanceActions.communityId, communityId)))
+    .where(and(eq(proposals.id, actionId), eq(proposals.communityId, communityId)))
     .returning();
 
   return deserialize(updated!);
@@ -364,7 +365,7 @@ export async function confirmDirect(
     pollEndDate: number;
     options?: string[];
   },
-): Promise<ViewableGovernanceAction> {
+): Promise<ViewableProposal> {
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
   }
@@ -374,7 +375,7 @@ export async function confirmDirect(
   const id = randomUUID();
 
   const [inserted] = await db
-    .insert(governanceActions)
+    .insert(proposals)
     .values({
       id,
       communityId,
@@ -383,7 +384,7 @@ export async function confirmDirect(
       description: body.description,
       privacy: body.privacy,
       executionLocation: body.executionLocation,
-      tallyMechanism: body.tallyMechanism,
+      votingProtocolType: body.votingProtocolType,
       eligibleTierIds: JSON.stringify(body.eligibleTierIds),
       status: "formalized",
       creationPath: "direct",

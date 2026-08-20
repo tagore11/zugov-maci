@@ -8,7 +8,7 @@ export type MembershipPolicy = "open" | "approval";
 
 export interface TierDraft {
   label: string;
-  canCreateGovernanceActions: boolean;
+  canCreateProposals: boolean;
   canVote: boolean;
   canManageMembership: boolean;
 }

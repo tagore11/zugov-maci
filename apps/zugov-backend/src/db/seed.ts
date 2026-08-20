@@ -10,7 +10,7 @@ import type { TierBody } from "../validators/membershipSchema.js";
 const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   {
     label: "Guest",
-    canCreateGovernanceActions: false,
+    canCreateProposals: false,
     canVote: false,
     canManageMembership: false,
     canDelegate: false,
@@ -19,7 +19,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
   {
     label: "Visitor",
-    canCreateGovernanceActions: false,
+    canCreateProposals: false,
     canVote: false,
     canManageMembership: false,
     canDelegate: false,
@@ -28,7 +28,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
   {
     label: "Regular",
-    canCreateGovernanceActions: false,
+    canCreateProposals: false,
     canVote: true,
     canManageMembership: false,
     canDelegate: false,
@@ -37,7 +37,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
   {
     label: "OG",
-    canCreateGovernanceActions: true,
+    canCreateProposals: true,
     canVote: true,
     canManageMembership: false,
     canDelegate: false,
@@ -46,7 +46,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
   {
     label: "Manager",
-    canCreateGovernanceActions: true,
+    canCreateProposals: true,
     canVote: true,
     canManageMembership: true,
     canDelegate: false,
@@ -55,7 +55,7 @@ const DEFAULT_TIERS: [TierBody, ...TierBody[]] = [
   },
   {
     label: "Admin",
-    canCreateGovernanceActions: true,
+    canCreateProposals: true,
     canVote: true,
     canManageMembership: true,
     canDelegate: false,
