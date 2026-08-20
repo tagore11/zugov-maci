@@ -49,7 +49,7 @@
     "helmet": "^8.1.0",
     "lodash": "^4.17.21",
     "@maci-protocol/domainobjs": "^3.0.0",
-    "@maci-protocol/sdk": "^1.0.0",
+    "@maci-protocol/sdk": "workspace:*",
     "@maci-protocol/testing": "^1.0.0",
     "mongoose": "^8.18.1",
     "multiformats": "^13.3.2",

@@ -50,6 +50,13 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 COPY . .
 RUN pnpm exec lerna run build --scope "@maci-protocol/coordinator" --include-dependencies
 
+# Self-contained, coordinator-only production output instead of copying the entire unscoped
+# /builder (all 15 workspace packages' node_modules, ~3.32GB) into the runtime image below.
+# --prod is required, not optional: plain `pnpm deploy` leaves symlinks for workspace deps
+# pointing back into /builder (e.g. sdk -> ../../../../builder/packages/sdk), which don't
+# resolve once only /prod/coordinator is copied into the runner stage.
+RUN pnpm --filter "@maci-protocol/coordinator" deploy --prod /prod/coordinator
+
 WORKDIR /builder/apps/coordinator
 
 # Create image by copying build artifacts
@@ -68,8 +75,23 @@ RUN mkdir -p /home/node/rapidsnark/build; \
     chmod +x /home/node/rapidsnark/build/prover
 
 USER node
-WORKDIR /maci
-COPY --chown=node:node --from=builder /builder/ ./
+WORKDIR /maci/apps/coordinator
+COPY --chown=node:node --from=builder /prod/coordinator ./
+# pnpm deploy only carries package.json's "files" allowlist (build/, CHANGELOG.md, README.md)
+# — none of these are in that list, but all are needed at runtime: scripts/ (generate-keypair/
+# get-auth-header run their .ts source via ts-node), .env.example (dotenv fallback), both
+# tsconfig.json files (coordinator's own, which `extends` the monorepo root one) and
+# hardhat.config.cjs (referenced by coordinator's tsconfig `files` entry) so ts-node can compile
+# scripts/*.ts at all, and ts/ + tests/ — get-auth-header's script imports
+# tests/utils.ts, which itself imports straight from ts/ source (not build/), so both source
+# trees are needed too (444K combined, negligible next to the multi-hundred-MB image).
+COPY --chown=node:node --from=builder /builder/apps/coordinator/scripts ./scripts
+COPY --chown=node:node --from=builder /builder/apps/coordinator/.env.example ./.env.example
+COPY --chown=node:node --from=builder /builder/tsconfig.json /maci/tsconfig.json
+COPY --chown=node:node --from=builder /builder/apps/coordinator/tsconfig.json ./tsconfig.json
+COPY --chown=node:node --from=builder /builder/apps/coordinator/hardhat.config.cjs ./hardhat.config.cjs
+COPY --chown=node:node --from=builder /builder/apps/coordinator/ts ./ts
+COPY --chown=node:node --from=builder /builder/apps/coordinator/tests ./tests
 
 # zkeys are NOT downloaded here anymore. MessageProcessor/VoteTally zkeys alone total 1GB+,
 # and downloading them from a third-party upstream MACI S3 bucket meant every single build
@@ -80,8 +102,6 @@ COPY --chown=node:node --from=builder /builder/ ./
 # exact command). Local dev / CI still use `pnpm run download-zkeys:test` directly (see
 # apps/coordinator/package.json, .github/workflows/coordinator.yml) — unaffected by this.
 
-# coordinator directory
-WORKDIR /maci/apps/coordinator
 RUN pnpm run generate-keypair
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 
