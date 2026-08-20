@@ -8,6 +8,8 @@ const sponsorMock = vi.fn();
 const authorizeFormalizeMock = vi.fn();
 const checkVoteEligibilityMock = vi.fn();
 const confirmFormalizeMock = vi.fn();
+const getTallyStatusMock = vi.fn();
+const triggerTallyMock = vi.fn();
 
 vi.mock("@/src/services/proposalApi", () => ({
   list: (...args: unknown[]) => listMock(...args),
@@ -15,6 +17,8 @@ vi.mock("@/src/services/proposalApi", () => ({
   authorizeFormalize: (...args: unknown[]) => authorizeFormalizeMock(...args),
   checkVoteEligibility: (...args: unknown[]) => checkVoteEligibilityMock(...args),
   confirmFormalize: (...args: unknown[]) => confirmFormalizeMock(...args),
+  getTallyStatus: (...args: unknown[]) => getTallyStatusMock(...args),
+  triggerTally: (...args: unknown[]) => triggerTallyMock(...args),
 }));
 
 const getTiersMock = vi.fn();
@@ -106,6 +110,9 @@ beforeEach(() => {
   authorizeFormalizeMock.mockReset();
   checkVoteEligibilityMock.mockReset();
   confirmFormalizeMock.mockReset();
+  getTallyStatusMock.mockReset();
+  triggerTallyMock.mockReset();
+  checkVoteEligibilityMock.mockResolvedValue({ eligible: false });
   deployPollMock.mockReset();
   getTiersMock.mockReset();
   getTiersMock.mockResolvedValue([]);
@@ -313,5 +320,77 @@ describe("ProposalsList", () => {
     renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
 
     await waitFor(() => expect(screen.getByText("Your current tier doesn't grant voting rights.")).toBeInTheDocument());
+  });
+
+  // Governance restructure Phase 2 (2026-08-20) — TallySection's person-type winner display.
+  describe("person-type (election) tally completion", () => {
+    const CLOSED_PERSON_ACTION = {
+      ...DRAFT_ACTION,
+      status: "formalized" as const,
+      pollAddress: "0xPoll",
+      decisionTargetType: "person" as const,
+      pollStartDate: 1000,
+      pollEndDate: 2000, // both far in the past — poll is closed
+      tallyStatus: "completed" as const,
+      tallyError: null,
+      tallyRequestedAt: 1500,
+      tallyCompletedAt: 2500,
+      tallyResult: null,
+      electedWalletAddress: null as string | null,
+    };
+
+    it("shows the elected member's address once tallying completes with a clear winner", async () => {
+      listMock.mockResolvedValue({ proposals: [CLOSED_PERSON_ACTION] });
+      getTallyStatusMock.mockResolvedValue({
+        tallyStatus: "completed",
+        tallyError: null,
+        tallyRequestedAt: 1500,
+        tallyCompletedAt: 2500,
+        tallyResult: null,
+        electedWalletAddress: "0x1111111111111111111111111111111111111a",
+      });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      await waitFor(() => expect(screen.getByText(/Elected:/)).toBeInTheDocument());
+      expect(screen.getByText(/0x1111…111a/)).toBeInTheDocument();
+    });
+
+    it("shows a tied, no-winner note instead of a badge when electedWalletAddress is null", async () => {
+      listMock.mockResolvedValue({ proposals: [CLOSED_PERSON_ACTION] });
+      getTallyStatusMock.mockResolvedValue({
+        tallyStatus: "completed",
+        tallyError: null,
+        tallyRequestedAt: 1500,
+        tallyCompletedAt: 2500,
+        tallyResult: null,
+        electedWalletAddress: null,
+      });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      await waitFor(() => expect(screen.getByText(/Tied — no winner recorded/)).toBeInTheDocument());
+      expect(screen.queryByText(/Elected:/)).not.toBeInTheDocument();
+    });
+
+    it("does not show the election badge for a non-person-type completed proposal (regression)", async () => {
+      listMock.mockResolvedValue({
+        proposals: [{ ...CLOSED_PERSON_ACTION, decisionTargetType: "policy" as const }],
+      });
+      getTallyStatusMock.mockResolvedValue({
+        tallyStatus: "completed",
+        tallyError: null,
+        tallyRequestedAt: 1500,
+        tallyCompletedAt: 2500,
+        tallyResult: null,
+        electedWalletAddress: null,
+      });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      await waitFor(() => expect(screen.getByText("Tallying complete.")).toBeInTheDocument());
+      expect(screen.queryByText(/Elected:/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/Tied/)).not.toBeInTheDocument();
+    });
   });
 });

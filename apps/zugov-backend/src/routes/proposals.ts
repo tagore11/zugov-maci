@@ -20,6 +20,7 @@ import {
   DirectDeploymentDisabledError,
   DraftPathDisabledError,
   NoDecisionAdapterAttachedError,
+  InvalidElectionOptionsError,
 } from "../services/proposalService.js";
 import * as tallyService from "../services/tallyService.js";
 import {
@@ -53,6 +54,7 @@ proposalsRouter.post("/:id/proposals", requireAuth, async (c) => {
     if (err instanceof IneligibleTiersError) {
       return c.json({ error: err.message, details: { invalidTierIds: err.invalidTierIds } }, 422);
     }
+    if (err instanceof InvalidElectionOptionsError) return c.json({ error: err.message }, 422);
     throw err;
   }
 });
@@ -78,6 +80,7 @@ proposalsRouter.post("/:id/proposals/direct/authorize", requireAuth, async (c) =
     if (err instanceof IneligibleTiersError) {
       return c.json({ error: err.message, details: { invalidTierIds: err.invalidTierIds } }, 422);
     }
+    if (err instanceof InvalidElectionOptionsError) return c.json({ error: err.message }, 422);
     throw err;
   }
 });
@@ -103,6 +106,7 @@ proposalsRouter.post("/:id/proposals/direct/confirm", requireAuth, async (c) => 
     if (err instanceof IneligibleTiersError) {
       return c.json({ error: err.message, details: { invalidTierIds: err.invalidTierIds } }, 422);
     }
+    if (err instanceof InvalidElectionOptionsError) return c.json({ error: err.message }, 422);
     throw err;
   }
 });

@@ -49,6 +49,31 @@ const VOTING_PROTOCOL_TYPE_TO_MODE: Record<Proposal["votingProtocolType"], numbe
 
 const SEPOLIA_CHAIN_ID = 11155111;
 
+// Governance restructure Phase 2 (2026-08-20) — "person"-type (election) proposals only. Not a
+// full @maci-protocol/sdk dependency (zugov-backend doesn't otherwise depend on it) — a minimal
+// duck-typed shape matching the coordinator's real ITallyData.results.tally: string[] response
+// (packages/sdk/ts/tally/types.ts, confirmed against apps/coordinator/ts/proof/proof.controller.ts's
+// `submit(): Promise<ITallyData>`), same index order as `options`/`optionMemberAddresses`.
+interface CoordinatorTallyResult {
+  results?: { tally: string[] };
+}
+
+/** No winner on a tie (including an all-zero, nobody-voted tally, which ties every option at 0)
+ * — an honest "no winner" state, never a guessed one. Exported for direct unit testing —
+ * runTallyInBackground itself requires a real coordinator + MACI contract to exercise
+ * end-to-end, which no existing test in this file sets up. */
+export function resolveElectionWinner(tallyData: unknown, optionMemberAddresses: string[]): string | null {
+  const tally = (tallyData as CoordinatorTallyResult | undefined)?.results?.tally;
+  if (!Array.isArray(tally) || tally.length !== optionMemberAddresses.length) return null;
+
+  const counts = tally.map((value) => BigInt(value));
+  const maxCount = counts.reduce((max, count) => (count > max ? count : max), counts[0] ?? 0n);
+  const winningIndices = counts.flatMap((count, index) => (count === maxCount ? [index] : []));
+
+  if (winningIndices.length !== 1) return null;
+  return optionMemberAddresses[winningIndices[0]!] ?? null;
+}
+
 async function getActionOrThrow(communityId: string, actionId: string): Promise<Proposal> {
   const [row] = await db
     .select()
@@ -62,7 +87,12 @@ async function getActionOrThrow(communityId: string, actionId: string): Promise<
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
+): Promise<
+  Pick<
+    Proposal,
+    "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult" | "electedWalletAddress"
+  >
+> {
   const action = await getActionOrThrow(communityId, actionId);
   return {
     tallyStatus: action.tallyStatus,
@@ -70,6 +100,11 @@ export async function getTallyStatus(
     tallyRequestedAt: action.tallyRequestedAt,
     tallyCompletedAt: action.tallyCompletedAt,
     tallyResult: action.tallyResult,
+    // "Person"-type only (governance restructure Phase 2) — surfaced here, not just on the base
+    // proposal read, because this is the query the frontend actually polls while a tally is in
+    // progress (ProposalsList.tsx's TallySection); the outer proposal-list query is fetched once
+    // and never invalidated when a background tally completes.
+    electedWalletAddress: action.electedWalletAddress,
   };
 }
 
@@ -104,7 +139,14 @@ export async function triggerTally(communityId: string, actionId: string, wallet
     .set({ tallyStatus: "pending", tallyRequestedAt: now, tallyError: null, tallyResult: null })
     .where(eq(proposals.id, actionId));
 
-  void runTallyInBackground(actionId, governanceConfig.contractAddress, action.pollId, action.votingProtocolType);
+  void runTallyInBackground(
+    actionId,
+    governanceConfig.contractAddress,
+    action.pollId,
+    action.votingProtocolType,
+    action.decisionTargetType,
+    action.optionMemberAddresses ? (JSON.parse(action.optionMemberAddresses) as string[]) : null,
+  );
 }
 
 async function runTallyInBackground(
@@ -112,6 +154,8 @@ async function runTallyInBackground(
   maciContractAddress: string,
   pollId: string,
   votingProtocolType: Proposal["votingProtocolType"],
+  decisionTargetType: Proposal["decisionTargetType"],
+  optionMemberAddresses: string[] | null,
 ): Promise<void> {
   try {
     await db.update(proposals).set({ tallyStatus: "processing" }).where(eq(proposals.id, actionId));
@@ -122,12 +166,18 @@ async function runTallyInBackground(
       mode: VOTING_PROTOCOL_TYPE_TO_MODE[votingProtocolType],
     });
 
+    const electedWalletAddress =
+      decisionTargetType === "person" && optionMemberAddresses
+        ? resolveElectionWinner(result.tallyData, optionMemberAddresses)
+        : null;
+
     await db
       .update(proposals)
       .set({
         tallyStatus: "completed",
         tallyCompletedAt: Math.floor(Date.now() / 1000),
         tallyResult: JSON.stringify(result.tallyData),
+        electedWalletAddress,
       })
       .where(eq(proposals.id, actionId));
   } catch (err) {

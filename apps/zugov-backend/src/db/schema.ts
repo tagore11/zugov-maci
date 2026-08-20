@@ -278,6 +278,15 @@ export const proposals = pgTable("proposals", {
   // not available uniformly via the subgraph (some communities have none), so this column is the
   // only source guaranteed to be present for every deployed poll's vote screen.
   options: text("options"),
+  // "person"-type (election) proposals only. JSON-stringified string[], same index as
+  // `options` — option[i]'s candidate wallet address. Governance restructure Phase 2
+  // (2026-08-20) — direct-deploy creation path only; the draft/co-sponsorship path collects
+  // options later, at formalize time, with no validation hook for this field yet.
+  optionMemberAddresses: text("option_member_addresses"),
+  // "person"-type only. Set once by tallyService on tally completion, from the winning
+  // option's optionMemberAddresses entry. Stays null on a tie — an honest "no winner" state,
+  // never a guessed one — and for every non-person-type proposal.
+  electedWalletAddress: text("elected_wallet_address"),
   createdAt: integer("created_at").notNull(),
   formalizedAt: integer("formalized_at"),
   // Only meaningful once pollAddress is set (i.e. the poll has actually been deployed on-chain).

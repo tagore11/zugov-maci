@@ -3,6 +3,7 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http:/
 export type ProposalPrivacy = "public" | "privacy_preserving";
 export type ProposalExecutionLocation = "onchain" | "offchain" | "hybrid";
 export type ProposalVotingProtocolType = "simple" | "quadratic" | "ranked" | "weighted" | "full";
+export type ProposalDecisionTargetType = "opinion" | "policy" | "person";
 export type ProposalStatus = "draft" | "formalized";
 
 export type ProposalCreationPath = "draft" | "direct";
@@ -18,6 +19,7 @@ export interface Proposal {
   privacy: ProposalPrivacy;
   executionLocation: ProposalExecutionLocation;
   votingProtocolType: ProposalVotingProtocolType;
+  decisionTargetType: ProposalDecisionTargetType;
   eligibleTierIds: string[];
   status: ProposalStatus;
   creationPath: ProposalCreationPath;
@@ -27,6 +29,11 @@ export interface Proposal {
   pollStartDate: number | null;
   pollEndDate: number | null;
   options: string[] | null;
+  // "person"-type only — see decisionTargetType. optionMemberAddresses[i] is options[i]'s
+  // candidate wallet address; electedWalletAddress is the tally-resolved winner (null until
+  // tallying completes, and null forever on a tie — never a guessed winner).
+  optionMemberAddresses: string[] | null;
+  electedWalletAddress: string | null;
   createdAt: number;
   formalizedAt: number | null;
   tallyStatus: TallyStatus;
@@ -132,6 +139,12 @@ export interface DirectDeployInput {
   executionLocation: ProposalExecutionLocation;
   votingProtocolType: ProposalVotingProtocolType;
   eligibleTierIds: string[];
+  // "person"-type (election) proposals only, direct-deploy path only — see
+  // ENGINEERING.md's Decisions Log (2026-08-20 governance restructure Phase 2). Sent at
+  // authorize time too (not just confirm) so validation runs before the wallet-signed deploy.
+  decisionTargetType?: ProposalDecisionTargetType;
+  options?: string[];
+  optionMemberAddresses?: string[];
 }
 
 export async function authorizeDirect(communityId: string, input: DirectDeployInput): Promise<{ authorized: true }> {
@@ -152,7 +165,6 @@ export async function confirmDirect(
     txHash: string;
     pollStartDate: number;
     pollEndDate: number;
-    options?: string[];
   },
 ): Promise<{ proposal: Proposal }> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/direct/confirm`, {
@@ -175,7 +187,12 @@ export async function triggerTally(communityId: string, actionId: string): Promi
 export async function getTallyStatus(
   communityId: string,
   actionId: string,
-): Promise<Pick<Proposal, "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult">> {
+): Promise<
+  Pick<
+    Proposal,
+    "tallyStatus" | "tallyError" | "tallyRequestedAt" | "tallyCompletedAt" | "tallyResult" | "electedWalletAddress"
+  >
+> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/proposals/${actionId}/tally`, {
     credentials: "include",
   });

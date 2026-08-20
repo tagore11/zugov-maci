@@ -308,6 +308,22 @@ function TallySection({ communityId, action }: { communityId: string; action: Pr
     return <p className="text-xs text-amber-300">Tallying in progress — this can take a while…</p>;
   }
 
+  // "Person"-type (election) proposals only (governance restructure Phase 2) — electedWalletAddress
+  // stays null on a tie, an honest "no winner" state, never a guessed one; the badge only shows
+  // once there's a real, unambiguous winner to show.
+  if (action.decisionTargetType === "person") {
+    return status.electedWalletAddress ? (
+      <p className="text-xs text-emerald-400">
+        Tallying complete. Elected:{" "}
+        <span className="font-mono">
+          {status.electedWalletAddress.slice(0, 6)}…{status.electedWalletAddress.slice(-4)}
+        </span>
+      </p>
+    ) : (
+      <p className="text-xs text-amber-300">Tallying complete. Tied — no winner recorded.</p>
+    );
+  }
+
   return <p className="text-xs text-emerald-400">Tallying complete.</p>;
 }
 

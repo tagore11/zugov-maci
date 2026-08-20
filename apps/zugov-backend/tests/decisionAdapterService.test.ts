@@ -39,7 +39,7 @@ describe("decisionAdapterService", () => {
       expect(getCapabilities("maci")).toEqual({
         adapterType: "maci",
         supportedEligibilityMechanisms: ["open", "erc20_token"],
-        supportedVotingProtocolTypes: ["simple", "quadratic"],
+        supportedVotingProtocolTypes: ["simple", "quadratic", "ranked", "full"],
       });
     });
   });

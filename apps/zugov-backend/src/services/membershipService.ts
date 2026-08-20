@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import {
   communities,
@@ -89,6 +89,45 @@ export async function hasTierPermission(
     .limit(1);
 
   return rows[0]?.[permission] ?? false;
+}
+
+/**
+ * Batched membership check for a candidate list of addresses (governance restructure Phase 2,
+ * 2026-08-20) — used to validate "person"-type (election) proposal options against real
+ * community members without an N+1 loop. A single query, not one lookup per address.
+ *
+ * Case-insensitive: normalizes both the submitted addresses and the stored column to lowercase
+ * before comparing. Every other address comparison in this file relies on the caller already
+ * passing a consistently-cased address (established over time); this is a genuinely new
+ * candidate-address surface (an election's member picker) with no such precedent to lean on, so
+ * it normalizes explicitly rather than assuming.
+ */
+export async function listMembersByAddresses(communityId: string, walletAddresses: string[]): Promise<string[]> {
+  if (walletAddresses.length === 0) return [];
+  const normalized = [...new Set(walletAddresses.map((address) => address.toLowerCase()))];
+
+  const rows = await db
+    .select({ walletAddress: memberships.walletAddress })
+    .from(memberships)
+    .where(
+      and(eq(memberships.communityId, communityId), inArray(sql`lower(${memberships.walletAddress})`, normalized)),
+    );
+
+  return rows.map((row) => row.walletAddress.toLowerCase());
+}
+
+/**
+ * Full member listing for a community (governance restructure Phase 2, 2026-08-20) — feeds the
+ * person-type (election) proposal creation UI's member picker. Gated on membership at the route
+ * level (GET /:id/members, routes/membership.ts) — wallet addresses aren't a public directory,
+ * but any member (not just admins) needs this to pick election candidates.
+ */
+export async function listMembers(communityId: string): Promise<{ walletAddress: string; tierLabel: string }[]> {
+  return db
+    .select({ walletAddress: memberships.walletAddress, tierLabel: membershipTiers.label })
+    .from(memberships)
+    .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+    .where(eq(memberships.communityId, communityId));
 }
 
 export async function createTiersForCommunity(

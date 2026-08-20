@@ -665,6 +665,157 @@ describe("POST /api/communities/:id/proposals/direct/authorize (specs/007 US2, F
     });
     expect(res.status).toBe(422);
   });
+
+  // Governance restructure Phase 2 (2026-08-20) — "person"-type (election) proposal validation.
+  // Direct-deploy path only this phase; validated here, at authorize time, before any
+  // wallet-signed deploy transaction (Code Quality Finding 1: fail fast, not at tally time).
+  describe("person-type (election) options", () => {
+    async function setupWithSecondMember(creatorCookie: string) {
+      const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+      await enableDirectDeployment(creatorCookie, communityId);
+      await testDb.insert(schema.memberships).values({
+        walletAddress: SPONSOR.address,
+        communityId,
+        tierId: tierIds["Voter"]!,
+        joinedAt: Math.floor(Date.now() / 1000),
+      });
+      return { communityId, tierIds };
+    }
+
+    it("returns 422 when optionMemberAddresses is missing", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/optionMemberAddresses is required/i);
+    });
+
+    it("returns 422 when optionMemberAddresses length doesn't match options length", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address],
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/length must match/i);
+    });
+
+    it("returns 422 when an optionMemberAddresses entry is not a real community member", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address, OUTSIDER.address],
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/must all be real community members/i);
+    });
+
+    it("returns 422 when optionMemberAddresses contains duplicate addresses", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address, CREATOR.address],
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/duplicate addresses/i);
+    });
+
+    it("matches a member address case-insensitively", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address.toUpperCase(), SPONSOR.address.toLowerCase()],
+        }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it("returns 200 for a valid person-type election with real, distinct member addresses", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          decisionTargetType: "person",
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address, SPONSOR.address],
+        }),
+      });
+      expect(res.status).toBe(200);
+    });
+
+    it("returns 422 when optionMemberAddresses is sent for a non-person-type proposal", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds } = await setupWithSecondMember(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/direct/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+        body: JSON.stringify({
+          ...DRAFT_BODY,
+          eligibleTierIds: [tierIds["Voter"]],
+          options: ["Alice", "Bob"],
+          optionMemberAddresses: [CREATOR.address, SPONSOR.address],
+        }),
+      });
+      expect(res.status).toBe(422);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/only valid for person-type/i);
+    });
+  });
 });
 
 describe("POST /api/communities/:id/proposals/direct/confirm (specs/007 US2, FR-004/FR-007/FR-010)", () => {
@@ -723,6 +874,91 @@ describe("POST /api/communities/:id/proposals/direct/confirm (specs/007 US2, FR-
     expect(confirmRes.status).toBe(201);
     const { proposal } = (await confirmRes.json()) as { proposal: { options: string[] | null } };
     expect(proposal.options).toEqual(["Yes", "No"]);
+  });
+
+  // Governance restructure Phase 2 (2026-08-20) — outside-voice-caught regression: the direct
+  // path's insert call never set decisionTargetType, so a submitted value silently rode the DB
+  // default ("policy") instead of persisting.
+  it("persists the submitted decisionTargetType instead of silently defaulting to policy", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/proposals/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+        decisionTargetType: "opinion",
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { proposal } = (await confirmRes.json()) as { proposal: { decisionTargetType: string } };
+    expect(proposal.decisionTargetType).toBe("opinion");
+  });
+
+  it("defaults decisionTargetType to policy when omitted", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/proposals/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { proposal } = (await confirmRes.json()) as { proposal: { decisionTargetType: string } };
+    expect(proposal.decisionTargetType).toBe("policy");
+  });
+
+  it("persists optionMemberAddresses for a valid person-type election", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    await enableDirectDeployment(creatorCookie, communityId);
+    await testDb.insert(schema.memberships).values({
+      walletAddress: SPONSOR.address,
+      communityId,
+      tierId: tierIds["Voter"]!,
+      joinedAt: Math.floor(Date.now() / 1000),
+    });
+
+    const confirmRes = await app.request(`/api/communities/${communityId}/proposals/direct/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        eligibleTierIds: [tierIds["Voter"]],
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+        decisionTargetType: "person",
+        options: ["Alice", "Bob"],
+        optionMemberAddresses: [CREATOR.address, SPONSOR.address],
+      }),
+    });
+    expect(confirmRes.status).toBe(201);
+    const { proposal } = (await confirmRes.json()) as {
+      proposal: { decisionTargetType: string; optionMemberAddresses: string[] | null };
+    };
+    expect(proposal.decisionTargetType).toBe("person");
+    expect(proposal.optionMemberAddresses).toEqual([CREATOR.address, SPONSOR.address]);
   });
 
   it("returns 403 and leaves no record when directDeploymentEnabled is false", async () => {
