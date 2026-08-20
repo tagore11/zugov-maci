@@ -26,8 +26,8 @@
     "docs": "typedoc --plugin typedoc-plugin-markdown --options ./typedoc.json"
   },
   "dependencies": {
-    "@maci-protocol/crypto": "^3.0.0",
-    "@maci-protocol/domainobjs": "^3.0.0",
+    "@maci-protocol/crypto": "workspace:*",
+    "@maci-protocol/domainobjs": "workspace:*",
     "@zk-kit/lean-imt": "^2.2.3",
     "lodash": "^4.17.21"
   },

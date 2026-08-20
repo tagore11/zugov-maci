@@ -230,9 +230,9 @@
   "dependencies": {
     "@ethereum-attestation-service/eas-contracts": "^1.8.0",
     "@excubiae/contracts": "^0.11.0",
-    "@maci-protocol/core": "^3.0.0",
-    "@maci-protocol/crypto": "^3.0.0",
-    "@maci-protocol/domainobjs": "^3.0.0",
+    "@maci-protocol/core": "workspace:*",
+    "@maci-protocol/crypto": "workspace:*",
+    "@maci-protocol/domainobjs": "workspace:*",
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "@nomicfoundation/hardhat-verify": "^2.1.0",
