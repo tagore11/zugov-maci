@@ -1,5 +1,16 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
-require("@nomicfoundation/hardhat-toolbox");
+// hardhat-toolbox bundles test-only plugins (hardhat-chai-matchers, gas-reporter, etc.) that
+// need devDependencies (chai) not present in the production image (pnpm deploy --prod strips
+// them) — this file is shared between local dev/test and the coordinator's runtime image
+// (apps/coordinator/Dockerfile copies it in for ts-node/tsconfig resolution). proof.service.ts
+// only ever uses hre.ethers (hardhat-ethers, already a real dependency), never anything else
+// from the toolbox, so falling back to just that plugin in the stripped-down production case
+// keeps local dev/test behavior (chai-matchers etc.) fully unchanged while fixing prod.
+try {
+  require("@nomicfoundation/hardhat-toolbox");
+} catch {
+  require("@nomicfoundation/hardhat-ethers");
+}
 const dotenv = require("dotenv");
 
 const path = require("path");
