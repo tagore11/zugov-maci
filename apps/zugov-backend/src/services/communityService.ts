@@ -437,7 +437,7 @@ export interface CommunityUpdatePatch {
   description?: string;
   logo?: string;
   membershipPolicy?: "open" | "approval";
-  category?: "residency" | "regional" | "network_state" | "social";
+  category?: "residency" | "pop_up_city" | "regional" | "network_state" | "social";
   tierChangesRequireVote?: boolean;
   defaultTierLabel?: string;
   cosponsorshipThreshold?: number;

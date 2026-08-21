@@ -5,7 +5,7 @@ const addressRegex = /^0x[0-9a-fA-F]{40}$/;
 
 // Creator-selected community type tag, shown on the community explorer's filter chips —
 // independent of governance status (specs/010 US5, FR-011).
-export const communityCategorySchema = z.enum(["residency", "regional", "network_state", "social"]);
+export const communityCategorySchema = z.enum(["residency", "pop_up_city", "regional", "network_state", "social"]);
 
 // Mirrors apps/zugov-frontend/src/config.ts's existing PollDeployConfig shape exactly (nested
 // treeDepths) so the frontend can send/receive it with no translation layer of its own — the

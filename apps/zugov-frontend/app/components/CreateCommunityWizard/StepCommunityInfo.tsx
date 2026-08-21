@@ -5,9 +5,10 @@ import type { CommunityCategory } from "@/src/services/communityApi";
 
 const CATEGORY_OPTIONS: { value: CommunityCategory; label: string }[] = [
   { value: "residency", label: "Residency" },
-  { value: "regional", label: "Regional" },
+  { value: "pop_up_city", label: "Pop-up City" },
   { value: "network_state", label: "Network State" },
   { value: "social", label: "Social" },
+  { value: "regional", label: "Regional" },
 ];
 
 interface Props {

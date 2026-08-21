@@ -739,6 +739,16 @@ describe("category (specs/010 US5, FR-011/FR-012)", () => {
     expect(fetched.category).toBe("network_state");
   });
 
+  it("round-trips pop_up_city through creation and GET", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { res, community } = await registerIdentity(cookie, { category: "pop_up_city" });
+    expect(res.status).toBe(201);
+
+    const getRes = await app.request(`/api/communities/${community.id}`);
+    const { community: fetched } = (await getRes.json()) as { community: { category: string | null } };
+    expect(fetched.category).toBe("pop_up_city");
+  });
+
   it("defaults to null when no category is provided", async () => {
     const cookie = await authCookieFor(REGISTRANT);
     const { community } = await registerIdentity(cookie);
