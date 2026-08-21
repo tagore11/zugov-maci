@@ -105,11 +105,10 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.step).toBe("community_info");
   });
 
-  // 2026-08-19 community-creation-rework review, D2: off-chain-only is now a real, intentional
-  // end state — the wizard reaches the success screen after identity creation (via the new
-  // eligibility step, 2026-08-19 eligibility-followups review, D2), not network_check.
-  // Deploying governance becomes an explicit opt-in from there.
-  it("community_info -> community_setup -> eligibility -> success (off-chain-only) with defaults applied", async () => {
+  // Community creation wizard fix (2026-08-21): the wizard is 2 real steps now — eligibility
+  // rules configuration moved out entirely to the community's edit page, so
+  // setCommunitySetup's success lands directly on "success", no intermediate step.
+  it("community_info -> community_setup -> success (off-chain-only) with defaults applied", async () => {
     const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
@@ -126,25 +125,11 @@ describe("useCreateCommunity wizard flow", () => {
       });
     });
 
-    // Lands on the new eligibility step first — the identity (and its tiers) is real and
-    // persisted by this point, the earliest a rule could target a tier at all.
-    expect(result.current.state.step).toBe("eligibility");
-    expect(result.current.state.identityCommunityId).toBeDefined();
-
-    // StepEligibility's own Continue handler calls goToStep("success") — skipping (no rules
-    // added) is the common case and must not be blocked.
-    act(() => {
-      result.current.goToStep("success");
-    });
-
     expect(result.current.state.step).toBe("success");
+    expect(result.current.state.identityCommunityId).toBeDefined();
     expect(result.current.state.config.membershipPolicy).toBe("open");
     expect(result.current.state.config.tiers).toEqual(RESIDENT_ORGANIZER_TIERS);
     expect(result.current.state.config.defaultTierLabel).toBe("Resident");
-    // Collapsed-Advanced default: FreeForAll sign-up policy, matching the zero-config path.
-    expect(result.current.state.config.signUpPolicy).toEqual({ type: "FreeForAll" });
-    expect(result.current.state.config.allowedPolicies).toEqual([1]);
-    expect(result.current.state.config.supportedModes).toEqual([1]);
   });
 
   // Creation-time tier editing (D3) — a creator can rename/replace the Resident/Organizer
@@ -188,28 +173,43 @@ describe("useCreateCommunity wizard flow", () => {
     expect(result.current.state.config.membershipPolicy).toBe("approval");
   });
 
-  it("Advanced settings, when provided, override the zero-config defaults", async () => {
+  // Community creation wizard fix (2026-08-21) — isSubmitting is now the single source of truth
+  // shared between StepCommunitySetup and CreateCommunityModal's X-button gating; this verifies
+  // the existing registerIdentity() retry/error path still works unchanged after that lift.
+  it("isSubmitting is true only for the duration of setCommunitySetup's identity call, including on failure", async () => {
+    const communityApi = await import("@/src/services/communityApi");
+    vi.mocked(communityApi.registerIdentity).mockRejectedValueOnce(new communityApi.AuthError());
+
     const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
 
     act(() => {
       result.current.setCommunityInfo("Zukas", "");
     });
+    expect(result.current.state.isSubmitting).toBe(false);
+
+    await act(async () => {
+      await expect(
+        result.current.setCommunitySetup({
+          membershipPolicy: "open",
+          tiers: RESIDENT_ORGANIZER_TIERS,
+          defaultTierLabel: "Resident",
+        }),
+      ).rejects.toBeInstanceOf(communityApi.AuthError);
+    });
+
+    expect(result.current.state.isSubmitting).toBe(false);
+    expect(result.current.state.step).toBe("community_setup");
+
     await act(async () => {
       await result.current.setCommunitySetup({
         membershipPolicy: "open",
         tiers: RESIDENT_ORGANIZER_TIERS,
         defaultTierLabel: "Resident",
-        advanced: {
-          signUpPolicy: { type: "MerkleProof", merkleRoot: "0xabc" },
-          allowedPolicies: [2],
-          supportedModes: [0],
-        },
       });
     });
 
-    expect(result.current.state.config.signUpPolicy).toEqual({ type: "MerkleProof", merkleRoot: "0xabc" });
-    expect(result.current.state.config.allowedPolicies).toEqual([2]);
-    expect(result.current.state.config.supportedModes).toEqual([0]);
+    expect(result.current.state.isSubmitting).toBe(false);
+    expect(result.current.state.step).toBe("success");
   });
 
   it("setCommunitySetup creates the identity once and updates (not re-creates) it on re-submission after Back", async () => {
@@ -296,26 +296,5 @@ describe("useCreateCommunity wizard flow", () => {
       result.current.goBack();
     });
     expect(result.current.state.step).toBe("community_info");
-  });
-
-  it("goBack from eligibility returns to community_setup", async () => {
-    const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
-
-    act(() => {
-      result.current.setCommunityInfo("Zukas", "");
-    });
-    await act(async () => {
-      await result.current.setCommunitySetup({
-        membershipPolicy: "open",
-        tiers: RESIDENT_ORGANIZER_TIERS,
-        defaultTierLabel: "Resident",
-      });
-    });
-    expect(result.current.state.step).toBe("eligibility");
-
-    act(() => {
-      result.current.goBack();
-    });
-    expect(result.current.state.step).toBe("community_setup");
   });
 });
