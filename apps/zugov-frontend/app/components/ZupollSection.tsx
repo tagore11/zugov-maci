@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import * as zupollApi from "@/src/services/zupollApi";
 import * as membershipApi from "@/src/services/membershipApi";
-import { AttachZupollAdapter } from "./AttachZupollAdapter";
+import { useHasTierPermission } from "@/src/hooks/useMembershipPermission";
 import { CreateZupollProposal } from "./CreateZupollProposal";
 import { ZupollProposalVoting } from "./ZupollProposalVoting";
 
@@ -18,7 +18,7 @@ interface ZupollSectionProps {
 export function ZupollSection({ communityId, connected }: ZupollSectionProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const { data: adaptersData, refetch: refetchAdapters } = useQuery({
+  const { data: adaptersData } = useQuery({
     queryKey: ["zupoll-adapters", communityId],
     queryFn: () => zupollApi.listDecisionAdapters(communityId),
   });
@@ -36,12 +36,18 @@ export function ZupollSection({ communityId, connected }: ZupollSectionProps) {
     enabled: isAttached && isCreateOpen,
   });
   const votingTierIds = tiers.filter((t) => t.canVote).map((t) => t.id);
+  const canCreateProposals = useHasTierPermission(communityId, connected, "canCreateProposals");
+
+  // Attaching Zupoll is only ever offered from the edit-community governance section, gated on
+  // isAuthorized there — this read-only section renders nothing until an admin has attached it
+  // (governance-adapter-menu-fix, FR-003/FR-004).
+  if (!isAttached) return null;
 
   return (
     <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">Zupoll — Anonymous Surveys</h2>
-        {isAttached && connected && (
+        {canCreateProposals && (
           <button
             type="button"
             onClick={() => setIsCreateOpen(true)}
@@ -52,28 +58,20 @@ export function ZupollSection({ communityId, connected }: ZupollSectionProps) {
         )}
       </div>
 
-      {!isAttached ? (
-        connected ? (
-          <AttachZupollAdapter communityId={communityId} isAttached={false} onAttached={() => refetchAdapters()} />
+      <div className="space-y-4">
+        {!proposalsData?.proposals.length ? (
+          <p className="text-sm text-gray-500">No surveys yet.</p>
         ) : (
-          <p className="text-sm text-gray-500">Connect a wallet to attach Zupoll to this community.</p>
-        )
-      ) : (
-        <div className="space-y-4">
-          {!proposalsData?.proposals.length ? (
-            <p className="text-sm text-gray-500">No surveys yet.</p>
-          ) : (
-            proposalsData.proposals.map((proposal) => (
-              <ZupollProposalVoting
-                key={proposal.id}
-                communityId={communityId}
-                proposalId={proposal.id}
-                pollEndDate={proposal.pollEndDate}
-              />
-            ))
-          )}
-        </div>
-      )}
+          proposalsData.proposals.map((proposal) => (
+            <ZupollProposalVoting
+              key={proposal.id}
+              communityId={communityId}
+              proposalId={proposal.id}
+              pollEndDate={proposal.pollEndDate}
+            />
+          ))
+        )}
+      </div>
 
       <CreateZupollProposal
         isOpen={isCreateOpen}
