@@ -48,7 +48,7 @@ export default function Home() {
     enabled: statsSources.length > 0,
   });
 
-  const categories = ["All", "Residency", "Regional", "Network State", "Social"];
+  const categories = ["All", "Residency", "Pop-up City", "Regional", "Network State", "Social"];
 
   const fetchCommunities = useCallback(async (page: number, reset: boolean) => {
     setIsLoadingCommunities(true);

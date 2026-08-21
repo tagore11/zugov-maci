@@ -27,6 +27,10 @@ export function JoinSection({
   const { isSigningUp, signupToMaci } = useSignup(GovernanceTypes.MACI);
   const [justJoined, setJustJoined] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Governance-independent join (create-community wizard fix, 2026-08-21): a community's
+  // identity/membership is real before governance is ever configured (Architecture 1A/1B), so
+  // joining must not require a deployed contract — only the on-chain MACI signup below does.
+  const [isJoiningBackendOnly, setIsJoiningBackendOnly] = useState(false);
 
   const { data: membership } = useQuery({
     queryKey: ["membershipStatus", communityId],
@@ -74,12 +78,53 @@ export function JoinSection({
     queryClient.invalidateQueries({ queryKey: ["maciStateIndex", communityId] });
   }
 
+  async function handleJoinBackendOnly() {
+    setError(null);
+    setIsJoiningBackendOnly(true);
+    try {
+      const result = await membershipApi.join(communityId);
+      // justJoined covers the gap between this resolving and the invalidated query's refetch
+      // landing — same optimistic-flag pattern handleJoin uses below for the on-chain path.
+      if (result.status === "approved") setJustJoined(true);
+      queryClient.invalidateQueries({ queryKey: ["membershipStatus", communityId] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to join");
+    } finally {
+      setIsJoiningBackendOnly(false);
+    }
+  }
+
   if (!connected) return null;
 
   if (!contractAddress) {
     return (
-      <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
-        Governance not yet configured for this community — voting isn&apos;t available yet.
+      <div className="space-y-2">
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+          Governance not yet configured for this community — voting isn&apos;t available yet, but you can still join.
+        </div>
+        {justJoined || membership?.status === "member" ? (
+          <p className="text-xs text-gray-500">
+            You&apos;re a member
+            {membership?.tierLabel && (
+              <>
+                {" "}
+                (<span className="font-semibold">{membership.tierLabel}</span>)
+              </>
+            )}
+            .
+          </p>
+        ) : membership?.status === "pending" ? (
+          <p className="text-xs text-gray-500">Membership request pending admin review.</p>
+        ) : (
+          <button
+            onClick={() => void handleJoinBackendOnly()}
+            disabled={isJoiningBackendOnly}
+            className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
+          >
+            {isJoiningBackendOnly ? "Joining…" : "Join"}
+          </button>
+        )}
+        {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
     );
   }

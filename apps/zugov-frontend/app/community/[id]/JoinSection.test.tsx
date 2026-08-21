@@ -127,12 +127,53 @@ describe("JoinSection", () => {
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
 
-  it("shows a not-configured message instead of a Join button when governance isn't set up yet", () => {
+  // Create-community wizard fix (2026-08-21): a governance-less community must still be
+  // joinable — this used to hide the Join button entirely behind a "not yet configured" message,
+  // blocking every non-creator from ever joining an ungoverned community (the reported bug).
+  it("shows a Join button (not just a not-configured message) when governance isn't set up yet", () => {
     renderWithProviders(
       <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
     );
     expect(screen.getByText(/Governance not yet configured/)).toBeInTheDocument();
+    expect(screen.getByText("Join")).toBeInTheDocument();
+  });
+
+  it("joins via the backend only (no on-chain signup attempted) when governance isn't configured", async () => {
+    joinMock.mockResolvedValue({ status: "approved", tierLabel: "Regular" });
+    getMembershipStatusMock
+      .mockResolvedValueOnce({ status: "none" })
+      .mockResolvedValueOnce({ status: "member", tierLabel: "Regular" });
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() => expect(screen.getByText(/You're a member/)).toBeInTheDocument());
+    expect(joinMock).toHaveBeenCalledWith("0xabc");
+    expect(signupToMaciMock).not.toHaveBeenCalled();
+  });
+
+  it("shows 'pending admin review' instead of a Join button when a request is already pending, ungoverned community", async () => {
+    getMembershipStatusMock.mockResolvedValue({ status: "pending" });
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+    );
+    await waitFor(() => expect(screen.getByText(/pending admin review/)).toBeInTheDocument());
     expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+
+  it("shows a join error inline when the backend join call fails, ungoverned community", async () => {
+    joinMock.mockRejectedValue(new Error("Does not meet this community's eligibility requirements"));
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Does not meet this community's eligibility requirements")).toBeInTheDocument(),
+    );
   });
 
   it("shows an error message when the on-chain signup fails", async () => {
