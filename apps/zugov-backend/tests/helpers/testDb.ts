@@ -20,6 +20,13 @@ export const testDb = getTestDb();
 // up a duplicate-labeled tier from a previous run instead of the one just created). Clear every
 // dependent table first, then communities.
 export async function clearCommunities() {
+  // zupollVotes/zupollProposalGroups FK to proposals (CASCADE), zupollIdentityCommitments FKs
+  // to communities (CASCADE) — DB-level cascade already covers these deletes, but cleared
+  // explicitly first anyway to match this function's existing "clear every dependent table" style
+  // rather than relying on cascade behavior implicitly.
+  await testDb.delete(schema.zupollVotes);
+  await testDb.delete(schema.zupollProposalGroups);
+  await testDb.delete(schema.zupollIdentityCommitments);
   await testDb.delete(schema.proposalSponsors);
   await testDb.delete(schema.proposals);
   // eligibilityRules.targetTierId FKs to membershipTiers.id with no ON DELETE action (RESTRICT
