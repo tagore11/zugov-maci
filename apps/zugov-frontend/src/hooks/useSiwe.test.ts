@@ -7,6 +7,7 @@ const EXTERNAL_WALLET_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 const mockUseAccount = vi.fn();
 const mockSignMessageAsync = vi.fn();
+const mockUsePrivy = vi.fn();
 
 // useSiwe consumes only useAccount()/useSignMessage() from wagmi — the same hook interface
 // whether the connected wallet came from Privy's embedded-wallet path (email/social login,
@@ -16,6 +17,13 @@ const mockSignMessageAsync = vi.fn();
 vi.mock("wagmi", () => ({
   useAccount: () => mockUseAccount(),
   useSignMessage: () => ({ signMessageAsync: mockSignMessageAsync }),
+}));
+
+// usePrivy().authenticated gates the auto-sign-in effect (2026-08-21 sign-in clash fix) — Privy's
+// own external-wallet login can request its own signature before wagmi's address/chainId settle,
+// so auto-sign-in must wait for Privy's flow to fully finish first.
+vi.mock("@privy-io/react-auth", () => ({
+  usePrivy: () => mockUsePrivy(),
 }));
 
 vi.mock("viem/siwe", () => ({
@@ -33,6 +41,9 @@ beforeEach(() => {
   sessionStorage.clear();
   mockUseAccount.mockReset();
   mockSignMessageAsync.mockReset();
+  // Default: Privy's own connect/auth flow already settled — most tests exercise post-Privy
+  // behavior, not the race itself (that gets its own dedicated test below).
+  mockUsePrivy.mockReturnValue({ authenticated: true });
 });
 
 afterEach(() => {
@@ -165,5 +176,38 @@ describe("useSiwe", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mockSignMessageAsync).not.toHaveBeenCalled();
     expect(result.current.isAuthenticated).toBe(false);
+  });
+
+  // Sign-in clash fix (2026-08-21) — reported after a real repro: an external wallet (MetaMask)
+  // connects via Privy's own login flow, which can request its OWN signature to verify wallet
+  // ownership before Privy's `authenticated` flips true. Without waiting for that, auto-sign-in
+  // fired OUR SIWE signature request concurrently with Privy's — two uncoordinated wallet prompts
+  // — and the user saw MetaMask confirm successfully while the SIWE session never established
+  // ("Authentication required" on the next write action). wagmi's address/chainId can be populated
+  // before Privy's own authenticated flag settles, so gating on address/chainId alone isn't enough.
+  it("does not auto-sign-in while Privy's own connect flow hasn't finished authenticating, even with address/chainId already set", async () => {
+    mockUseAccount.mockReturnValue({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 });
+    mockUsePrivy.mockReturnValue({ authenticated: false });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(() => useSiwe());
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockSignMessageAsync).not.toHaveBeenCalled();
+    expect(result.current.isAuthenticated).toBe(false);
+
+    // Privy's own flow finishes — auto-sign-in should fire now, sequenced after it.
+    mockSignMessageAsync.mockResolvedValue("0xsignature");
+    mockFetchSequence([
+      { ok: true, json: () => ({ nonce: "xyz789" }) },
+      { ok: true, json: () => ({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 }) },
+    ]);
+    mockUsePrivy.mockReturnValue({ authenticated: true });
+    rerender();
+
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
+    expect(mockSignMessageAsync).toHaveBeenCalledTimes(1);
   });
 });

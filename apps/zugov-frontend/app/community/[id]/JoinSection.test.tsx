@@ -32,6 +32,22 @@ vi.mock("@/src/poll-factory-shim", () => ({
   MACI__factory: { connect: (...args: unknown[]) => maciFactoryConnectMock(...args) },
 }));
 
+// Investigation fix (2026-08-21) — the ungoverned join button is now gated behind SiweGate (this
+// page previously never established a SIWE session at all, so Join could hit a bare
+// "Authentication required" with no recovery). Defaults to authenticated so the existing
+// join-flow tests below don't need to click through a sign-in gate first; the dedicated gating
+// tests further down override this.
+const mockSiwe = {
+  isAuthenticated: true,
+  isSigning: false,
+  error: null as string | null,
+  signIn: vi.fn(),
+  signOut: vi.fn(),
+};
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => mockSiwe,
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -49,6 +65,11 @@ beforeEach(() => {
   maciKeypairMock = null;
   getStateIndexMock.mockReset();
   maciFactoryConnectMock.mockClear();
+  mockSiwe.isAuthenticated = true;
+  mockSiwe.isSigning = false;
+  mockSiwe.error = null;
+  mockSiwe.signIn.mockReset();
+  mockSiwe.signOut.mockReset();
 });
 
 describe("JoinSection", () => {
@@ -186,5 +207,50 @@ describe("JoinSection", () => {
 
     await waitFor(() => expect(screen.getByText("Wallet not connected")).toBeInTheDocument());
     expect(joinMock).not.toHaveBeenCalled();
+  });
+
+  // Investigation fix (2026-08-21) — the actual reported bug: a connected wallet with no SIWE
+  // session could see the "Join" button, click it, and hit a bare "Authentication required" from
+  // the backend with no way to recover, because this page never established (or offered to
+  // establish) a SIWE session itself. Gating the ungoverned join button behind SiweGate fixes the
+  // dead-end: an unauthenticated click now surfaces a real "Sign in with Ethereum" affordance
+  // instead of silently failing.
+  describe("ungoverned join — SIWE gating", () => {
+    it("shows a 'Sign in with Ethereum' prompt instead of the Join button when not yet SIWE-authenticated", () => {
+      mockSiwe.isAuthenticated = false;
+      renderWithProviders(
+        <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+      );
+
+      expect(screen.getByText("Sign in to join this community")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /sign in with ethereum/i })).toBeInTheDocument();
+      expect(screen.queryByText("Join")).not.toBeInTheDocument();
+    });
+
+    it("establishing a SIWE session reveals the real Join button, which then joins successfully", async () => {
+      mockSiwe.isAuthenticated = false;
+      mockSiwe.signIn.mockImplementation(async () => {
+        mockSiwe.isAuthenticated = true;
+      });
+      joinMock.mockResolvedValue({ status: "approved", tierLabel: "Regular" });
+      const { rerender } = renderWithProviders(
+        <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: /sign in with ethereum/i }));
+      await waitFor(() => expect(mockSiwe.signIn).toHaveBeenCalledTimes(1));
+
+      rerender(
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <MemoryRouter>
+            <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+
+      const joinButton = await screen.findByRole("button", { name: "Join" });
+      fireEvent.click(joinButton);
+      await waitFor(() => expect(joinMock).toHaveBeenCalledWith("0xabc"));
+    });
   });
 });

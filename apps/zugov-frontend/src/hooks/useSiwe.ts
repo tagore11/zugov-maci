@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount } from "wagmi";
 import { useSignMessage } from "wagmi";
 import { createSiweMessage } from "viem/siwe";
+import { usePrivy } from "@privy-io/react-auth";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 const SESSION_KEY = "siwe_auth";
@@ -28,6 +29,13 @@ export function useSiwe() {
 
   const { address, chainId } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  // Privy's own login for an external wallet (MetaMask etc. via the 'wallet' login method) can
+  // itself request a signature to verify wallet ownership before wagmi's address/chainId settle
+  // into their final connected values. Without waiting for Privy's `authenticated` flag, the
+  // auto-sign-in effect below could fire OUR SIWE signature request while Privy's own is still
+  // in flight — two uncoordinated signature prompts racing for the same wallet, observed as
+  // MetaMask confirming successfully but our SIWE session never actually establishing.
+  const { authenticated: privyAuthenticated } = usePrivy();
 
   const signIn = useCallback(async () => {
     if (!address || !chainId) {
@@ -117,11 +125,11 @@ export function useSiwe() {
       autoSignInAttemptedFor.current = address;
       return;
     }
-    if (!chainId || isSigning) return;
+    if (!chainId || isSigning || !privyAuthenticated) return;
     if (autoSignInAttemptedFor.current === address) return;
     autoSignInAttemptedFor.current = address;
     void signIn();
-  }, [address, chainId, isAuthenticated, isSigning, signIn]);
+  }, [address, chainId, isAuthenticated, isSigning, privyAuthenticated, signIn]);
 
   return { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
 }

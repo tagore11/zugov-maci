@@ -6,6 +6,8 @@ import { useSignup } from "@/src/hooks/useSignup";
 import { useMaci } from "@/src/context/MaciContext";
 import { GovernanceTypes } from "@/src/config";
 import { MACI__factory } from "@/src/poll-factory-shim";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { SiweGate } from "@/app/components/SiweGate";
 
 export function JoinSection({
   communityId,
@@ -23,6 +25,12 @@ export function JoinSection({
   rpcUrl: string;
 }) {
   const queryClient = useQueryClient();
+  // Investigation fix (2026-08-21) — this page never previously established a SIWE session at
+  // all, so clicking Join here could hit a bare "Authentication required" from the backend with
+  // no way to recover: the SIWE session only ever existed if the user happened to pass through
+  // the create-community wizard's SiweGate first. Wrapping the join action in the same SiweGate
+  // every other write action already uses fixes the dead-end.
+  const siwe = useSiwe();
   const { maciKeypair } = useMaci();
   const { isSigningUp, signupToMaci } = useSignup(GovernanceTypes.MACI);
   const [justJoined, setJustJoined] = useState(false);
@@ -116,13 +124,15 @@ export function JoinSection({
         ) : membership?.status === "pending" ? (
           <p className="text-xs text-gray-500">Membership request pending admin review.</p>
         ) : (
-          <button
-            onClick={() => void handleJoinBackendOnly()}
-            disabled={isJoiningBackendOnly}
-            className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
-          >
-            {isJoiningBackendOnly ? "Joining…" : "Join"}
-          </button>
+          <SiweGate message="Sign in to join this community" siwe={siwe}>
+            <button
+              onClick={() => void handleJoinBackendOnly()}
+              disabled={isJoiningBackendOnly}
+              className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
+            >
+              {isJoiningBackendOnly ? "Joining…" : "Join"}
+            </button>
+          </SiweGate>
         )}
         {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
