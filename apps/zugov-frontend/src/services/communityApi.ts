@@ -115,10 +115,16 @@ export function subgraphQueryUrl(id: string): string {
   return `${BASE_URL}/api/communities/${id}/subgraph/query`;
 }
 
-export async function list(page = 1, chainId?: number, creatorAddress?: string): Promise<ListResponse> {
+export async function list(
+  page = 1,
+  chainId?: number,
+  creatorAddress?: string,
+  search?: string,
+): Promise<ListResponse> {
   const params = new URLSearchParams({ page: String(page) });
   if (chainId !== undefined) params.set("chainId", String(chainId));
   if (creatorAddress !== undefined) params.set("creatorAddress", creatorAddress);
+  if (search !== undefined && search.trim() !== "") params.set("search", search.trim());
   const res = await fetch(`${BASE_URL}/api/communities?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch communities: ${res.status}`);
   return res.json() as Promise<ListResponse>;
