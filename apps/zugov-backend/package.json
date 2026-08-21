@@ -14,6 +14,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx src/db/seed.ts",
     "db:backfill-eligible-tier-ids": "tsx src/db/backfillFormalizedEligibleTierIds.ts",
+    "db:backfill-maci-decision-adapters": "tsx src/db/backfillMaciDecisionAdapters.ts",
     "test": "vitest run --reporter=verbose"
   },
   "dependencies": {

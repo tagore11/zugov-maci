@@ -295,7 +295,7 @@ export default function CommunityPage() {
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-            <ProposalsList communityId={dc.id} connected={!!address} />
+            <ProposalsList communityId={dc.id} connected={!!address} walletAddress={address} />
           </div>
 
           <ZupollSection communityId={dc.id} connected={!!address} />

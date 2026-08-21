@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, MapPin, MoreVertical, Pencil, Ban, Copy, Mic, Wrench, PartyPopper, Users, Calendar } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
 import type { Event, EventKind } from "@/src/services/eventApi";
-import * as membershipApi from "@/src/services/membershipApi";
+import { useIsCommunityAdmin, useHasTierPermission } from "@/src/hooks/useMembershipPermission";
 import { CreateEventModal } from "./CreateEventModal";
 
 interface EventsSectionProps {
@@ -41,24 +41,6 @@ function formatTimeRange(startAt: number, endAt: number): string {
 
 function dateGroupKey(unixSec: number): string {
   return new Date(unixSec * 1000).toDateString();
-}
-
-/** Creator OR community-admin (canManageMembership) — the same authorization shape the backend
- * enforces server-side; this is a display-only approximation so the right UI shows up, not a
- * security boundary (the backend re-checks on every mutating request). */
-function useIsCommunityAdmin(communityId: string, connected: boolean): boolean {
-  const { data: status } = useQuery({
-    queryKey: ["membershipStatus", communityId],
-    queryFn: () => membershipApi.getMembershipStatus(communityId),
-    enabled: connected,
-  });
-  const { data: tiers } = useQuery({
-    queryKey: ["tiers", communityId],
-    queryFn: () => membershipApi.getTiers(communityId),
-    enabled: connected,
-  });
-  if (!status || status.status !== "member" || !tiers) return false;
-  return tiers.find((t) => t.label === status.tierLabel)?.canManageMembership ?? false;
 }
 
 function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; eventId: string; onDone: () => void }) {
@@ -302,6 +284,7 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
   const isCommunityAdmin = useIsCommunityAdmin(communityId, connected);
+  const canCreateEvents = useHasTierPermission(communityId, connected, "canCreateEvents");
 
   const { data, isLoading } = useQuery({
     queryKey: ["events", communityId],
@@ -330,7 +313,7 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">Events</h2>
-        {connected && (
+        {canCreateEvents && (
           <button
             onClick={() => setShowCreateModal(true)}
             className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover"
@@ -351,7 +334,7 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
       {!isLoading && events.length === 0 && (
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-6 text-center">
           <p className="text-sm text-gray-400">No upcoming events yet.</p>
-          {connected && (
+          {canCreateEvents && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="mt-3 text-sm font-medium text-accent-hover hover:underline"
