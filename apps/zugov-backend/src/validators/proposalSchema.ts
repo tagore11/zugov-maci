@@ -53,3 +53,22 @@ export const directConfirmBodySchema = directAuthorizeBodySchema.extend({
 });
 
 export type DirectConfirmBody = z.infer<typeof directConfirmBodySchema>;
+
+// specs/013-zupoll-decision-adapter — deliberately its own schema, not an extension of
+// createDraftBodySchema: Zupoll proposals have no privacy/executionLocation/votingProtocolType
+// choice (always "privacy_preserving"/"offchain"/"simple", set server-side, see
+// proposalService.createZupollProposal) and no description field (FR-002 is question + options
+// + expiry only).
+export const zupollCreateBodySchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    options: z.array(z.string().trim().min(1)).min(2),
+    eligibleTierIds: z.array(z.string()).nonempty(),
+    pollEndDate: z.number().int().positive(),
+  })
+  .refine((body) => new Set(body.options.map((option) => option.toLowerCase())).size === body.options.length, {
+    message: "Options must be distinct",
+    path: ["options"],
+  });
+
+export type ZupollCreateBody = z.infer<typeof zupollCreateBodySchema>;
