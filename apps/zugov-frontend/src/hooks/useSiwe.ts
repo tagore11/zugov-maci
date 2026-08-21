@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount } from "wagmi";
 import { useSignMessage } from "wagmi";
 import { createSiweMessage } from "viem/siwe";
@@ -96,6 +96,32 @@ export function useSiwe() {
       setAuthAddress(null);
     }
   }, []);
+
+  // Auto-trigger SIWE right after the wallet connects (2026-08-21) — a connected wallet with no
+  // SIWE session yet used to require a SEPARATE, manual "Sign in with Ethereum" click on every
+  // write action (create-community wizard, register page, edit page), which reads to an
+  // already-Privy-authenticated user as being asked to sign in twice. Fires once per
+  // newly-connected address, not on every isAuthenticated flip — critically, NOT after signOut()
+  // while the wallet stays on the same address (e.g. withAuthRetry's AuthError handling mid-flow):
+  // that case must stay a visible, user-initiated re-auth, not a silent surprise wallet popup
+  // (2026-08-19 SIWE re-auth fix, commit 06c3f988 — auto-firing unconditionally here would
+  // reintroduce exactly the bug that fix resolved). The ref is marked for `address` as soon as
+  // it's ever seen authenticated (not only when signIn() is actually called) — otherwise an
+  // address that started already-authenticated (restored from sessionStorage on mount) would
+  // have never claimed the ref, and a later signOut() on that same address would fall through
+  // and auto-fire a fresh signIn() exactly like the bug this is meant to prevent.
+  const autoSignInAttemptedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    if (isAuthenticated) {
+      autoSignInAttemptedFor.current = address;
+      return;
+    }
+    if (!chainId || isSigning) return;
+    if (autoSignInAttemptedFor.current === address) return;
+    autoSignInAttemptedFor.current = address;
+    void signIn();
+  }, [address, chainId, isAuthenticated, isSigning, signIn]);
 
   return { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
 }
