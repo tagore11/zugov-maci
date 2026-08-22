@@ -63,7 +63,7 @@ export const communities = pgTable("communities", {
   // column existed have no value, and the explorer's "All" filter still includes them. Unrelated
   // to governance — never conflate with governanceType/subgraphStatus (see the landing page's
   // governance badge).
-  category: text("category").$type<"residency" | "pop_up_city" | "regional" | "network_state" | "social">(),
+  category: text("category").$type<"residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao">(),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
   directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
   createdAt: integer("created_at").notNull(),

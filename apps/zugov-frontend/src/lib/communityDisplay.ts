@@ -7,6 +7,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   regional: "Regional",
   network_state: "Network State",
   social: "Social",
+  dao: "DAO",
 };
 
 /** The creator-selected community type label, or "" if none is set. Independent of governance

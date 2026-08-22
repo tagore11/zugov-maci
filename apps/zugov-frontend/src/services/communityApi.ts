@@ -3,7 +3,7 @@ import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-export type CommunityCategory = "residency" | "pop_up_city" | "regional" | "network_state" | "social";
+export type CommunityCategory = "residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao";
 
 // Flat merged shape (Architecture Issue 3) — identity fields are always present; governance
 // fields are null until governanceConfigured is true. A community's identity can exist before

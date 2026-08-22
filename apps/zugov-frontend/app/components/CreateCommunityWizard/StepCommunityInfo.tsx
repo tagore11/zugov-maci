@@ -9,6 +9,7 @@ const CATEGORY_OPTIONS: { value: CommunityCategory; label: string }[] = [
   { value: "network_state", label: "Network State" },
   { value: "social", label: "Social" },
   { value: "regional", label: "Regional" },
+  { value: "dao", label: "DAO" },
 ];
 
 interface Props {
