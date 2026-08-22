@@ -1,6 +1,5 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useAccount } from "wagmi";
-import { useSignMessage } from "wagmi";
+import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
+import { useAccount, useSignMessage } from "wagmi";
 import { createSiweMessage } from "viem/siwe";
 import { usePrivy } from "@privy-io/react-auth";
 
@@ -21,7 +20,28 @@ function readStoredAuth(): AuthState | null {
   }
 }
 
-export function useSiwe() {
+export interface SiweContextValue {
+  isAuthenticated: boolean;
+  address: string | null;
+  isSigning: boolean;
+  error: string | null;
+  signIn: () => Promise<void>;
+  signOut: () => Promise<void>;
+}
+
+const SiweContext = createContext<SiweContextValue | null>(null);
+
+// /plan-eng-review (2026-08-23) — a Context provider, not a module-level singleton store. Every
+// `useSiwe()` call site (up to 6 today: PrivyConnectButton, the create-community wizard,
+// SiweGate's own fallback, the register/edit pages, JoinSection) used to mount an INDEPENDENT
+// instance of this state and its own copy of the auto-sign-in/invalidation effect below — a
+// confirmed, live race: a fresh wallet connecting could trigger 2-3 simultaneous auto-sign-in
+// attempts, with a later /api/auth/nonce call overwriting an earlier one's nonce before its
+// signIn() finished. A Context provider makes "exactly one instance" true by construction (one
+// component, mounted once in app/providers.tsx) instead of relying on shared mutable state plus
+// a hand-written re-entrancy guard — the outside-voice pass on the eng review caught that the
+// originally-planned module-level-singleton approach hadn't actually specified that guard.
+export function SiweProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => readStoredAuth() !== null);
   const [authAddress, setAuthAddress] = useState<string | null>(() => readStoredAuth()?.address ?? null);
   const [isSigning, setIsSigning] = useState(false);
@@ -150,5 +170,15 @@ export function useSiwe() {
     void signIn();
   }, [address, chainId, isAuthenticated, isSigning, privyAuthenticated, signIn, signOut]);
 
-  return { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
+  const value: SiweContextValue = { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
+
+  return <SiweContext.Provider value={value}>{children}</SiweContext.Provider>;
+}
+
+export function useSiwe(): SiweContextValue {
+  const ctx = useContext(SiweContext);
+  if (!ctx) {
+    throw new Error("useSiwe must be used within a SiweProvider");
+  }
+  return ctx;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
-import { useSiwe } from "./useSiwe";
+import { renderHook, render, act, waitFor } from "@testing-library/react";
+import { useSiwe, SiweProvider } from "./useSiwe";
 
 const EMBEDDED_WALLET_ADDRESS = "0x1111111111111111111111111111111111111111";
 const EXTERNAL_WALLET_ADDRESS = "0x2222222222222222222222222222222222222222";
@@ -37,6 +37,12 @@ function mockFetchSequence(responses: Array<{ ok: boolean; json: () => unknown }
   return fetchMock;
 }
 
+// /plan-eng-review (2026-08-23) — useSiwe() now requires a SiweProvider ancestor (Context, not a
+// standalone per-instance hook). Every renderHook() call below wraps in it.
+function renderUseSiwe() {
+  return renderHook(() => useSiwe(), { wrapper: SiweProvider });
+}
+
 beforeEach(() => {
   sessionStorage.clear();
   mockUseAccount.mockReset();
@@ -51,6 +57,14 @@ afterEach(() => {
 });
 
 describe("useSiwe", () => {
+  it("throws a clear error if called outside a SiweProvider", () => {
+    mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
+    // Suppress React's expected "error boundary" console noise for this one intentional throw.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(() => renderHook(() => useSiwe())).toThrow("useSiwe must be used within a SiweProvider");
+    spy.mockRestore();
+  });
+
   // Create-community wizard fix (2026-08-21) — an already-connected wallet with no SIWE session
   // yet now signs in automatically, without the caller ever calling signIn() itself. This used to
   // require a separate manual click that read to an already-Privy-authenticated user as being
@@ -63,7 +77,7 @@ describe("useSiwe", () => {
       { ok: true, json: () => ({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }) },
     ]);
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
     expect(result.current.isAuthenticated).toBe(false);
 
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
@@ -80,7 +94,7 @@ describe("useSiwe", () => {
       { ok: true, json: () => ({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 }) },
     ]);
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
 
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     expect(result.current.address).toBe(EXTERNAL_WALLET_ADDRESS);
@@ -90,7 +104,7 @@ describe("useSiwe", () => {
     mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Network request failed")));
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
 
     await waitFor(() => expect(result.current.isSigning).toBe(false));
     expect(result.current.isAuthenticated).toBe(false);
@@ -102,7 +116,7 @@ describe("useSiwe", () => {
     mockFetchSequence([{ ok: true, json: () => ({ nonce: "abc123" }) }]);
     mockSignMessageAsync.mockRejectedValue(new Error("User rejected the request"));
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
 
     await waitFor(() => expect(result.current.isSigning).toBe(false));
     expect(result.current.isAuthenticated).toBe(false);
@@ -114,7 +128,7 @@ describe("useSiwe", () => {
     vi.stubGlobal("fetch", fetchMock);
     mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
 
-    renderHook(() => useSiwe());
+    renderUseSiwe();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -124,7 +138,7 @@ describe("useSiwe", () => {
   it("reports 'Wallet not connected' if signIn is called manually before any wallet is connected", async () => {
     mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
 
     await act(async () => {
       await result.current.signIn();
@@ -139,7 +153,7 @@ describe("useSiwe", () => {
     sessionStorage.setItem("siwe_auth", JSON.stringify({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }));
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("logout endpoint down")));
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
     expect(result.current.isAuthenticated).toBe(true);
 
     await act(async () => {
@@ -154,14 +168,14 @@ describe("useSiwe", () => {
   // Critical regression test (2026-08-19 SIWE re-auth fix, commit 06c3f988): a session invalidated
   // mid-flow by withAuthRetry's AuthError handling (signOut(), wallet stays on the same address)
   // must surface as a VISIBLE sign-in gate the user re-triggers themselves, never a silent,
-  // unprompted wallet popup. The new auto-sign-in effect must not treat this signOut() as "a fresh
+  // unprompted wallet popup. The auto-sign-in effect must not treat this signOut() as "a fresh
   // address that hasn't tried yet" and re-fire signIn() on its own.
   it("does not auto-retry signIn after signOut() invalidates a session while the wallet stays on the same address", async () => {
     mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
     sessionStorage.setItem("siwe_auth", JSON.stringify({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }));
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => ({}) }));
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
     expect(result.current.isAuthenticated).toBe(true);
 
     // No auto-sign-in should have fired for an address that started out already authenticated.
@@ -191,7 +205,7 @@ describe("useSiwe", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result, rerender } = renderHook(() => useSiwe());
+    const { result, rerender } = renderUseSiwe();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -221,7 +235,7 @@ describe("useSiwe", () => {
     const logoutFetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({}) });
     vi.stubGlobal("fetch", logoutFetch);
 
-    const { result, rerender } = renderHook(() => useSiwe());
+    const { result, rerender } = renderUseSiwe();
     expect(result.current.isAuthenticated).toBe(true);
 
     mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
@@ -255,7 +269,7 @@ describe("useSiwe", () => {
       { ok: true, json: () => ({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 }) },
     ]);
 
-    const { result, rerender } = renderHook(() => useSiwe());
+    const { result, rerender } = renderUseSiwe();
     expect(result.current.isAuthenticated).toBe(true);
 
     mockUseAccount.mockReturnValue({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 });
@@ -275,10 +289,48 @@ describe("useSiwe", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
-    const { result } = renderHook(() => useSiwe());
+    const { result } = renderUseSiwe();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(result.current.isAuthenticated).toBe(true);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // Critical regression test (/plan-eng-review, 2026-08-23) — THE bug this pass exists to fix.
+  // Before the Context switch, every useSiwe() call site mounted its own independent state and
+  // auto-sign-in effect: PrivyConnectButton (global Header), a direct caller, and a SiweGate all
+  // live simultaneously on the wizard page. A fresh, unauthenticated wallet connecting fired
+  // multiple auto-sign-in attempts at once, with a later /api/auth/nonce call overwriting an
+  // earlier one's nonce before its signIn() finished — one attempt failing with an unrequested
+  // nonce-mismatch error. With one SiweProvider, there is only ever one effect, so this is
+  // structurally impossible, not just unlikely.
+  it("fires exactly one auto-sign-in attempt even with 3 simultaneous useSiwe() consumers under one provider", async () => {
+    mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
+    mockSignMessageAsync.mockResolvedValue("0xsignature");
+    const fetchMock = mockFetchSequence([
+      { ok: true, json: () => ({ nonce: "shared-nonce" }) },
+      { ok: true, json: () => ({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }) },
+    ]);
+
+    function ThreeConsumers() {
+      // Stand-ins for PrivyConnectButton (global Header), a direct wizard-style caller, and
+      // SiweGate — the exact topology confirmed in this repo's real component tree.
+      useSiwe();
+      useSiwe();
+      useSiwe();
+      return null;
+    }
+
+    render(
+      <SiweProvider>
+        <ThreeConsumers />
+      </SiweProvider>,
+    );
+
+    await waitFor(() => expect(mockSignMessageAsync).toHaveBeenCalledTimes(1));
+    // Only the nonce + verify calls should have fired — never a third /nonce call from a second
+    // racing attempt.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/auth/nonce");
   });
 });
