@@ -537,6 +537,54 @@ front of Zukas 2026 dogfooders)
 **Depends on:** A decision between fix direction A vs. B — needs its own scoping
 pass, not a blind pick
 
+## ZuGov / Schema timestamp columns are Y2038-limited (found 2026-08-23 investigating event dates)
+
+### Every `*At` timestamp column is a 32-bit Postgres `integer` — overflows in January 2038
+
+**What:** While root-causing "event creation accepts garbage dates" (fixed: added a 5-year
+sane-future bound to `createEventSchema`/`updateEventSchema` in
+`apps/zugov-backend/src/routes/events.ts`), the regression test for the fix revealed the
+_real_ failure mode underneath: before the bound existed, submitting a startAt corresponding
+to year ~2126 didn't just get silently accepted — it crashed with a raw, unhandled 500 at
+the DB layer. `apps/zugov-backend/src/db/schema.ts`'s `events.startAt`/`endAt`
+(`integer("start_at")`) are Postgres 4-byte `integer` columns, max value 2,147,483,647 —
+which corresponds to **2038-01-19T03:14:07Z**, the classic Unix Y2038 problem. Every other
+timestamp column in the schema (`createdAt`, `joinedAt`, `expiresAt`, `sponsoredAt`,
+`rsvpedAt`, `respondedAt`, and ~20 more — grep `integer(".*[Aa]t")` in schema.ts) uses the
+same `integer` type; only `events.startAt`/`endAt` are user-controllable far enough into the
+future to trigger it _today_ (everything else gets stamped with `Date.now()` at write time,
+so it won't overflow until 2038 actually arrives — at which point every one of those columns
+breaks app-wide simultaneously, not just events).
+
+**Why:** The 5-year bound just added keeps `events.startAt`/`endAt` safely under the 2038
+ceiling for the next several years (2026 + 5 = 2031), so this isn't an active production
+outage — but it's a deliberate stopgap sitting on top of a real landmine, not a fix for it.
+Two things make it worse than "years away, not urgent": (1) `duplicateEventSchema`
+(`routes/events.ts`) has an unbounded `intervalDays` (`z.number().int().min(1)`, no max) —
+`eventService.duplicate()` computes `source.startAt + intervalDays * 86400 * i` directly,
+bypassing `createEventSchema`'s bound entirely, so a large `intervalDays` can still overflow
+the column today, right now, via a second code path the events fix didn't touch. (2) A raw
+500 (not a clean 4xx) on integer overflow means the failure mode is an unhandled exception,
+not a validated rejection — the same shape of bug could resurface anywhere else a
+user-controlled offset gets added to a stored timestamp.
+
+**Fix direction (not scoped/decided):** Migrating all ~30 timestamp columns from `integer`
+to `bigint` (or Postgres `timestamptz`, arguably the more correct type) is a real schema
+migration — data migration for every existing row, Drizzle schema changes across every table,
+and auditing every service that reads/writes these columns for narrowing assumptions. This is
+architecture-review territory (`/plan-eng-review`), not a quick patch, and shouldn't be scoped
+under time pressure. In the meantime, `duplicateEventSchema`'s `intervalDays` should get the
+same kind of sane-bound treatment `createEventSchema` just got (small, targeted fix, unlike
+the full migration).
+
+**Effort:** S (bounding `intervalDays`, matching this session's events fix) now available as
+a quick follow-up; L-XL (full `integer` → `bigint`/`timestamptz` migration across the schema)
+for the real fix
+**Priority:** P2 (not urgent — 2038 is ~12 years out and the immediate reported bug is fixed
+— but a real ticking liability, and the `duplicateEventSchema` gap is exploitable today)
+**Depends on:** None for the `intervalDays` bound; the full migration needs its own
+`/plan-eng-review` given the blast radius across every table
+
 ## Repo Infrastructure
 
 ### Manually fund each resident's embedded wallet with Sepolia test ETH

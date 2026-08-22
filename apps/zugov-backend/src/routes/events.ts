@@ -7,6 +7,14 @@ import { isAuthorized, hasTierPermission } from "../services/membershipService.j
 
 const EVENT_KIND = z.enum(["talk", "workshop", "social", "meeting", "other"]);
 
+// A datetime-local input's year segment has no format constraint — a stray keystroke (or a typo
+// like "83333" instead of "2033") sails through as a huge-but-otherwise-valid Unix timestamp:
+// "endAt must be after startAt" and "startAt must be in the future" both still hold trivially,
+// so nothing caught it before this bound (2026-08-23 /investigate). 5 years is a generous ceiling
+// for real community event planning while catching any garbage year.
+const MAX_EVENT_YEARS_OUT = 5;
+const maxEventTimestamp = () => Math.floor(Date.now() / 1000) + MAX_EVENT_YEARS_OUT * 365 * 24 * 60 * 60;
+
 // venueId/locationText: exactly one, enforced here (2026-08-19 review, A3) — not a DB
 // constraint. endAt must be after startAt (2026-08-19 review, T1 validation-edges finding).
 // startAt must be in the future (specs/010 US3, FR-009) — a past start date is confusing to
@@ -25,7 +33,11 @@ const createEventSchema = z
     message: "Provide exactly one of venueId or locationText",
   })
   .refine((data) => data.endAt > data.startAt, { message: "endAt must be after startAt" })
-  .refine((data) => data.startAt > Math.floor(Date.now() / 1000), { message: "startAt must be in the future" });
+  .refine((data) => data.startAt > Math.floor(Date.now() / 1000), { message: "startAt must be in the future" })
+  .refine((data) => data.startAt < maxEventTimestamp(), {
+    message: `startAt must be within ${MAX_EVENT_YEARS_OUT} years`,
+  })
+  .refine((data) => data.endAt < maxEventTimestamp(), { message: `endAt must be within ${MAX_EVENT_YEARS_OUT} years` });
 
 const updateEventSchema = z
   .object({
@@ -42,11 +54,18 @@ const updateEventSchema = z
   })
   .refine((data) => data.startAt === undefined || data.endAt === undefined || data.endAt > data.startAt, {
     message: "endAt must be after startAt",
+  })
+  .refine((data) => data.startAt === undefined || data.startAt < maxEventTimestamp(), {
+    message: `startAt must be within ${MAX_EVENT_YEARS_OUT} years`,
+  })
+  .refine((data) => data.endAt === undefined || data.endAt < maxEventTimestamp(), {
+    message: `endAt must be within ${MAX_EVENT_YEARS_OUT} years`,
   });
 // No startAt-in-future check here (unlike createEventSchema): the edit modal always resends the
 // event's existing startAt on every PATCH, including edits to already-past events (e.g. fixing a
 // typo in a concluded event's title) — enforcing it here would break legitimate edits. FR-009's
-// actual bug report is about *creating* events in the past, not editing them.
+// actual bug report is about *creating* events in the past, not editing them. The max-year bound
+// DOES apply to edits too — there's no legitimate reason to move an event's date to year 83333.
 
 const duplicateEventSchema = z.object({
   count: z.number().int().min(1).max(52),
