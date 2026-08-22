@@ -475,6 +475,68 @@ unknown (if there's a real reason proposals need to stay gated, worth documentin
 **Priority:** P3
 **Depends on:** A product decision on whether proposal content should be public
 
+## ZuGov / Member count consistency (found 2026-08-23 dogfooding)
+
+### Communities show an incorrect/inconsistent member count
+
+**What:** "Member count" is not one number in this codebase — it's at least 4 different
+counters from 2 unrelated data sources, with nothing reconciling them:
+
+1. What's actually displayed everywhere (community page, home page, manage-communities
+   page) is `fetchMembers()` (`apps/zugov-frontend/src/services/subgraph.ts:120-127`),
+   which queries the **on-chain MACI subgraph's `totalSignups`** — only wallets that
+   completed the on-chain MACI signup transaction.
+2. The Postgres `memberships` table (`apps/zugov-backend/src/db/schema.ts:205-214`) has
+   no `status` column — every row counts. Exposed only via `GET /:id/members`
+   (`membershipService.listMembers`), used solely for an election candidate picker,
+   never rendered as a count anywhere.
+3. A hardcoded `0` (`apps/zugov-frontend/src/lib/communityDisplay.ts:49`,
+   `communityToItem`) shown before the subgraph query resolves, or for governance types
+   the subgraph doesn't support.
+4. `joinRequests` filtered to `status = "pending"` powers the "Pending Join Requests"
+   count on `manage-communities/[id]/members/page.tsx` — easy to mistake for a member
+   count (the page is literally named ".../members") but it's a request queue, not a
+   roster; approved/rejected requests are invisible there.
+
+The concrete divergence a user sees: `communityService.createIdentity`
+(`apps/zugov-backend/src/services/communityService.ts:363-368`) always inserts the
+creator into `memberships` at community-creation time, but the creator is never
+auto-registered on-chain — so a brand-new community shows "0 members" (the on-chain
+count everyone sees) even though the creator already "has membership" in the DB. Same
+gap for anyone whose join request is approved (`approveRequest`,
+`membershipService.ts:375-403`, DB-only) but who never separately completes
+`JoinSection`'s on-chain MACI signup step — approved in the backend, invisible in the
+number everyone else sees.
+
+**Why:** Reported live during 2026-08-23 dogfooding. Root-caused via `/investigate` —
+not a regression, this reflects the same identity/governance split already documented
+in `ENGINEERING.md` ("on-chain state index is ground truth, the backend membership row
+is secondary bookkeeping" — see also `JoinSection.tsx`'s own comments) — but nobody has
+reconciled the _displayed count_ the two sides produce. A field-name collision makes it
+worse: `unionService.listAll`'s `memberCount` (active `unionMemberships` rows) counts
+**communities in a union**, not wallets in a community, yet unions and communities
+render under the identical UI field `members` on the merged discovery/home page
+(`communityDisplay.ts`'s `communityToItem`/`unionToItem`).
+
+**Fix direction (not yet decided):** Two real options, deliberately not chosen yet:
+(A) show the DB `memberships` count everywhere instead of on-chain `totalSignups` —
+matches what "member" means everywhere else in the app (join requests, tiers,
+permissions), shows a number immediately at creation; needs a new backend COUNT
+endpoint plus swapping ~4 frontend call sites off `fetchMembers` for display purposes
+(on-chain signup count likely still matters for voting-eligibility contexts,
+just not as "member count"). (B) keep on-chain count as displayed, but auto-trigger
+MACI signup whenever a DB membership is created — bigger change, adds a blockchain
+transaction to the creation/approval flow, and doesn't fully close the gap for
+communities without governance configured yet (identity can predate governance,
+per `ENGINEERING.md`).
+
+**Effort:** M (new backend query + ~4 frontend call-site swaps for option A; a
+deploy-flow change touching creation/approval for option B)
+**Priority:** P1 (a visibly wrong number on every community-facing page, live in
+front of Zukas 2026 dogfooders)
+**Depends on:** A decision between fix direction A vs. B — needs its own scoping
+pass, not a blind pick
+
 ## Repo Infrastructure
 
 ### Manually fund each resident's embedded wallet with Sepolia test ETH
