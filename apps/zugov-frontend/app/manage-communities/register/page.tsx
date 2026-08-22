@@ -295,7 +295,7 @@ export default function RegisterCommunityPage() {
                   </div>
                 )}
 
-                <SiweGate message="Sign in with Ethereum to submit registration" siwe={siwe}>
+                <SiweGate message="Sign in with Ethereum to submit registration">
                   <button
                     type="submit"
                     disabled={isSubmitting}

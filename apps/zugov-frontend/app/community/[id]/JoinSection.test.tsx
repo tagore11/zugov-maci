@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { JoinSection } from "./JoinSection";
+import * as membershipApi from "@/src/services/membershipApi";
 
 const joinMock = vi.fn();
 const getMembershipStatusMock = vi.fn();
@@ -101,9 +102,11 @@ describe("JoinSection", () => {
     expect(joinMock).toHaveBeenCalledWith("0xabc");
   });
 
-  it("still succeeds if the backend join fails after a successful on-chain signup", async () => {
+  it("still succeeds cleanly, with no error shown, when the backend join fails with 'already a member' after a successful on-chain signup", async () => {
     signupToMaciMock.mockResolvedValue(undefined);
-    joinMock.mockRejectedValue(new Error("Already a member or already have a pending request for this community"));
+    joinMock.mockRejectedValue(
+      new membershipApi.DuplicateJoinError("Already a member or already have a pending request for this community"),
+    );
     renderWithProviders(
       <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
     );
@@ -111,6 +114,27 @@ describe("JoinSection", () => {
     fireEvent.click(screen.getByText("Join"));
 
     await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
+    expect(
+      screen.queryByText("Already a member or already have a pending request for this community"),
+    ).not.toBeInTheDocument();
+  });
+
+  // /plan-eng-review (2026-08-23) — the actual reported gap: this catch used to swallow EVERY
+  // error unconditionally, including a 401 from an expired/missing session. On-chain signup
+  // succeeds independently of backend bookkeeping, so a user could see "Signed up" with zero
+  // indication their membership row was never created. Only "already a member" is legitimately
+  // silent; everything else — including auth failures — must surface.
+  it("surfaces a non-duplicate backend join error (e.g. an expired session) alongside the on-chain success, not silently", async () => {
+    signupToMaciMock.mockResolvedValue(undefined);
+    joinMock.mockRejectedValue(new Error("Authentication required"));
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
+    expect(screen.getByText("Authentication required")).toBeInTheDocument();
   });
 
   it("shows the joined state (not an enabled Join button) when already registered on-chain, e.g. after a remount", async () => {

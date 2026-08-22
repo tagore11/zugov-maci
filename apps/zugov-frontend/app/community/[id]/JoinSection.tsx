@@ -6,7 +6,6 @@ import { useSignup } from "@/src/hooks/useSignup";
 import { useMaci } from "@/src/context/MaciContext";
 import { GovernanceTypes } from "@/src/config";
 import { MACI__factory } from "@/src/poll-factory-shim";
-import { useSiwe } from "@/src/hooks/useSiwe";
 import { SiweGate } from "@/app/components/SiweGate";
 
 export function JoinSection({
@@ -30,7 +29,6 @@ export function JoinSection({
   // no way to recover: the SIWE session only ever existed if the user happened to pass through
   // the create-community wizard's SiweGate first. Wrapping the join action in the same SiweGate
   // every other write action already uses fixes the dead-end.
-  const siwe = useSiwe();
   const { maciKeypair } = useMaci();
   const { isSigningUp, signupToMaci } = useSignup(GovernanceTypes.MACI);
   const [justJoined, setJustJoined] = useState(false);
@@ -73,12 +71,18 @@ export function JoinSection({
     }
 
     // The on-chain signup above is what actually makes this wallet a MACI voter — the backend
-    // membership row is secondary bookkeeping (tiers/permissions), so a failure here (including
-    // "already a member", e.g. the community creator was auto-enrolled) shouldn't block success.
+    // membership row is secondary bookkeeping (tiers/permissions), so "already a member" (e.g.
+    // the community creator was auto-enrolled) shouldn't block success. /plan-eng-review
+    // (2026-08-23) — this used to swallow EVERY error unconditionally, including a 401: an
+    // unauthenticated user could complete on-chain signup, see "Signed up," and silently never
+    // get a backend membership row (no tier, invisible to member lists), with zero indication
+    // anything went wrong. Only the specific, actually-benign case is swallowed now.
     try {
       await membershipApi.join(communityId);
-    } catch {
-      // best-effort
+    } catch (err) {
+      if (!(err instanceof membershipApi.DuplicateJoinError)) {
+        setError(err instanceof Error ? err.message : "Failed to record community membership");
+      }
     }
 
     setJustJoined(true);
@@ -124,7 +128,7 @@ export function JoinSection({
         ) : membership?.status === "pending" ? (
           <p className="text-xs text-gray-500">Membership request pending admin review.</p>
         ) : (
-          <SiweGate message="Sign in to join this community" siwe={siwe}>
+          <SiweGate message="Sign in to join this community">
             <button
               onClick={() => void handleJoinBackendOnly()}
               disabled={isJoiningBackendOnly}
@@ -144,14 +148,20 @@ export function JoinSection({
   // survives remounts (e.g. navigating away and back to the community card).
   if (justJoined || isRegisteredOnChain) {
     return (
-      <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
-        Signed up — you&apos;re now registered to vote in this community&apos;s MACI state tree.
-        {membership?.tierLabel && (
-          <>
-            {" "}
-            Your role: <span className="font-semibold">{membership.tierLabel}</span>.
-          </>
-        )}
+      <div className="space-y-2">
+        <div className="rounded-lg border border-green-700 bg-green-900/20 p-3 text-sm text-green-300">
+          Signed up — you&apos;re now registered to vote in this community&apos;s MACI state tree.
+          {membership?.tierLabel && (
+            <>
+              {" "}
+              Your role: <span className="font-semibold">{membership.tierLabel}</span>.
+            </>
+          )}
+        </div>
+        {/* On-chain signup succeeded independently of backend membership bookkeeping — a
+            failure recording membership (e.g. an expired session) surfaces here rather than
+            being silently swallowed alongside a true success. */}
+        {error && <p className="text-xs text-red-400">{error}</p>}
       </div>
     );
   }

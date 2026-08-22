@@ -58,7 +58,7 @@ function DeployGovernanceSection({ communityId, config }: { communityId: string;
   }
 
   return (
-    <SiweGate message="Sign in to deploy governance for this community" siwe={siwe}>
+    <SiweGate message="Sign in to deploy governance for this community">
       <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-4">
         {subStep === "network_check" && (
           <StepNetworkCheck deploy={deploy} goBack={() => setSubStep("idle")} goToReview={() => setSubStep("review")} />

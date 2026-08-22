@@ -4,6 +4,7 @@ import { sepolia } from "wagmi/chains";
 import { PrivyProvider } from "@privy-io/react-auth";
 import { useState, type ReactNode } from "react";
 import { CHAINS, wagmiConfig } from "@/src/services/wagmiConfig";
+import { SiweProvider } from "@/src/hooks/useSiwe";
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID as string | undefined;
 
@@ -47,7 +48,13 @@ export function Providers({ children }: { children: ReactNode }) {
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>{children}</WagmiProvider>
+        <WagmiProvider config={wagmiConfig}>
+          {/* /plan-eng-review (2026-08-23) — one SiweProvider instance for the whole app,
+              closing the concurrent-auto-sign-in race by construction (every useSiwe() call
+              site used to mount its own independent effect; a fresh wallet connecting could
+              trigger 2-3 simultaneous auto-sign-in attempts racing each other). */}
+          <SiweProvider>{children}</SiweProvider>
+        </WagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
   );

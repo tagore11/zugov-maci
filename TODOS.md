@@ -322,6 +322,130 @@
 **Priority:** P3
 **Depends on:** Communities/sub-communities nesting (done, 2026-08-18)
 
+## ZuGov / Auth architecture follow-ups (from 2026-08-22 `/office-hours` + `/plan-eng-review`)
+
+### Roll out shared 401-detect wrapper to all authenticated write call sites
+
+**What:** The `useSiwe` singleton-store fix (this pass) solves the confirmed
+concurrent-instance race condition, but the systemic 401 gap stays open: the
+`AuthError`/re-auth-gate pattern exists for only 8 of roughly 40 authenticated write
+calls (`communityApi.ts`'s writes). Every other write (membership tiers/join/approve/
+reject, all proposal actions, all event/venue writes, eligibility ruleset writes,
+credential verification) has no way to detect a 401 specifically and no automatic path
+back to a visible sign-in prompt. Split out of this pass at the Step 0 complexity gate
+— the full rollout touches at least 19 files.
+
+**Why:** Design doc (`isasertkaya-community-creation-wizard-fix-design-20260822-232030.md`)
+locked Approach A (singleton store + opt-in wrapper) with two independently composable
+helpers: a pure auth-detect-and-signOut wrapper (this TODO — every call site opts in)
+and the existing retry-on-transient-failure behavior (stays scoped to the 3 already-
+audited call sites: `registerIdentity`, `attachGovernance`, `update` — do NOT
+generalize retry semantics to unaudited endpoints; adversarial review during design
+flagged that blind retry on non-idempotent writes like `proposalApi`'s sponsor/
+formalize/tally-trigger or `eventApi`'s RSVP risks a duplicate side effect from a
+transient network blip).
+
+**Known landmine (adversarial review, iteration 2):** some call sites already swallow
+all errors unconditionally by design — confirmed at `JoinSection.tsx`'s on-chain
+`handleJoin`, which wraps `membershipApi.join()` in `catch { /* best-effort */ }`,
+silently discarding a 401 with `justJoined` still set `true` afterward (on-chain signup
+succeeds, backend membership row silently never created). Wrapping these with the new
+auth-detect helper does nothing unless the existing catch is also removed/narrowed
+first. Enumerate which of the ~40 call sites have this property before treating the
+rollout as uniformly mechanical.
+
+**Effort:** L (mechanical per-call-site, but ~19 files with a per-file idempotency/
+catch-and-discard audit required, not a blind find-replace)
+**Priority:** P1 (same root cause already produced 6 live bugs found in one session
+during pre-Zukas-2026 dogfooding)
+**Depends on:** The `useSiwe` singleton-store fix (this pass) landing first — the
+shared session state the auth-detect wrapper calls into must exist and be race-free
+before wrapping write call sites around it is meaningful.
+
+### Per-community configurable visibility policy (public vs. members-only)
+
+**What:** Let each community choose what non-members can see — e.g. proposals/events
+visible to everyone vs. members-only — as a real, per-community setting (a new field
+on `communities`, checked at the route level per resource), not a single hardcoded
+app-wide rule. Distinct from the 3-pattern gating-mechanism inconsistency (which page
+uses SiweGate vs. wallet-only vs. no gating) — this is about what content is visible
+at all, independent of which mechanism enforces it.
+
+**Why:** Raised directly by the founder during the 2026-08-22 `/office-hours` premise
+discussion — an explicit, different frame from "unify the auth mechanism," surfaced
+mid-session and deliberately scoped out of the auth-unification wedge rather than
+folded in silently.
+
+**Effort:** M (schema field + per-resource route checks; UI for admins to set it)
+**Priority:** P2
+**Depends on:** Auth architecture unification (this pass + the 401-rollout TODO above)
+landing first — a reliable "is this user authenticated" answer needs to exist before
+building a visibility policy on top of it.
+
+### Consolidate the 3 uncoordinated auth-gating patterns across pages
+
+**What:** Today, each page invents its own rule for "does this need auth to view/act":
+`SiweGate`-wrapped (wizard, register, edit, community Join), wallet-address-only with
+no SIWE check (`manage-profile`, `manage-communities` list), or no client-side gating
+at all with misleading error copy (`manage-communities/[id]/members` shows "You don't
+have permission" for a not-signed-in-at-all visitor, no path to sign in). Needs one
+consistent rule, likely including route-level guards (`src/App.tsx` has zero today).
+
+**Why:** Found during the 2026-08-22 auth audit; explicitly deferred from the
+auth-unification wedge as a UX/consistency question distinct from the underlying
+session-state mechanism being fixed first.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** Auth architecture unification (this pass) landing first
+
+### No rate limiting on `/api/auth/nonce` / `/api/auth/verify`; nonce not cleared on failed verify
+
+**What:** Neither auth endpoint has rate limiting (confirmed: no rate-limit dependency
+anywhere in `apps/zugov-backend`'s `package.json`). A failed `/api/auth/verify` doesn't
+clear the session's nonce (only a successful verify does), so one session can throw
+unlimited verify attempts at one nonce within its 5-minute TTL.
+
+**Why:** Found during the 2026-08-22 auth audit. Not an authentication bypass (a valid
+ECDSA signature is still required), but a real defense-in-depth gap.
+
+**Effort:** S (a small rate-limit middleware; clearing the nonce on failure is a
+one-line change to the `/verify` handler's failure path)
+**Priority:** P3
+**Depends on:** None
+
+### `CORS_ORIGIN` missing env var crashes the backend at boot with a cryptic error
+
+**What:** `apps/zugov-backend/src/app.ts`'s `process.env.CORS_ORIGIN!.split(",")` uses
+a non-null assertion with no runtime guard — an unset/empty `CORS_ORIGIN` crashes the
+whole backend at module load with "Cannot read properties of undefined (reading
+'split')" instead of a clear, actionable error.
+
+**Why:** Found during the 2026-08-22 auth audit. Contrast with the frontend's
+`VITE_PRIVY_APP_ID` check, which fails loudly with setup instructions.
+
+**Effort:** S (one explicit guard + error message, matching the frontend's pattern)
+**Priority:** P3
+**Depends on:** None
+
+### Proposals are the only resource with auth-gated reads
+
+**What:** Every route in `apps/zugov-backend/src/routes/proposals.ts` requires
+`requireAuth`, including the two `GET` reads — the only resource in the backend where
+reads require authentication. Every other resource (communities, events, venues,
+eligibility rulesets, membership tiers, unions) has public `GET`s and auth-gated
+writes only.
+
+**Why:** Found during the 2026-08-22 auth audit. Unconfirmed whether this is
+deliberate (proposal contents treated as sensitive) or an accidental over-restriction
+— a logged-out visitor can browse a community's events and venues but can't view its
+proposals at all, inconsistent with the rest of the app.
+
+**Effort:** S (if a deliberate-intent confirmation says to open the reads up) to
+unknown (if there's a real reason proposals need to stay gated, worth documenting why)
+**Priority:** P3
+**Depends on:** A product decision on whether proposal content should be public
+
 ## Repo Infrastructure
 
 ### Manually fund each resident's embedded wallet with Sepolia test ETH

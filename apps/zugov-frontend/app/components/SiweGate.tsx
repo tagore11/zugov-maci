@@ -3,15 +3,15 @@ import { useSiwe } from "@/src/hooks/useSiwe";
 type Props = {
   children: React.ReactNode;
   message?: string;
-  // Share a caller-owned useSiwe() instance so a session invalidated elsewhere on the page (e.g.
-  // signOut() after a 401) is reflected here too. Without this, SiweGate's own internal instance
-  // keeps believing isAuthenticated: true and never falls back to the sign-in prompt.
-  siwe?: ReturnType<typeof useSiwe>;
 };
 
-export function SiweGate({ children, message = "Sign in with Ethereum to continue", siwe }: Props) {
-  const ownSiwe = useSiwe();
-  const { isAuthenticated, isSigning, error, signIn } = siwe ?? ownSiwe;
+// /plan-eng-review (2026-08-23) — no more `siwe` prop. useSiwe() now reads from the single
+// app-wide SiweProvider (app/providers.tsx), so every call site — including this one — already
+// gets the same shared instance for free. The prop existed only to work around each useSiwe()
+// call previously mounting its own independent state; that's the exact bug this Context switch
+// fixes structurally.
+export function SiweGate({ children, message = "Sign in with Ethereum to continue" }: Props) {
+  const { isAuthenticated, isSigning, error, signIn } = useSiwe();
 
   if (isAuthenticated) {
     return <>{children}</>;

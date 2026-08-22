@@ -60,7 +60,7 @@ export function CreateCommunityWizard({ onSubmittingChange }: Props) {
   const currentIdx = PROGRESS_STEPS.indexOf(state.step);
 
   return (
-    <SiweGate message="Sign in to register your community globally" siwe={siwe}>
+    <SiweGate message="Sign in to register your community globally">
       <div className="space-y-5">
         {/* Step progress */}
         {showProgress && (
