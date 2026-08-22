@@ -11,6 +11,14 @@ vi.mock("@privy-io/react-auth", () => ({
   usePrivy: () => usePrivyMock(),
 }));
 
+// Session-lifecycle fix (2026-08-22, part 2) — Privy's logout() doesn't reliably disconnect
+// wagmi's connector for an externally-connected wallet, so sign out must also call wagmi's
+// disconnect() directly.
+const disconnectMock = vi.fn();
+vi.mock("wagmi", () => ({
+  useDisconnect: () => ({ disconnect: disconnectMock }),
+}));
+
 // Session-lifecycle fix (2026-08-22) — Sign out must also close the backend SIWE session
 // (previously only Privy's logout() was called, leaving the httpOnly cookie valid for 24h).
 const siweSignOutMock = vi.fn();
@@ -39,6 +47,7 @@ beforeEach(() => {
   loginMock.mockReset();
   usePrivyMock.mockReset();
   siweSignOutMock.mockReset();
+  disconnectMock.mockReset();
 });
 
 describe("PrivyConnectButton", () => {
@@ -103,6 +112,29 @@ describe("PrivyConnectButton", () => {
     fireEvent.click(screen.getByText("0x1234...5678"));
     fireEvent.click(screen.getByText("Sign out"));
 
+    expect(siweSignOutMock).toHaveBeenCalled();
+    expect(logoutMock).toHaveBeenCalled();
+  });
+
+  // Session-lifecycle fix (2026-08-22, part 2) — the actual reported bug: after clicking Sign
+  // out, the header correctly flipped to "Sign in" (Privy's own state), but the community page's
+  // JoinSection kept rendering "You're a member" because it gates on wagmi's useAccount().address,
+  // which Privy's logout() alone doesn't reliably clear for an externally-connected wallet. Sign
+  // out must explicitly disconnect wagmi's connector too, not rely on Privy's own bridging.
+  it("explicitly disconnects wagmi's connector when signing out, not just Privy's own session", () => {
+    usePrivyMock.mockReturnValue({
+      ready: true,
+      authenticated: true,
+      user: { wallet: { address: "0x1234567890abcdef1234567890abcdef12345678" } },
+      login: loginMock,
+      logout: logoutMock,
+    });
+    renderWithProviders();
+
+    fireEvent.click(screen.getByText("0x1234...5678"));
+    fireEvent.click(screen.getByText("Sign out"));
+
+    expect(disconnectMock).toHaveBeenCalled();
     expect(siweSignOutMock).toHaveBeenCalled();
     expect(logoutMock).toHaveBeenCalled();
   });

@@ -11,6 +11,12 @@ vi.mock("@/src/hooks/useSiwe", () => ({
   useSiwe: () => ({ isAuthenticated: false, isSigning: false, error: null, signIn: vi.fn(), signOut: vi.fn() }),
 }));
 
+// PrivyConnectButton also calls wagmi's useDisconnect() directly (session-lifecycle fix,
+// 2026-08-22, part 2) — same WagmiProvider issue as above.
+vi.mock("wagmi", () => ({
+  useDisconnect: () => ({ disconnect: vi.fn() }),
+}));
+
 // specs/010 US9, FR-018: no fabricated cross-community proposals should ever render here.
 describe("ProposalsPage", () => {
   it("shows a real empty state instead of placeholder proposal data", () => {

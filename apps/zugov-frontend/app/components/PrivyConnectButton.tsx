@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePrivy } from "@privy-io/react-auth";
+import { useDisconnect } from "wagmi";
 import { Check, Copy, LogOut, User } from "lucide-react";
 import { useSiwe } from "@/src/hooks/useSiwe";
 
@@ -18,6 +19,15 @@ export function PrivyConnectButton() {
   // mounted at all — so sign-out itself must close the session directly, not rely on some other
   // component happening to be watching.
   const siwe = useSiwe();
+  // Session-lifecycle fix (2026-08-22, part 2) — reported after the first fix: Privy's logout()
+  // clears Privy's own session (this button correctly flips to "Sign in") but does NOT reliably
+  // disconnect the underlying wagmi connector for an externally-connected wallet (MetaMask etc.
+  // via Privy's 'wallet' login method) — wagmi's useAccount().address kept reporting the wallet
+  // as connected afterward, so every page gating on that address alone (e.g. the community page's
+  // JoinSection) kept rendering as if still signed in ("You're a member" persisting after sign
+  // out). Explicitly disconnecting wagmi's connector closes that gap regardless of Privy's own
+  // wagmi-bridging behavior for external wallets.
+  const { disconnect } = useDisconnect();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -93,6 +103,7 @@ export function PrivyConnectButton() {
                 onClick={() => {
                   setIsOpen(false);
                   void siwe.signOut();
+                  disconnect();
                   void logout();
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors"

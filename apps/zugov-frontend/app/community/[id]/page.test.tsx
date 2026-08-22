@@ -7,6 +7,8 @@ import CommunityPage from "./page";
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: undefined }),
   useChainId: () => 11155111,
+  // PrivyConnectButton calls this directly too (session-lifecycle fix, 2026-08-22, part 2).
+  useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 
 // This page renders Header -> PrivyConnectButton, which now calls useSiwe() (session-lifecycle
