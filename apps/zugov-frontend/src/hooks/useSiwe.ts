@@ -119,7 +119,26 @@ export function useSiwe() {
   // have never claimed the ref, and a later signOut() on that same address would fall through
   // and auto-fire a fresh signIn() exactly like the bug this is meant to prevent.
   const autoSignInAttemptedFor = useRef<string | null>(null);
+  // Session-lifecycle fix (2026-08-22) — nothing previously kept this session in sync with the
+  // ACTUAL connected wallet: disconnecting left isAuthenticated stuck true from stale
+  // sessionStorage (SiweGate-wrapped screens kept rendering as signed in), and switching accounts
+  // left every write silently authenticating as the OLD address's backend cookie while the UI
+  // showed the new one connected — the session and the wallet could point at two different
+  // identities with no error and no indication. `previousAddress` distinguishes "this is the
+  // very first render" (nothing to invalidate, may already be authenticated from storage) from
+  // "the connected address actually changed" (must invalidate first, THEN let auto-sign-in — via
+  // the ref reset below — pick up the new address fresh, same as a brand-new connection).
+  const previousAddress = useRef<string | undefined>(undefined);
   useEffect(() => {
+    const prevAddress = previousAddress.current;
+    previousAddress.current = address;
+
+    if (prevAddress !== undefined && prevAddress !== address && isAuthenticated) {
+      autoSignInAttemptedFor.current = null;
+      void signOut();
+      return;
+    }
+
     if (!address) return;
     if (isAuthenticated) {
       autoSignInAttemptedFor.current = address;
@@ -129,7 +148,7 @@ export function useSiwe() {
     if (autoSignInAttemptedFor.current === address) return;
     autoSignInAttemptedFor.current = address;
     void signIn();
-  }, [address, chainId, isAuthenticated, isSigning, privyAuthenticated, signIn]);
+  }, [address, chainId, isAuthenticated, isSigning, privyAuthenticated, signIn, signOut]);
 
   return { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
 }

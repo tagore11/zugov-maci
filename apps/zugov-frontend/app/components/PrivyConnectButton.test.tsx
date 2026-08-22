@@ -11,6 +11,19 @@ vi.mock("@privy-io/react-auth", () => ({
   usePrivy: () => usePrivyMock(),
 }));
 
+// Session-lifecycle fix (2026-08-22) — Sign out must also close the backend SIWE session
+// (previously only Privy's logout() was called, leaving the httpOnly cookie valid for 24h).
+const siweSignOutMock = vi.fn();
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({
+    isAuthenticated: true,
+    isSigning: false,
+    error: null,
+    signIn: vi.fn(),
+    signOut: siweSignOutMock,
+  }),
+}));
+
 Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
 
 function renderWithProviders() {
@@ -25,6 +38,7 @@ beforeEach(() => {
   logoutMock.mockReset();
   loginMock.mockReset();
   usePrivyMock.mockReset();
+  siweSignOutMock.mockReset();
 });
 
 describe("PrivyConnectButton", () => {
@@ -69,6 +83,27 @@ describe("PrivyConnectButton", () => {
 
     fireEvent.click(screen.getByText("0x1234...5678"));
     fireEvent.click(screen.getByText("Sign out"));
+    expect(logoutMock).toHaveBeenCalled();
+  });
+
+  // Session-lifecycle fix (2026-08-22) — Sign out previously disconnected only Privy's wallet,
+  // leaving the backend's SIWE session (httpOnly cookie) valid for its full 24h TTL: on a shared
+  // computer, the next person to use the browser could still act as the signed-out user. Sign out
+  // must close both sessions, not just the wallet connection.
+  it("also closes the backend SIWE session when signing out, not just the Privy wallet", () => {
+    usePrivyMock.mockReturnValue({
+      ready: true,
+      authenticated: true,
+      user: { wallet: { address: "0x1234567890abcdef1234567890abcdef12345678" } },
+      login: loginMock,
+      logout: logoutMock,
+    });
+    renderWithProviders();
+
+    fireEvent.click(screen.getByText("0x1234...5678"));
+    fireEvent.click(screen.getByText("Sign out"));
+
+    expect(siweSignOutMock).toHaveBeenCalled();
     expect(logoutMock).toHaveBeenCalled();
   });
 

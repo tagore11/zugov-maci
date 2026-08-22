@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { usePrivy } from "@privy-io/react-auth";
 import { Check, Copy, LogOut, User } from "lucide-react";
+import { useSiwe } from "@/src/hooks/useSiwe";
 
 function truncateAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
@@ -9,6 +10,14 @@ function truncateAddress(address: string): string {
 
 export function PrivyConnectButton() {
   const { ready, authenticated, user, login, logout } = usePrivy();
+  // Session-lifecycle fix (2026-08-22) — "Sign out" used to disconnect Privy's wallet only,
+  // leaving the backend's SIWE session (httpOnly cookie) fully valid for its full 24h TTL. On a
+  // shared computer, the next person to use the browser could still act as the previous user.
+  // useSiwe's own disconnect-invalidation effect covers pages with an active SiweGate/useSiwe
+  // instance mounted, but this button lives in the global Header, reachable from pages with none
+  // mounted at all — so sign-out itself must close the session directly, not rely on some other
+  // component happening to be watching.
+  const siwe = useSiwe();
   const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -83,6 +92,7 @@ export function PrivyConnectButton() {
                 type="button"
                 onClick={() => {
                   setIsOpen(false);
+                  void siwe.signOut();
                   void logout();
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-900/20 hover:text-red-300 transition-colors"

@@ -9,6 +9,13 @@ vi.mock("wagmi", () => ({
   useChainId: () => 11155111,
 }));
 
+// This page renders Header -> PrivyConnectButton, which now calls useSiwe() (session-lifecycle
+// fix, 2026-08-22) — useSiwe needs useSignMessage() too, which the wagmi mock above doesn't
+// provide, and none of that is relevant to this test's actual concern.
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ isAuthenticated: false, isSigning: false, error: null, signIn: vi.fn(), signOut: vi.fn() }),
+}));
+
 // Avoids ProposalsList's transitive useDeployPoll -> wagmiConfig.ts import, which needs
 // a fuller wagmi/viem mock than this test cares about (mirrors ProposalsList.test.tsx).
 vi.mock("@/src/hooks/useDeployPoll", () => ({

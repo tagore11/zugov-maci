@@ -210,4 +210,75 @@ describe("useSiwe", () => {
     await waitFor(() => expect(result.current.isAuthenticated).toBe(true));
     expect(mockSignMessageAsync).toHaveBeenCalledTimes(1);
   });
+
+  // Session-lifecycle fix (2026-08-22) — the actual reported bug: nothing previously invalidated
+  // the session when the wallet disconnected or switched accounts. A disconnect left
+  // isAuthenticated stuck true from stale sessionStorage; SiweGate-wrapped screens kept rendering
+  // as signed in with no wallet actually connected.
+  it("clears the session when the wallet disconnects, not just on an explicit signOut() call", async () => {
+    mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
+    sessionStorage.setItem("siwe_auth", JSON.stringify({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }));
+    const logoutFetch = vi.fn().mockResolvedValue({ ok: true, json: () => ({}) });
+    vi.stubGlobal("fetch", logoutFetch);
+
+    const { result, rerender } = renderHook(() => useSiwe());
+    expect(result.current.isAuthenticated).toBe(true);
+
+    mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
+    rerender();
+
+    await waitFor(() => expect(result.current.isAuthenticated).toBe(false));
+    expect(result.current.address).toBeNull();
+    expect(sessionStorage.getItem("siwe_auth")).toBeNull();
+    expect(logoutFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/auth/logout"),
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  // Session-lifecycle fix (2026-08-22) — the more severe half of the same bug: switching to a
+  // DIFFERENT connected address (MetaMask account switch) left the stale session authenticated
+  // as the OLD address. Every write kept silently succeeding against the old address's backend
+  // cookie (nothing re-verified or invalidated it) while the UI showed the new address connected
+  // — a real identity-confusion bug, not just a stale-UI one. The fix must both invalidate the old
+  // session AND cleanly re-authenticate the new address, not leave the user stuck on manual retry.
+  it("invalidates the old session and re-authenticates fresh when the connected address switches to a different account", async () => {
+    mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
+    sessionStorage.setItem("siwe_auth", JSON.stringify({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }));
+    mockSignMessageAsync.mockResolvedValue("0xsignature");
+    // Invalidation (signOut's /logout) fires and completes before the fresh re-authentication's
+    // /nonce and /verify calls start — queued up front in that order rather than interleaved with
+    // assertions, since the re-auth is automatic and near-immediate once invalidation lands.
+    const fetchMock = mockFetchSequence([
+      { ok: true, json: () => ({}) },
+      { ok: true, json: () => ({ nonce: "switched-account-nonce" }) },
+      { ok: true, json: () => ({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 }) },
+    ]);
+
+    const { result, rerender } = renderHook(() => useSiwe());
+    expect(result.current.isAuthenticated).toBe(true);
+
+    mockUseAccount.mockReturnValue({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 });
+    rerender();
+
+    // isAuthenticated starts true (from storage, for the OLD address), so waiting on that alone
+    // would pass instantly at t=0 before the invalidate-then-reauth cycle even runs — wait on the
+    // actual target address instead, which only becomes true once the full cycle really completes.
+    await waitFor(() => expect(result.current.address).toBe(EXTERNAL_WALLET_ADDRESS));
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("/api/auth/logout");
+  });
+
+  it("does not try to invalidate anything on first mount, even if already authenticated from storage", async () => {
+    mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
+    sessionStorage.setItem("siwe_auth", JSON.stringify({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 }));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useSiwe());
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
