@@ -362,6 +362,35 @@ during pre-Zukas-2026 dogfooding)
 shared session state the auth-detect wrapper calls into must exist and be race-free
 before wrapping write call sites around it is meaningful.
 
+### Unify Privy's wallet-connect signature and ZuGov's own SIWE signature
+
+**What:** Connecting an external wallet (MetaMask etc.) today produces TWO separate
+MetaMask "Sign-in request" prompts in a row: Privy's own signature, requested by its
+SDK to verify wallet ownership for Privy's backend session (`loginMethods: ["email",
+"wallet"]` in `app/providers.tsx`), immediately followed by ZuGov's own SIWE signature
+(`useSiwe.tsx`'s `signIn()` — `createSiweMessage` + `signMessageAsync`, establishing
+the separate httpOnly-cookie backend session). Reported live during dogfooding
+(2026-08-23) as confusing/broken-looking, but not a regression — same behavior existed
+before the SiweProvider Context migration.
+
+**Why:** `useSiwe.tsx`'s auto-sign-in effect already waits for Privy's `authenticated`
+flag before firing (`b551991d`, 2026-08-21) — that fix SEQUENCES the two signature
+requests so they no longer race and silently fail each other, but doesn't reduce the
+count from two to one. `b551991d`'s own commit message flagged unifying them as "a
+separate, larger architecture question" needing its own review — never scheduled.
+Two candidate directions, neither trivial: (1) bypass Privy's own wallet-auth signature
+for external-wallet users entirely (connect via a raw wagmi connector instead of
+Privy's `login()` for the `'wallet'` method, keeping Privy only for its
+`embeddedWallets` email-signup path), or (2) find a way for one signature to satisfy
+both Privy's ownership check and the backend's SIWE verification. Needs its own
+`/plan-eng-review` before touching the Privy/wagmi wiring, not a quick patch.
+
+**Effort:** M-L (real Privy/wagmi wiring change either way; needs a design pass to
+pick a direction)
+**Priority:** P2
+**Depends on:** None technically, but should follow the 3-gating-pattern
+consolidation above so route-level auth guards aren't designed twice
+
 ### Per-community configurable visibility policy (public vs. members-only)
 
 **What:** Let each community choose what non-members can see — e.g. proposals/events
