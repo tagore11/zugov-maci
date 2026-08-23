@@ -337,17 +337,27 @@ real landmines (`app/manage-communities/[id]/members/page.tsx`'s `handleApprove`
 `handleReject` had NO catch clause at all — worse than a swallow, a bare
 `try {...} finally {...}` — now fixed).
 
+**Batch 2 (implemented 2026-08-23) — DONE.** `membershipApi.ts`'s 3 remaining writes
+(`createTier`, `updateTier`, `deleteTier`) plus `eligibilityApi.ts`'s `replaceRuleset`
+(pulled forward from Batch 4) all get called from the same `edit/page.tsx`
+`handleSubmit`, alongside `communityApi.update`'s edit-page call site — which turned
+out to be a call site Batch 1's own audit had already flagged as inconsistent
+(`communityApi.ts:200-218 update`'s TWO call sites: the wizard's, wrapped via
+`withAuthRetry`; this edit page's, left on the old generic catch) but Batch 1's
+Implementation Tasks never actually listed it, so it got missed. Fixed now: the whole
+5-call save sequence (`update` → tier CRUD loop → `replaceRuleset`) is wrapped in ONE
+`withAuthDetect` call, not one per call — they're one atomic "save" action from the
+user's perspective, so a 401 anywhere in the sequence should sign out exactly once.
+
 **Remaining batches** (not yet built):
 
-- **Batch 2** — `membershipApi.ts`'s 3 remaining writes (`createTier`, `updateTier`,
-  `deleteTier`), called from `app/manage-communities/[id]/edit/page.tsx`.
 - **Batch 3** — `proposalApi.ts`'s 7 writes (`createDraft`, `sponsor`,
   `authorizeFormalize`, `confirmFormalize`, `authorizeDirect`, `confirmDirect`,
   `triggerTally`), called from `CreateProposalModal.tsx`/`ProposalsList.tsx`.
 - **Batch 4** — `eventApi.ts`'s 6 live writes (`createEvent`, `updateEvent`,
   `cancelEvent`, `duplicateEvent`, `rsvp`, `cancelRsvp`, called from
-  `CreateEventModal.tsx`/`EventsSection.tsx`) + `credentialApi.ts`'s `verify` (1) +
-  `eligibilityApi.ts`'s `replaceRuleset` (1).
+  `CreateEventModal.tsx`/`EventsSection.tsx`) + `credentialApi.ts`'s `verify` (1).
+  (`eligibilityApi.ts`'s `replaceRuleset` moved to Batch 2, done — same call site.)
 
 Each batch: wrap the relevant call sites in `withAuthDetect(() => api.fn(...), signOut)`
 — no service-function changes needed (they already throw `HttpError` via the shared
@@ -360,14 +370,17 @@ non-idempotent writes like `proposalApi`'s sponsor/formalize/tally-trigger or
 
 **Known landmine pattern to check per batch:** before wrapping a call site, confirm its
 existing catch doesn't already silently swallow errors (the `JoinSection.tsx`/
-`members/page.tsx` shape found in Batches 1's audit) — wrapping a call that already
-discards its result does nothing until the catch itself is fixed.
+`members/page.tsx` shape found in Batch 1's audit) — wrapping a call that already
+discards its result does nothing until the catch itself is fixed. Also check, per
+Batch 2's own miss: does the write function being wrapped have a SECOND call site
+elsewhere that also needs wrapping (grep all call sites before assuming one wrap per
+function is complete).
 
-**Effort:** M split across 3 batches (~1 file each for service-layer changes, 1-2
-call-site files each)
+**Effort:** M split across 2 remaining batches (~1 file each for service-layer changes,
+1-2 call-site files each)
 **Priority:** P1 (same root cause already produced 6 live bugs in one session during
 pre-Zukas-2026 dogfooding)
-**Depends on:** Batch 1 (this pass) landing first — done.
+**Depends on:** Batch 1 landing first — done. Batch 2 — done.
 
 ### Make 401-detection structural instead of opt-in (global interceptor)
 

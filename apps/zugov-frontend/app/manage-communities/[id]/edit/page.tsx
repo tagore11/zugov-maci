@@ -12,6 +12,7 @@ import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
 import { EligibilityRulesetEditor } from "@/app/components/EligibilityRulesetEditor";
 import { SiweGate } from "@/app/components/SiweGate";
 import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 import {
   useDeployGovernance,
   DEFAULT_ADVANCED_CONFIG,
@@ -87,6 +88,7 @@ export default function EditCommunityPage() {
   const communityId = params.id!;
   const navigate = useNavigate();
   const { address } = useAccount();
+  const { signOut } = useSiwe();
 
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -182,38 +184,47 @@ export default function EditCommunityPage() {
     setError(null);
     setSaving(true);
     try {
-      await communityApi.update(communityId, {
-        displayName: displayName.trim(),
-        description: description.trim(),
-        logo: logo.trim(),
-        membershipPolicy,
-        tierChangesRequireVote,
-        directDeploymentEnabled,
-        defaultTierLabel,
-      });
+      // /plan-eng-review (2026-08-23) Batch 2 — one withAuthDetect wrap around the whole save
+      // sequence, not one per call. All 5 writes below (communityApi.update, the tier CRUD
+      // loop, eligibilityApi.replaceRuleset) are one atomic "save" action from the user's
+      // perspective; a 401 on any of them should sign out exactly once, not risk firing signOut
+      // multiple times if several calls in the sequence all 401 in a row. communityApi.update's
+      // call here was the one call site Batch 1 missed — the wizard's call to the same function
+      // was wrapped via withAuthRetry, but this edit-page call was left on the old generic catch.
+      await withAuthDetect(async () => {
+        await communityApi.update(communityId, {
+          displayName: displayName.trim(),
+          description: description.trim(),
+          logo: logo.trim(),
+          membershipPolicy,
+          tierChangesRequireVote,
+          directDeploymentEnabled,
+          defaultTierLabel,
+        });
 
-      if (!tiersLocked) {
-        const currentIds = new Set(tiers.filter((t) => t.id).map((t) => t.id!));
-        for (const removedId of originalTierIds) {
-          if (!currentIds.has(removedId)) {
-            await membershipApi.deleteTier(communityId, removedId);
+        if (!tiersLocked) {
+          const currentIds = new Set(tiers.filter((t) => t.id).map((t) => t.id!));
+          for (const removedId of originalTierIds) {
+            if (!currentIds.has(removedId)) {
+              await membershipApi.deleteTier(communityId, removedId);
+            }
+          }
+          for (const tier of tiers) {
+            if (tier.id) {
+              await membershipApi.updateTier(communityId, tier.id, {
+                label: tier.label,
+                canCreateProposals: tier.canCreateProposals,
+                canVote: tier.canVote,
+                canManageMembership: tier.canManageMembership,
+              });
+            } else {
+              await membershipApi.createTier(communityId, tier);
+            }
           }
         }
-        for (const tier of tiers) {
-          if (tier.id) {
-            await membershipApi.updateTier(communityId, tier.id, {
-              label: tier.label,
-              canCreateProposals: tier.canCreateProposals,
-              canVote: tier.canVote,
-              canManageMembership: tier.canManageMembership,
-            });
-          } else {
-            await membershipApi.createTier(communityId, tier);
-          }
-        }
-      }
 
-      await eligibilityApi.replaceRuleset(communityId, eligibilityRules);
+        await eligibilityApi.replaceRuleset(communityId, eligibilityRules);
+      }, signOut);
 
       navigate(`/community/${communityId}`);
     } catch (err) {
