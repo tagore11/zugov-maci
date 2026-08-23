@@ -324,7 +324,7 @@
 
 ## ZuGov / Auth architecture follow-ups (from 2026-08-22 `/office-hours` + `/plan-eng-review`)
 
-### Roll out shared 401-detect wrapper to remaining write call sites (Batches 2-4)
+### ~~Roll out shared 401-detect wrapper to all write call sites~~ — RESOLVED (2026-08-23, Batches 1-4)
 
 **What:** A `/plan-eng-review` pass (2026-08-23) audited every authenticated write call
 site precisely, replacing this entry's old "~40 call sites" estimate: **31 real write
@@ -360,35 +360,29 @@ call-site files: `CreateProposalModal.tsx` (`authorizeDirect`/`confirmDirect`/
 two logically distinct actions with two distinct error-state variables, not one
 sequence).
 
-**Remaining batches** (not yet built):
+**Batch 4 (implemented 2026-08-23) — DONE.** `eventApi.ts`'s 6 live writes across 2
+call-site files: `CreateEventModal.tsx` (`createEvent`/`updateEvent` — one atomic
+submit, one `withAuthDetect` wrap around the whole `handleSubmit` body) and
+`EventsSection.tsx` (3 separate wraps: `DuplicateForm.handleSubmit` for
+`duplicateEvent`, `EventRow.handleRsvpToggle` for `rsvp`/`cancelRsvp` — one atomic
+toggle, one wrap — and `EventRow.handleCancelConfirm` for `cancelEvent`). Plus
+`credentialApi.ts`'s `verify`, wrapped inside `useCredentialScan.ts`'s `checkZupass` —
+this file had its own hand-rolled duplicate of `parseErrorOr`'s logic (not one of the
+original 4 counted in Batch 1's DRY extraction), migrated to the shared
+`parseErrorOr`/`HttpError` in the same pass.
 
-- **Batch 4** — `eventApi.ts`'s 6 live writes (`createEvent`, `updateEvent`,
-  `cancelEvent`, `duplicateEvent`, `rsvp`, `cancelRsvp`, called from
-  `CreateEventModal.tsx`/`EventsSection.tsx`) + `credentialApi.ts`'s `verify` (1).
-  (`eligibilityApi.ts`'s `replaceRuleset` moved to Batch 2, done — same call site.)
+**All 4 batches now complete.** Every one of the 31 real write functions (29 live + 2
+confirmed-dead, deleted) across all 6 service files now either already had 401-handling
+(the original 8 `communityApi.ts` functions) or got `withAuthDetect` wired in across
+Batches 1-4. The "structural instead of opt-in" question (below) is the only related
+work still open.
 
-Each batch: wrap the relevant call sites in `withAuthDetect(() => api.fn(...), signOut)`
-— no service-function changes needed (they already throw `HttpError` via the shared
-`parseErrorOr`, extracted to `src/services/httpClient.ts` in Batch 1). Retry-on-
-transient-failure behavior stays scoped to the 3 already-audited call sites
-(`registerIdentity`, `attachGovernance`, `update`) — do NOT generalize retry semantics
-to unaudited endpoints; the original design review flagged that blind retry on
-non-idempotent writes like `proposalApi`'s sponsor/formalize/tally-trigger or
-`eventApi`'s RSVP risks a duplicate side effect from a transient network blip.
-
-**Known landmine pattern to check per batch:** before wrapping a call site, confirm its
-existing catch doesn't already silently swallow errors (the `JoinSection.tsx`/
-`members/page.tsx` shape found in Batch 1's audit) — wrapping a call that already
-discards its result does nothing until the catch itself is fixed. Also check, per
-Batch 2's own miss: does the write function being wrapped have a SECOND call site
-elsewhere that also needs wrapping (grep all call sites before assuming one wrap per
-function is complete).
-
-**Effort:** M split across the 1 remaining batch (~1 file for service-layer changes,
-2 call-site files)
-**Priority:** P1 (same root cause already produced 6 live bugs in one session during
-pre-Zukas-2026 dogfooding)
-**Depends on:** Batch 1 — done. Batch 2 — done. Batch 3 — done.
+**Effort (actual, all 4 batches):** ~4 sessions, 1 new shared file
+(`src/services/httpClient.ts`), ~19 files touched across service layer + call sites +
+tests
+**Priority:** was P1 (same root cause already produced 6 live bugs in one session
+during pre-Zukas-2026 dogfooding)
+**Depends on:** N/A — complete.
 
 ### Make 401-detection structural instead of opt-in (global interceptor)
 

@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
 import type { Event, EventKind } from "@/src/services/eventApi";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 const KIND_OPTIONS: { value: EventKind; label: string }[] = [
   { value: "talk", label: "Talk" },
@@ -46,6 +48,7 @@ interface CreateEventModalProps {
 
 export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, editingEvent }: CreateEventModalProps) {
   const isEdit = !!editingEvent;
+  const { signOut } = useSiwe();
 
   const { data: venues = [] } = useQuery({
     queryKey: ["venues", communityId],
@@ -130,27 +133,29 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     try {
       const startAtSec = Math.floor(new Date(startAt).getTime() / 1000);
       const endAtSec = Math.floor(new Date(endAt).getTime() / 1000);
-      if (isEdit && editingEvent) {
-        await eventApi.updateEvent(communityId, editingEvent.id, {
-          title,
-          description: description || undefined,
-          venueId: locationMode === "venue" ? venueId : null,
-          locationText: locationMode === "custom" ? locationText : null,
-          startAt: startAtSec,
-          endAt: endAtSec,
-          kind,
-        });
-      } else {
-        await eventApi.createEvent(communityId, {
-          title,
-          description: description || undefined,
-          venueId: locationMode === "venue" ? venueId : undefined,
-          locationText: locationMode === "custom" ? locationText : undefined,
-          startAt: startAtSec,
-          endAt: endAtSec,
-          kind,
-        });
-      }
+      await withAuthDetect(async () => {
+        if (isEdit && editingEvent) {
+          await eventApi.updateEvent(communityId, editingEvent.id, {
+            title,
+            description: description || undefined,
+            venueId: locationMode === "venue" ? venueId : null,
+            locationText: locationMode === "custom" ? locationText : null,
+            startAt: startAtSec,
+            endAt: endAtSec,
+            kind,
+          });
+        } else {
+          await eventApi.createEvent(communityId, {
+            title,
+            description: description || undefined,
+            venueId: locationMode === "venue" ? venueId : undefined,
+            locationText: locationMode === "custom" ? locationText : undefined,
+            startAt: startAtSec,
+            endAt: endAtSec,
+            kind,
+          });
+        }
+      }, signOut);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${isEdit ? "update" : "create"} event`);
