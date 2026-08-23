@@ -69,6 +69,14 @@ vi.mock("@/src/hooks/useVote", () => ({
   useVote: () => ({ isVoting: false, voteError: null, castVote: castVoteMock }),
 }));
 
+// /plan-eng-review (2026-08-23) Batch 3 -- DeployPollPrompt/TallySection/DraftRow now call
+// useSiwe() for withAuthDetect. Mocking the module directly (matching JoinSection.test.tsx's
+// convention), not wrapping in a real SiweProvider.
+const mockSignOut = vi.fn();
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ signOut: mockSignOut }),
+}));
+
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
@@ -119,6 +127,7 @@ beforeEach(() => {
   communityGetMock.mockReset();
   communityGetMock.mockResolvedValue(null);
   voteOptionsMock.mockReset();
+  mockSignOut.mockReset();
   castVoteMock.mockReset();
 });
 
@@ -153,6 +162,23 @@ describe("ProposalsList", () => {
     await waitFor(() => expect(sponsorMock).toHaveBeenCalledWith("0xabc", "action-1"));
     // sponsor's own reported count (idempotent server response) is used, not incremented client-side
     expect(sponsorMock).toHaveBeenCalledTimes(1);
+  });
+
+  // /plan-eng-review (2026-08-23) Batch 3
+  it("signs the wallet out when sponsoring fails with an expired session (401)", async () => {
+    const { HttpError } = await import("@/src/services/httpClient");
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
+    sponsorMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+    await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Sponsor"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
   it("shows the static 'not linked' message when the community has no saved pollDeployConfig", async () => {
@@ -247,6 +273,41 @@ describe("ProposalsList", () => {
     );
   });
 
+  // /plan-eng-review (2026-08-23) Batch 3
+  it("signs the wallet out when confirmFormalize fails with an expired session (401)", async () => {
+    const { HttpError } = await import("@/src/services/httpClient");
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
+    sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
+    authorizeFormalizeMock.mockResolvedValue({ authorized: true });
+    communityGetMock.mockResolvedValue({
+      id: "0xabc",
+      governanceConfigured: true,
+      contractAddress: "0xabc",
+      pollDeployConfig: POLL_DEPLOY_CONFIG,
+    });
+    deployPollMock.mockResolvedValue({ pollAddress: "0xPoll", pollId: "0", txHash: "0xTx" });
+    confirmFormalizeMock.mockRejectedValue(
+      new HttpError(401, "Authentication required. Please sign in with Ethereum."),
+    );
+
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+    await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Sponsor"));
+
+    await waitFor(() => expect(screen.getByText("Deploy Poll")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("Poll start date"), { target: { value: "2026-01-01T00:00" } });
+    fireEvent.change(screen.getByLabelText("Poll end date"), { target: { value: "2026-01-08T00:00" } });
+    fireEvent.change(screen.getByPlaceholderText("Option 1"), { target: { value: "Yes" } });
+    fireEvent.change(screen.getByPlaceholderText("Option 2"), { target: { value: "No" } });
+    fireEvent.click(screen.getByText("Deploy Poll"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the rejection reason when authorize fails after threshold is met", async () => {
     listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
     sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
@@ -258,6 +319,26 @@ describe("ProposalsList", () => {
     fireEvent.click(screen.getByText("Sponsor"));
 
     await waitFor(() => expect(screen.getByText("Co-sponsorship threshold not met")).toBeInTheDocument());
+  });
+
+  // /plan-eng-review (2026-08-23) Batch 3
+  it("signs the wallet out when the post-sponsor authorize check fails with an expired session (401)", async () => {
+    const { HttpError } = await import("@/src/services/httpClient");
+    listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
+    sponsorMock.mockResolvedValue({ sponsorCount: 2, thresholdMet: true });
+    authorizeFormalizeMock.mockRejectedValue(
+      new HttpError(401, "Authentication required. Please sign in with Ethereum."),
+    );
+
+    renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+    await waitFor(() => expect(screen.getByText("Fund the garden")).toBeInTheDocument());
+    fireEvent.click(screen.getByText("Sponsor"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
   it("shows vote eligibility for formalized actions", async () => {
@@ -391,6 +472,30 @@ describe("ProposalsList", () => {
       await waitFor(() => expect(screen.getByText("Tallying complete.")).toBeInTheDocument());
       expect(screen.queryByText(/Elected:/)).not.toBeInTheDocument();
       expect(screen.queryByText(/Tied/)).not.toBeInTheDocument();
+    });
+
+    // /plan-eng-review (2026-08-23) Batch 3
+    it("shows an error and signs out when triggering tally fails with an expired session (401)", async () => {
+      const { HttpError } = await import("@/src/services/httpClient");
+      listMock.mockResolvedValue({ proposals: [{ ...CLOSED_PERSON_ACTION, tallyStatus: "not_started" as const }] });
+      getTallyStatusMock.mockResolvedValue({
+        tallyStatus: "not_started",
+        tallyError: null,
+        tallyRequestedAt: null,
+        tallyCompletedAt: null,
+        tallyResult: null,
+        electedWalletAddress: null,
+      });
+      triggerTallyMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      fireEvent.click(await screen.findByText("Tally Results"));
+
+      await waitFor(() =>
+        expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+      );
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
     });
   });
 });

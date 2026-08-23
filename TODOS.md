@@ -349,11 +349,19 @@ Implementation Tasks never actually listed it, so it got missed. Fixed now: the 
 `withAuthDetect` call, not one per call — they're one atomic "save" action from the
 user's perspective, so a 401 anywhere in the sequence should sign out exactly once.
 
+**Batch 3 (implemented 2026-08-23) — DONE.** `proposalApi.ts`'s 7 writes, across 2
+call-site files: `CreateProposalModal.tsx` (`authorizeDirect`/`confirmDirect`/
+`createDraft` — one atomic submit, one `withAuthDetect` wrap around the whole
+`handleSubmit` body, matching Batch 2's edit-page precedent) and `ProposalsList.tsx`
+(4 separate wraps in 3 components: `DeployPollPrompt.handleDeploy` for
+`confirmFormalize`, `TallySection.handleTally` for `triggerTally`, and
+`DraftRow`'s two independent handlers — `handleSponsor` for `sponsor` and
+`runAuthorizeIfReady` for `authorizeFormalize` — kept as separate wraps since they're
+two logically distinct actions with two distinct error-state variables, not one
+sequence).
+
 **Remaining batches** (not yet built):
 
-- **Batch 3** — `proposalApi.ts`'s 7 writes (`createDraft`, `sponsor`,
-  `authorizeFormalize`, `confirmFormalize`, `authorizeDirect`, `confirmDirect`,
-  `triggerTally`), called from `CreateProposalModal.tsx`/`ProposalsList.tsx`.
 - **Batch 4** — `eventApi.ts`'s 6 live writes (`createEvent`, `updateEvent`,
   `cancelEvent`, `duplicateEvent`, `rsvp`, `cancelRsvp`, called from
   `CreateEventModal.tsx`/`EventsSection.tsx`) + `credentialApi.ts`'s `verify` (1).
@@ -376,11 +384,11 @@ Batch 2's own miss: does the write function being wrapped have a SECOND call sit
 elsewhere that also needs wrapping (grep all call sites before assuming one wrap per
 function is complete).
 
-**Effort:** M split across 2 remaining batches (~1 file each for service-layer changes,
-1-2 call-site files each)
+**Effort:** M split across the 1 remaining batch (~1 file for service-layer changes,
+2 call-site files)
 **Priority:** P1 (same root cause already produced 6 live bugs in one session during
 pre-Zukas-2026 dogfooding)
-**Depends on:** Batch 1 landing first — done. Batch 2 — done.
+**Depends on:** Batch 1 — done. Batch 2 — done. Batch 3 — done.
 
 ### Make 401-detection structural instead of opt-in (global interceptor)
 
