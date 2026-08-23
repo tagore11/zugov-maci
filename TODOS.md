@@ -371,14 +371,34 @@ this file had its own hand-rolled duplicate of `parseErrorOr`'s logic (not one o
 original 4 counted in Batch 1's DRY extraction), migrated to the shared
 `parseErrorOr`/`HttpError` in the same pass.
 
-**All 4 batches now complete.** Every one of the 31 real write functions (29 live + 2
-confirmed-dead, deleted) across all 6 service files now either already had 401-handling
-(the original 8 `communityApi.ts` functions) or got `withAuthDetect` wired in across
-Batches 1-4. The "structural instead of opt-in" question (below) is the only related
-work still open.
+**Post-rollout re-verification (2026-08-23) caught one real miss:**
+`app/community/[id]/JoinSection.tsx`'s two `membershipApi.join()` call sites
+(`handleJoin`, `handleJoinBackendOnly`) were never wrapped in any of the 4 batches.
+They already surfaced errors correctly (from an earlier, unrelated 2026-08-21 fix), so
+Batch 1's audit didn't flag them as "swallowing" landmines — but nobody had gone back
+to actually wire in the sign-out-on-401 behavior once `withAuthDetect` existed. Fixed:
+both call sites now wrapped. This is exactly the same shape of miss as Batch 2's —
+"already looks fine" is not the same check as "is it wrapped" — worth remembering for
+any future rollout of this kind: audit for the wrapper's actual presence, not just for
+whether the existing behavior already looks acceptable.
 
-**Effort (actual, all 4 batches):** ~4 sessions, 1 new shared file
-(`src/services/httpClient.ts`), ~19 files touched across service layer + call sites +
+**Minor, non-blocking consistency gap found in the same re-verification:**
+`communityApi.ts` never actually migrated to the shared `parseErrorOr` — its 8 write
+functions still use bespoke inline `if (res.status === 401/403/409)` blocks (or the
+file's own `handleCommunityResponse` helper) instead of the shared helper extracted in
+Batch 1. Functionally harmless (`AuthError extends HttpError(401)` still makes
+`isAuthError()`/`withAuthDetect()` work correctly), but it's the one file that never
+got the DRY cleanup the other 5 did. Low priority — a pure refactor with no behavior
+change, worth doing next time this file is touched for another reason, not on its own.
+
+**All batches now complete, independently re-verified.** Every one of the 31 real
+write functions (29 live + 2 confirmed-dead, deleted) across all 6 service files now
+either already had 401-handling (the original 8 `communityApi.ts` functions) or has
+`withAuthDetect` wired in. The "structural instead of opt-in" question (below) is the
+only related work still open.
+
+**Effort (actual, all batches + the post-rollout fix):** ~5 sessions, 1 new shared file
+(`src/services/httpClient.ts`), ~20 files touched across service layer + call sites +
 tests
 **Priority:** was P1 (same root cause already produced 6 live bugs in one session
 during pre-Zukas-2026 dogfooding)

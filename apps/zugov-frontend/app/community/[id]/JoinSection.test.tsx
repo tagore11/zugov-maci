@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { JoinSection } from "./JoinSection";
 import * as membershipApi from "@/src/services/membershipApi";
+import { HttpError } from "@/src/services/httpClient";
 
 const joinMock = vi.fn();
 const getMembershipStatusMock = vi.fn();
@@ -135,6 +136,27 @@ describe("JoinSection", () => {
 
     await waitFor(() => expect(screen.getByText(/Signed up/)).toBeInTheDocument());
     expect(screen.getByText("Authentication required")).toBeInTheDocument();
+    // A generic Error (not an HttpError 401) must not trigger a sign-out.
+    expect(mockSiwe.signOut).not.toHaveBeenCalled();
+  });
+
+  // /plan-eng-review (2026-08-23) -- found during a post-rollout re-verification: this call site
+  // was never wrapped in withAuthDetect across any of the 4 batches (it already surfaced errors
+  // correctly from the 2026-08-21 fix above, so it wasn't flagged as a "swallowing" landmine --
+  // but nobody had actually wired in the sign-out-on-401 behavior the rollout exists to provide).
+  it("signs the wallet out when the backend join fails with a real expired session (401)", async () => {
+    signupToMaciMock.mockResolvedValue(undefined);
+    joinMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress="0xabc" connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSiwe.signOut).toHaveBeenCalledTimes(1);
   });
 
   it("shows the joined state (not an enabled Join button) when already registered on-chain, e.g. after a remount", async () => {
@@ -219,6 +241,23 @@ describe("JoinSection", () => {
     await waitFor(() =>
       expect(screen.getByText("Does not meet this community's eligibility requirements")).toBeInTheDocument(),
     );
+    expect(mockSiwe.signOut).not.toHaveBeenCalled();
+  });
+
+  // /plan-eng-review (2026-08-23) -- same post-rollout miss as handleJoin's own 401 test above,
+  // for the ungoverned/backend-only join path.
+  it("signs the wallet out when the ungoverned backend-only join fails with an expired session (401)", async () => {
+    joinMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+    renderWithProviders(
+      <JoinSection communityId="0xabc" contractAddress={null} connected={true} rpcUrl="http://localhost:8545" />,
+    );
+
+    fireEvent.click(screen.getByText("Join"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSiwe.signOut).toHaveBeenCalledTimes(1);
   });
 
   it("shows an error message when the on-chain signup fails", async () => {

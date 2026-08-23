@@ -7,6 +7,8 @@ import { useMaci } from "@/src/context/MaciContext";
 import { GovernanceTypes } from "@/src/config";
 import { MACI__factory } from "@/src/poll-factory-shim";
 import { SiweGate } from "@/app/components/SiweGate";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 export function JoinSection({
   communityId,
@@ -24,6 +26,7 @@ export function JoinSection({
   rpcUrl: string;
 }) {
   const queryClient = useQueryClient();
+  const { signOut } = useSiwe();
   // Investigation fix (2026-08-21) — this page never previously established a SIWE session at
   // all, so clicking Join here could hit a bare "Authentication required" from the backend with
   // no way to recover: the SIWE session only ever existed if the user happened to pass through
@@ -78,7 +81,7 @@ export function JoinSection({
     // get a backend membership row (no tier, invisible to member lists), with zero indication
     // anything went wrong. Only the specific, actually-benign case is swallowed now.
     try {
-      await membershipApi.join(communityId);
+      await withAuthDetect(() => membershipApi.join(communityId), signOut);
     } catch (err) {
       if (!(err instanceof membershipApi.DuplicateJoinError)) {
         setError(err instanceof Error ? err.message : "Failed to record community membership");
@@ -94,7 +97,7 @@ export function JoinSection({
     setError(null);
     setIsJoiningBackendOnly(true);
     try {
-      const result = await membershipApi.join(communityId);
+      const result = await withAuthDetect(() => membershipApi.join(communityId), signOut);
       // justJoined covers the gap between this resolving and the invalidated query's refetch
       // landing — same optimistic-flag pattern handleJoin uses below for the on-chain path.
       if (result.status === "approved") setJustJoined(true);
