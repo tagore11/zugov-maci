@@ -488,44 +488,58 @@ folded in silently.
 landing first — a reliable "is this user authenticated" answer needs to exist before
 building a visibility policy on top of it.
 
-### Consolidate the 3 uncoordinated auth-gating patterns across pages (Phase B — scoped, not yet implemented)
+### ~~Consolidate the 3 uncoordinated auth-gating patterns across pages~~ — RESOLVED (Phase B, 2026-08-23)
 
-**What:** Today, each page invents its own rule for "does this need auth to view/act":
-`SiweGate`-wrapped (wizard, register, edit, community Join), wallet-address-only with
-no SIWE check (`manage-profile`, `manage-communities` list), or a sub-pattern found
-during the 2026-08-23 audit — components that call `useSiwe()` only reactively (for
-`signOut()` cleanup after a 401), never proactively (never reading `isAuthenticated`
-to gate rendering), which is functionally identical to "no gating" but easy to mistake
-for real gating on a quick grep (`manage-communities/[id]/members` shows byte-identical
-"You don't have permission" text for both a not-signed-in-at-all visitor and a
-signed-in-but-unauthorized one). Other concrete offenders: `/community/:id`'s Join
-button is `SiweGate`-wrapped in one governance-state branch but completely ungated in
-the sibling branch; `/manage-communities/:id/edit`'s authorization gate is wallet-
-address equality, not a SIWE check, and its "Save Changes" write bypasses `SiweGate`
-entirely unlike its sibling register page.
+**Resolution:** All 3 concrete gating bugs fixed, plus the route-guard mechanism built
+and applied per the locked plan:
 
-A full route audit (all 14 routes in `src/App.tsx`) during the same `/plan-eng-review`
-found no page actually needs its whole view blocked from an unauthenticated visitor —
-the inconsistency is entirely action-level — but locked a `RequireAuth` route-guard
-component anyway (react-router-dom v6 nested-route pattern), applied to exactly 2
-routes with a genuine UX case for it: `/manage-communities` and `/manage-profile`
-(both "your own stuff" pages that today show a misleadingly-empty view to a
-disconnected visitor rather than a real sign-in prompt). Also locked: a symmetric
-`isForbiddenError(err)` helper alongside the existing `isAuthError`/`withAuthDetect`
-(`src/services/httpClient.ts`) for the 403-shaping half of this work (see the
-"structural 401-detection" TODO above for the parallel 401 gap) — 403 status codes
-are already correct everywhere on the backend (34 call sites), but response-SHAPING is
-ad hoc (two idioms: inline `isAuthorized()`/`hasTierPermission()` + `c.json(...,403)`,
-or catch-and-map custom error classes — no shared dispatcher like 401's `requireAuth`).
+1. **`manage-communities/[id]/members`** — the byte-identical "You don't have
+   permission" text is gone. The load failure now branches on the real `HttpError`
+   status (`isAuthError`/new `isForbiddenError`, both in `src/services/httpClient.ts`):
+   a 401 shows "Sign in to review join requests for this community." with a real
+   "Sign in with Ethereum" button (wired to retry the fetch once `isAuthenticated`
+   flips true), a 403 keeps the original permission-denied text, and anything else
+   (network error, 500) now surfaces its own message instead of being lumped into
+   "forbidden."
+2. **`/community/:id`'s Join button** (`JoinSection.tsx`) — the governed-community
+   branch's Join button is now `SiweGate`-wrapped, matching its ungoverned sibling.
+   Auto-sign-in means this renders straight through to the button for the common case;
+   the gate only surfaces when auto-sign-in hasn't (yet) succeeded.
+3. **`manage-communities/[id]/edit`** — "Save Changes" is now `SiweGate`-wrapped (button
+   only, not the whole form — matches the register page's own placement exactly). The
+   page-level `isAuthorized` view gate (creator-or-admin wallet check) was left
+   wallet-based on purpose — deciding who sees the edit UI at all is a legitimate
+   wallet-address check; the fix targets the WRITE bypassing `SiweGate`, not the view
+   gate's shape.
+
+**`RequireAuth`** (new file, `app/components/RequireAuth.tsx`) — a react-router-dom v6
+layout route, applied to exactly `/manage-communities` and `/manage-profile` per the
+locked scope. Gates on `useAccount().address` (wallet connected — the same "connected"
+concept every other page already uses), not a SIWE session, with a loading state for
+wagmi's reconnect-on-mount window (matching `WalletConnectButton`'s same check) so a
+returning connected user never sees a false "Connect your wallet" flash. Verified live
+in the browser: `/manage-communities` and `/manage-profile` now show a clear "Connect
+your wallet to view this page." prompt instead of the old misleading "You don't own any
+communities yet." empty state.
+
+**`isForbiddenError(err)`** added alongside `isAuthError` in `httpClient.ts`, used by
+the members-page fix above. The backend-side 403 response-SHAPING unification (a
+shared dispatcher matching 401's `requireAuth`, replacing the two ad-hoc idioms across
+`communities.ts`/`membership.ts`/etc.) was NOT part of this pass — frontend-only,
+matching what the 3 concrete bugs and the route-guard actually needed. Revisit
+separately if the backend-side inconsistency becomes a real problem, not just a
+documented one.
 
 **Why:** Found during the 2026-08-22 auth audit; fully scoped during the 2026-08-23
 Privy-removal `/plan-eng-review` (founder: "removing privy support needs to be full on
-auth, 401, 403 handling, route guards and all, with unified gating") but deliberately
-deferred as its own follow-up pass, not bundled into the Phase A Privy-removal commit.
+auth, 401, 403 handling, route guards and all, with unified gating").
 
-**Effort:** M
-**Priority:** P2
-**Depends on:** Phase A (Privy removal, done 2026-08-23) landing first
+**Verification:** Full frontend suite (209 tests, 30 files) + typecheck both pass; new
+tests added for `RequireAuth` (4), the members-page 401/403 split + sign-in retry (3),
+and the governed-Join-button gating (2). Live-browser-verified via `/browse` for both
+guarded routes.
+
+**Depends on:** N/A — complete.
 
 ### WalletConnect/mobile-wallet support
 

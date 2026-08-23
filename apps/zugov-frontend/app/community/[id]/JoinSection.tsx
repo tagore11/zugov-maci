@@ -174,13 +174,20 @@ export function JoinSection({
       {membership?.status === "pending" && (
         <p className="text-xs text-gray-500">Membership request pending admin review.</p>
       )}
-      <button
-        onClick={() => void handleJoin()}
-        disabled={isSigningUp}
-        className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
-      >
-        {isSigningUp ? "Signing up…" : "Join"}
-      </button>
+      {/* /plan-eng-review Phase B (2026-08-23) — this Join button used to be completely ungated,
+          unlike its sibling above (the governance-not-configured branch), even though handleJoin
+          calls membershipApi.join() which needs a SIWE session on the backend half of the join.
+          SiweGate closes that inconsistency; auto-sign-in usually means this renders straight
+          through to the button anyway. */}
+      <SiweGate message="Sign in to join this community">
+        <button
+          onClick={() => void handleJoin()}
+          disabled={isSigningUp}
+          className="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors disabled:opacity-60"
+        >
+          {isSigningUp ? "Signing up…" : "Join"}
+        </button>
+      </SiweGate>
       {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );

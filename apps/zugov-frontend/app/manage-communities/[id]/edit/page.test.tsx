@@ -20,7 +20,9 @@ vi.mock("wagmi", async (importOriginal) => {
 
 const mockSignOut = vi.fn();
 vi.mock("@/src/hooks/useSiwe", () => ({
-  useSiwe: () => ({ signOut: mockSignOut }),
+  // /plan-eng-review Phase B (2026-08-23) — Save Changes is now SiweGate-wrapped; isAuthenticated
+  // must be true for these tests to reach the real button instead of the sign-in prompt.
+  useSiwe: () => ({ signOut: mockSignOut, isAuthenticated: true, isSigning: false, error: null, signIn: vi.fn() }),
 }));
 
 const getCommunityMock = vi.fn();

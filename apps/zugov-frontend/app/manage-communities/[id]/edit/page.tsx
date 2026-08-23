@@ -447,13 +447,21 @@ export default function EditCommunityPage() {
               >
                 Cancel
               </Link>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex-1 px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60"
-              >
-                {saving ? "Saving…" : "Save Changes"}
-              </button>
+              {/* /plan-eng-review Phase B (2026-08-23) — Save Changes used to bypass SiweGate
+                  entirely, unlike this page's sibling register page, even though the save
+                  sequence's writes need a SIWE session. Wrapping only the button (not the whole
+                  form) matches the register page's own SiweGate placement. */}
+              <div className="flex-1">
+                <SiweGate message="Sign in to save changes">
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="w-full px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60"
+                  >
+                    {saving ? "Saving…" : "Save Changes"}
+                  </button>
+                </SiweGate>
+              </div>
             </div>
           </form>
         </div>

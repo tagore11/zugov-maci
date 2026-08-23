@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { HttpError, parseErrorOr, isAuthError, withAuthDetect } from "./httpClient";
+import { HttpError, parseErrorOr, isAuthError, isForbiddenError, withAuthDetect } from "./httpClient";
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status });
@@ -52,6 +52,24 @@ describe("isAuthError", () => {
 
   it("returns false for a non-Error value", () => {
     expect(isAuthError("just a string")).toBe(false);
+  });
+});
+
+describe("isForbiddenError", () => {
+  it("returns true for an HttpError with status 403", () => {
+    expect(isForbiddenError(new HttpError(403, "nope"))).toBe(true);
+  });
+
+  it("returns false for an HttpError with a different status", () => {
+    expect(isForbiddenError(new HttpError(401, "nope"))).toBe(false);
+  });
+
+  it("returns false for a plain Error", () => {
+    expect(isForbiddenError(new Error("network blip"))).toBe(false);
+  });
+
+  it("returns false for a non-Error value", () => {
+    expect(isForbiddenError("just a string")).toBe(false);
   });
 });
 

@@ -36,6 +36,14 @@ export function isAuthError(err: unknown): boolean {
   return err instanceof HttpError && err.status === 401;
 }
 
+/** Distinguishes "not signed in" (401, isAuthError) from "signed in, but not allowed to do this"
+ * (403) — call sites that swallowed both into one generic message (e.g. the members page's old
+ * "You don't have permission" text for a not-signed-in-at-all visitor) is exactly the gating
+ * inconsistency this pairs with isAuthError to close (/plan-eng-review Phase B, 2026-08-23). */
+export function isForbiddenError(err: unknown): boolean {
+  return err instanceof HttpError && err.status === 403;
+}
+
 /** Opt-in wrapper every write call site adds around its existing API call — no catch-block
  * changes needed. On a 401, fires signOut() without awaiting it (matching every existing call
  * site's non-blocking behavior — signOut() has no timeout, so awaiting it here would freeze the

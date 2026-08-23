@@ -5,15 +5,20 @@ import { ArrowLeft } from "lucide-react";
 import * as membershipApi from "@/src/services/membershipApi";
 import type { PendingRequest } from "@/src/services/membershipApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
-import { withAuthDetect } from "@/src/services/httpClient";
+import { withAuthDetect, isAuthError, isForbiddenError } from "@/src/services/httpClient";
 
 export default function CommunityMembersPage() {
   const params = useParams();
   const communityId = params.id!;
-  const { signOut } = useSiwe();
+  const { signOut, signIn, isSigning, isAuthenticated } = useSiwe();
 
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  // /plan-eng-review Phase B (2026-08-23) — a not-signed-in-at-all visitor and a signed-in but
+  // unauthorized wallet used to render the byte-identical "You don't have permission" text, with
+  // no path to sign in for the former. Distinguishing the two (401 vs 403, via the same
+  // HttpError.status the rest of the 401-wrapper work already threads through) fixes that.
+  const [notSignedIn, setNotSignedIn] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [actingOn, setActingOn] = useState<string | null>(null);
   // /plan-eng-review (2026-08-23) Batch 1 — handleApprove/handleReject used to have NO catch
@@ -24,11 +29,22 @@ export default function CommunityMembersPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
+      setLoading(true);
+      setNotSignedIn(false);
+      setForbidden(false);
+      setError(null);
       try {
         const rows = await membershipApi.listPendingRequests(communityId);
         if (!cancelled) setRequests(rows);
-      } catch {
-        if (!cancelled) setForbidden(true);
+      } catch (err) {
+        if (cancelled) return;
+        if (isAuthError(err)) {
+          setNotSignedIn(true);
+        } else if (isForbiddenError(err)) {
+          setForbidden(true);
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to load join requests");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -37,7 +53,10 @@ export default function CommunityMembersPage() {
     return () => {
       cancelled = true;
     };
-  }, [communityId]);
+    // isAuthenticated retries the fetch after a successful sign-in from the notSignedIn prompt
+    // below — without it, clicking "Sign in with Ethereum" would flip isAuthenticated but leave
+    // this page stuck showing the stale "sign in" message forever.
+  }, [communityId, isAuthenticated]);
 
   async function handleApprove(requestId: string) {
     setActingOn(requestId);
@@ -88,13 +107,28 @@ export default function CommunityMembersPage() {
 
           {loading && <p className="text-gray-500">Loading…</p>}
 
+          {!loading && notSignedIn && (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-gray-500">Sign in to review join requests for this community.</p>
+              <button
+                onClick={() => void signIn()}
+                disabled={isSigning}
+                className="px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-60"
+              >
+                {isSigning ? "Signing in…" : "Sign in with Ethereum"}
+              </button>
+            </div>
+          )}
+
           {!loading && forbidden && (
             <p className="text-gray-500">You don&apos;t have permission to review join requests for this community.</p>
           )}
 
-          {!loading && !forbidden && requests.length === 0 && <p className="text-gray-500">No pending requests.</p>}
+          {!loading && !notSignedIn && !forbidden && requests.length === 0 && (
+            <p className="text-gray-500">No pending requests.</p>
+          )}
 
-          {!loading && !forbidden && requests.length > 0 && (
+          {!loading && !notSignedIn && !forbidden && requests.length > 0 && (
             <div className="space-y-3">
               {requests.map((req) => (
                 <div
