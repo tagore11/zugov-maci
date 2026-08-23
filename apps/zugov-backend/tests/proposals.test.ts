@@ -370,6 +370,28 @@ describe("POST /api/communities/:id/proposals/:actionId/formalize/authorize (US2
     const body = (await res.json()) as { authorized: boolean };
     expect(body.authorized).toBe(true);
   });
+
+  // Security fix (2026-08-23) — this endpoint previously never checked WHO was calling it, only
+  // that the proposal's stored creator still had permission. Any authenticated wallet from any
+  // community could formalize someone else's proposal once its threshold was met.
+  it("returns 403 for an authenticated wallet that is neither the creator nor a community admin", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    const { proposal } = (await createRes.json()) as { proposal: { id: string } };
+
+    const res = await app.request(`/api/communities/${communityId}/proposals/${proposal.id}/formalize/authorize`, {
+      method: "POST",
+      headers: { Cookie: outsiderCookie },
+    });
+    expect(res.status).toBe(403);
+  });
 });
 
 describe("POST /api/communities/:id/proposals/:actionId/formalize/confirm (US2, FR-008/FR-009)", () => {
@@ -399,6 +421,68 @@ describe("POST /api/communities/:id/proposals/:actionId/formalize/confirm (US2, 
     const body = (await res.json()) as { proposal: { status: string; pollAddress: string } };
     expect(body.proposal.status).toBe("formalized");
     expect(body.proposal.pollAddress).toBe("0xPoll");
+  });
+
+  // Security fix (2026-08-23) — see the sibling test on formalize/authorize above. confirm is
+  // the more severe half of this gap: an unrelated wallet could plant an arbitrary pollAddress/
+  // txHash onto someone else's community's proposal.
+  it("returns 403 for an authenticated wallet that is neither the creator nor a community admin", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    const { proposal } = (await createRes.json()) as { proposal: { id: string } };
+
+    const res = await app.request(`/api/communities/${communityId}/proposals/${proposal.id}/formalize/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: outsiderCookie },
+      body: JSON.stringify({
+        pollAddress: "0xAttackerPoll",
+        pollId: "0",
+        txHash: "0xAttackerTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  // A community admin (canManageMembership) who isn't the proposal's creator must still be able
+  // to formalize -- matches events.ts's assertCanManageEvent precedent (creator OR isAuthorized).
+  it("allows a community admin who isn't the proposal's creator to formalize", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const adminCookie = await authCookieFor(SPONSOR);
+    // Single admin-permission tier: createCommunityWithTiers enrolls the creator into tiers[0]
+    // (the "full-permission" tier, per communityService.createIdentity) AND uses tiers[0] as the
+    // default tier a new joiner lands in -- so both CREATOR and SPONSOR end up in this same tier.
+    const ADMIN_TIER = { label: "Admin", canCreateProposals: true, canVote: true, canManageMembership: true };
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie, [ADMIN_TIER]);
+    await app.request(`/api/communities/${communityId}/join`, { method: "POST", headers: { Cookie: adminCookie } });
+
+    const createRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Admin"]] }),
+    });
+    const { proposal } = (await createRes.json()) as { proposal: { id: string } };
+
+    const res = await app.request(`/api/communities/${communityId}/proposals/${proposal.id}/formalize/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: adminCookie },
+      body: JSON.stringify({
+        pollAddress: "0xPoll",
+        pollId: "0",
+        txHash: "0xTx",
+        pollStartDate: 1000,
+        pollEndDate: 2000,
+      }),
+    });
+    expect(res.status).toBe(200);
   });
 
   it("persists the poll's option labels (specs/010 US1, FR-001/FR-002)", async () => {

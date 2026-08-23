@@ -16,6 +16,7 @@ import {
   NotAuthorizedToSponsorError,
   AlreadyFormalizedError,
   CreatorNoLongerAuthorizedError,
+  NotAuthorizedToFormalizeError,
   ThresholdNotMetError,
   DirectDeploymentDisabledError,
   DraftPathDisabledError,
@@ -142,11 +143,13 @@ proposalsRouter.post("/:id/proposals/:actionId/sponsor", requireAuth, async (c) 
 
 proposalsRouter.post("/:id/proposals/:actionId/formalize/authorize", requireAuth, async (c) => {
   const communityId = c.req.param("id");
+  const session = await getSession(c);
   try {
-    const result = await proposalService.authorizeFormalize(communityId, c.req.param("actionId"));
+    const result = await proposalService.authorizeFormalize(communityId, c.req.param("actionId"), session.address!);
     return c.json(result);
   } catch (err) {
     if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof NotAuthorizedToFormalizeError) return c.json({ error: err.message }, 403);
     if (err instanceof CreatorNoLongerAuthorizedError) return c.json({ error: err.message }, 403);
     if (err instanceof AlreadyFormalizedError || err instanceof ThresholdNotMetError) {
       return c.json({ error: err.message }, 409);
@@ -157,6 +160,7 @@ proposalsRouter.post("/:id/proposals/:actionId/formalize/authorize", requireAuth
 
 proposalsRouter.post("/:id/proposals/:actionId/formalize/confirm", requireAuth, async (c) => {
   const communityId = c.req.param("id");
+  const session = await getSession(c);
 
   const body = await c.req.json();
   const parsed = formalizeConfirmBodySchema.safeParse(body);
@@ -165,10 +169,16 @@ proposalsRouter.post("/:id/proposals/:actionId/formalize/confirm", requireAuth, 
   }
 
   try {
-    const proposal = await proposalService.confirmFormalize(communityId, c.req.param("actionId"), parsed.data);
+    const proposal = await proposalService.confirmFormalize(
+      communityId,
+      c.req.param("actionId"),
+      session.address!,
+      parsed.data,
+    );
     return c.json({ proposal });
   } catch (err) {
     if (err instanceof ProposalNotFoundError) return c.json({ error: err.message }, 404);
+    if (err instanceof NotAuthorizedToFormalizeError) return c.json({ error: err.message }, 403);
     if (err instanceof CreatorNoLongerAuthorizedError) return c.json({ error: err.message }, 403);
     if (err instanceof AlreadyFormalizedError || err instanceof ThresholdNotMetError) {
       return c.json({ error: err.message }, 409);
