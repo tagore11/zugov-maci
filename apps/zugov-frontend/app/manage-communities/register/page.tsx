@@ -10,6 +10,7 @@ import { GovernanceTypes, type GovernanceType, appConstants, supportedChains } f
 import * as communityApi from "@/src/services/communityApi";
 import { useMaciContractConfig, type MaciContractConfig } from "@/src/hooks/useMaciContractConfig";
 import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
@@ -80,26 +81,30 @@ export default function RegisterCommunityPage() {
 
     setIsSubmitting(true);
     try {
-      const community = await communityApi.registerManual({
-        id: contractAddress,
-        contractAddress,
-        chainId,
-        displayName: details.displayName.trim(),
-        description: details.description.trim() || undefined,
-        logo: details.logo.trim() || undefined,
-        allowedPolicies: contractConfig.allowedPolicies,
-        supportedModes: contractConfig.supportedModes,
-        signUpPolicyType: contractConfig.signUpPolicyType,
-        signUpPolicyAddress: contractConfig.signUpPolicyAddress,
-        maciDeploymentBlock: contractConfig.deploymentBlock,
-        stateTreeDepth: contractConfig.stateTreeDepth,
-        source: "manual",
-        membershipPolicy: "open",
-        tierChangesRequireVote: false,
-        tiers: DEFAULT_MEMBERSHIP_TIERS,
-        defaultTierLabel: "Regular",
-        pollDeployConfig: contractConfig.pollDeployConfig,
-      });
+      const community = await withAuthDetect(
+        () =>
+          communityApi.registerManual({
+            id: contractAddress,
+            contractAddress,
+            chainId,
+            displayName: details.displayName.trim(),
+            description: details.description.trim() || undefined,
+            logo: details.logo.trim() || undefined,
+            allowedPolicies: contractConfig.allowedPolicies,
+            supportedModes: contractConfig.supportedModes,
+            signUpPolicyType: contractConfig.signUpPolicyType,
+            signUpPolicyAddress: contractConfig.signUpPolicyAddress,
+            maciDeploymentBlock: contractConfig.deploymentBlock,
+            stateTreeDepth: contractConfig.stateTreeDepth,
+            source: "manual",
+            membershipPolicy: "open",
+            tierChangesRequireVote: false,
+            tiers: DEFAULT_MEMBERSHIP_TIERS,
+            defaultTierLabel: "Regular",
+            pollDeployConfig: contractConfig.pollDeployConfig,
+          }),
+        siwe.signOut,
+      );
       setRegisteredId(community.id);
       setSuccess(true);
       window.dispatchEvent(new CustomEvent("zugov:community-created", { detail: { community } }));
@@ -107,10 +112,9 @@ export default function RegisterCommunityPage() {
       if (err instanceof communityApi.OwnershipError) {
         setError(err.message);
       } else if (err instanceof communityApi.AuthError) {
+        // withAuthDetect already invalidated the shared SiweGate session, so its
+        // "Sign in with Ethereum" prompt reappears instead of the (now-broken) submit button.
         setError("Session expired. Please sign in again.");
-        // Invalidate the shared SiweGate session so its "Sign in with Ethereum" prompt reappears
-        // instead of continuing to show the (now-broken) submit button.
-        void siwe.signOut();
       } else {
         setError(err instanceof Error ? err.message : "Registration failed. Please try again.");
       }

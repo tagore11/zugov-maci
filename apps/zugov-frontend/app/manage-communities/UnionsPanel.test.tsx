@@ -22,6 +22,15 @@ vi.mock("@/src/services/communityApi", async () => {
   };
 });
 
+// /plan-eng-review (2026-08-23) Batch 1 — CreateUnionModal/InviteToUnionForm/UnionMembershipRow
+// now call useSiwe() to get signOut for withAuthDetect. Mocking the module directly (matching
+// JoinSection.test.tsx's convention) rather than wrapping in a real SiweProvider — no test here
+// exercises SiweProvider's own state machine, only that signOut gets called on a 401.
+const mockSignOut = vi.fn();
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ signOut: mockSignOut }),
+}));
+
 const COMMUNITY = { id: "community-1", name: "Zukas", logo: "🏛️" };
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -39,6 +48,7 @@ beforeEach(() => {
   inviteToUnionMock.mockReset();
   respondToUnionInviteMock.mockReset();
   leaveUnionMock.mockReset();
+  mockSignOut.mockReset();
 });
 
 describe("UnionsPanel", () => {
@@ -119,6 +129,25 @@ describe("UnionsPanel", () => {
     expect(screen.getByText("Invited").closest("button")).toBeDisabled();
   });
 
+  it("signs the wallet out when inviting fails with an expired session (401)", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    const communityApi = await import("@/src/services/communityApi");
+    inviteToUnionMock.mockRejectedValue(new communityApi.AuthError());
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    fireEvent.click(await screen.findByText("Invite a community"));
+    fireEvent.change(screen.getByPlaceholderText("Community ID"), { target: { value: "community-2" } });
+    fireEvent.click(screen.getByText("Invite"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+
   it("accepting a pending invite moves the community from pending to active on both this panel and re-fetch", async () => {
     listUnionsForCommunityMock.mockResolvedValueOnce([
       { id: "union-1", displayName: "Alliance", logo: null, status: "pending" },
@@ -152,6 +181,20 @@ describe("UnionsPanel", () => {
     await waitFor(() =>
       expect(respondToUnionInviteMock).toHaveBeenCalledWith("union-1", { communityId: "community-1", accept: false }),
     );
+  });
+
+  it("signs the wallet out when responding to an invite fails with an expired session (401)", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "pending" },
+    ]);
+    const communityApi = await import("@/src/services/communityApi");
+    respondToUnionInviteMock.mockRejectedValue(new communityApi.AuthError());
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    fireEvent.click(await screen.findByText("Accept"));
+
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1));
   });
 
   it("Accept/Decline buttons meet the 44px minimum touch target for mobile", async () => {
@@ -203,6 +246,20 @@ describe("UnionsPanel", () => {
     );
   });
 
+  it("signs the wallet out when leaving a union fails with an expired session (401)", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    const communityApi = await import("@/src/services/communityApi");
+    leaveUnionMock.mockRejectedValue(new communityApi.AuthError());
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    fireEvent.click(await screen.findByText("Leave union"));
+
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalledTimes(1));
+  });
+
   it("creates a union via the modal and refreshes union lists on success", async () => {
     listUnionsForCommunityMock.mockResolvedValue([]);
     createUnionMock.mockResolvedValue({ id: "union-new", displayName: "New Union" });
@@ -221,5 +278,22 @@ describe("UnionsPanel", () => {
       }),
     );
     await waitFor(() => expect(screen.queryByRole("button", { name: "Create Union" })).not.toBeInTheDocument());
+  });
+
+  it("signs the wallet out when creating a union fails with an expired session (401)", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([]);
+    const communityApi = await import("@/src/services/communityApi");
+    createUnionMock.mockRejectedValue(new communityApi.AuthError());
+
+    renderWithProviders(<UnionsPanel communities={[COMMUNITY]} />);
+
+    fireEvent.click(screen.getByText("+ Create union"));
+    fireEvent.change(screen.getByPlaceholderText("Pop-up City Alliance"), { target: { value: "New Union" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Union" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 });

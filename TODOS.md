@@ -324,43 +324,83 @@
 
 ## ZuGov / Auth architecture follow-ups (from 2026-08-22 `/office-hours` + `/plan-eng-review`)
 
-### Roll out shared 401-detect wrapper to all authenticated write call sites
+### Roll out shared 401-detect wrapper to remaining write call sites (Batches 2-4)
 
-**What:** The `useSiwe` singleton-store fix (this pass) solves the confirmed
-concurrent-instance race condition, but the systemic 401 gap stays open: the
-`AuthError`/re-auth-gate pattern exists for only 8 of roughly 40 authenticated write
-calls (`communityApi.ts`'s writes). Every other write (membership tiers/join/approve/
-reject, all proposal actions, all event/venue writes, eligibility ruleset writes,
-credential verification) has no way to detect a 401 specifically and no automatic path
-back to a visible sign-in prompt. Split out of this pass at the Step 0 complexity gate
-— the full rollout touches at least 19 files.
+**What:** A `/plan-eng-review` pass (2026-08-23) audited every authenticated write call
+site precisely, replacing this entry's old "~40 call sites" estimate: **31 real write
+functions** across 6 service files, of which **21 have zero 401-handling** (2 more —
+`eventApi.ts`'s `createVenue`/`cancelSeries` — turned out to be dead code, deleted in
+Batch 1). Batch 1 (implemented this pass) covers `communityApi.ts`'s own internal
+consistency (only 3 of its 8 writes auto-signed-out on a 401; now all 8 do, via the new
+`withAuthDetect` wrapper in `src/services/httpClient.ts`) plus `membershipApi.ts`'s two
+real landmines (`app/manage-communities/[id]/members/page.tsx`'s `handleApprove`/
+`handleReject` had NO catch clause at all — worse than a swallow, a bare
+`try {...} finally {...}` — now fixed).
 
-**Why:** Design doc (`isasertkaya-community-creation-wizard-fix-design-20260822-232030.md`)
-locked Approach A (singleton store + opt-in wrapper) with two independently composable
-helpers: a pure auth-detect-and-signOut wrapper (this TODO — every call site opts in)
-and the existing retry-on-transient-failure behavior (stays scoped to the 3 already-
-audited call sites: `registerIdentity`, `attachGovernance`, `update` — do NOT
-generalize retry semantics to unaudited endpoints; adversarial review during design
-flagged that blind retry on non-idempotent writes like `proposalApi`'s sponsor/
-formalize/tally-trigger or `eventApi`'s RSVP risks a duplicate side effect from a
-transient network blip).
+**Remaining batches** (not yet built):
 
-**Known landmine (adversarial review, iteration 2):** some call sites already swallow
-all errors unconditionally by design — confirmed at `JoinSection.tsx`'s on-chain
-`handleJoin`, which wraps `membershipApi.join()` in `catch { /* best-effort */ }`,
-silently discarding a 401 with `justJoined` still set `true` afterward (on-chain signup
-succeeds, backend membership row silently never created). Wrapping these with the new
-auth-detect helper does nothing unless the existing catch is also removed/narrowed
-first. Enumerate which of the ~40 call sites have this property before treating the
-rollout as uniformly mechanical.
+- **Batch 2** — `membershipApi.ts`'s 3 remaining writes (`createTier`, `updateTier`,
+  `deleteTier`), called from `app/manage-communities/[id]/edit/page.tsx`.
+- **Batch 3** — `proposalApi.ts`'s 7 writes (`createDraft`, `sponsor`,
+  `authorizeFormalize`, `confirmFormalize`, `authorizeDirect`, `confirmDirect`,
+  `triggerTally`), called from `CreateProposalModal.tsx`/`ProposalsList.tsx`.
+- **Batch 4** — `eventApi.ts`'s 6 live writes (`createEvent`, `updateEvent`,
+  `cancelEvent`, `duplicateEvent`, `rsvp`, `cancelRsvp`, called from
+  `CreateEventModal.tsx`/`EventsSection.tsx`) + `credentialApi.ts`'s `verify` (1) +
+  `eligibilityApi.ts`'s `replaceRuleset` (1).
 
-**Effort:** L (mechanical per-call-site, but ~19 files with a per-file idempotency/
-catch-and-discard audit required, not a blind find-replace)
-**Priority:** P1 (same root cause already produced 6 live bugs found in one session
-during pre-Zukas-2026 dogfooding)
-**Depends on:** The `useSiwe` singleton-store fix (this pass) landing first — the
-shared session state the auth-detect wrapper calls into must exist and be race-free
-before wrapping write call sites around it is meaningful.
+Each batch: wrap the relevant call sites in `withAuthDetect(() => api.fn(...), signOut)`
+— no service-function changes needed (they already throw `HttpError` via the shared
+`parseErrorOr`, extracted to `src/services/httpClient.ts` in Batch 1). Retry-on-
+transient-failure behavior stays scoped to the 3 already-audited call sites
+(`registerIdentity`, `attachGovernance`, `update`) — do NOT generalize retry semantics
+to unaudited endpoints; the original design review flagged that blind retry on
+non-idempotent writes like `proposalApi`'s sponsor/formalize/tally-trigger or
+`eventApi`'s RSVP risks a duplicate side effect from a transient network blip.
+
+**Known landmine pattern to check per batch:** before wrapping a call site, confirm its
+existing catch doesn't already silently swallow errors (the `JoinSection.tsx`/
+`members/page.tsx` shape found in Batches 1's audit) — wrapping a call that already
+discards its result does nothing until the catch itself is fixed.
+
+**Effort:** M split across 3 batches (~1 file each for service-layer changes, 1-2
+call-site files each)
+**Priority:** P1 (same root cause already produced 6 live bugs in one session during
+pre-Zukas-2026 dogfooding)
+**Depends on:** Batch 1 (this pass) landing first — done.
+
+### Make 401-detection structural instead of opt-in (global interceptor)
+
+**What:** `withAuthDetect` (Batch 1) is opt-in per call site — every write function's
+call site must remember to wrap itself. Nothing structurally prevents a future write
+function (in Batches 2-4, or any new endpoint added later) from being written without
+it, reproducing the exact bug class this rollout exists to fix. Alternative: register a
+global `signOut` callback once from `SiweProvider` (e.g. via a module-level mutable
+reference set in a `useEffect`); the shared `parseErrorOr`/`HttpError` path in
+`httpClient.ts` calls it automatically on any 401, with no per-call-site wrapping
+required at all — every current AND future write gets 401-handling for free.
+
+**Why:** Raised by this review's outside-voice pass (Claude subagent, Codex not
+installed) as a genuine architecture gap in the opt-in design. Not built now because
+this exact tradeoff (opt-in vs. a bigger consolidated mechanism) was already weighed
+and decided at the parent SiweProvider `/plan-eng-review`: Approach B (a consolidated
+API client with built-in 401-handling, zero-touch for future call sites) was rejected
+in favor of Approach A (opt-in wrapper) because its bigger blast radius wasn't
+justified by what was broken at the time. Revisiting it now, with the shared
+`HttpError`/`parseErrorOr` foundation already in place from Batch 1, is a smaller
+version of the same idea and may be worth it once Batches 2-4 reveal whether opt-in
+wrapping keeps getting missed in practice.
+
+**Open design question:** callback-registration timing — `SiweProvider` mounts once at
+app root, but does the global callback exist before the very first API call fires after
+app boot (e.g. a component's own `useEffect` firing before `SiweProvider`'s registration
+effect)? Needs its own design pass, not a quick patch.
+
+**Effort:** M (touches `SiweProvider` + `httpClient.ts`; needs a design pass for the
+registration-timing question)
+**Priority:** P2
+**Depends on:** Batch 1 landing first (needs the shared `HttpError`/`parseErrorOr`
+foundation to build on).
 
 ### Unify Privy's wallet-connect signature and ZuGov's own SIWE signature
 

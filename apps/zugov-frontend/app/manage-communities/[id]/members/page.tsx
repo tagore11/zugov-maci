@@ -4,15 +4,22 @@ import { Header } from "../../../components/Header";
 import { ArrowLeft } from "lucide-react";
 import * as membershipApi from "@/src/services/membershipApi";
 import type { PendingRequest } from "@/src/services/membershipApi";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 export default function CommunityMembersPage() {
   const params = useParams();
   const communityId = params.id!;
+  const { signOut } = useSiwe();
 
   const [requests, setRequests] = useState<PendingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
   const [actingOn, setActingOn] = useState<string | null>(null);
+  // /plan-eng-review (2026-08-23) Batch 1 — handleApprove/handleReject used to have NO catch
+  // clause at all (a bare try/finally): any error, including a 401, silently vanished with the
+  // request staying in the list and zero indication anything went wrong.
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,9 +41,12 @@ export default function CommunityMembersPage() {
 
   async function handleApprove(requestId: string) {
     setActingOn(requestId);
+    setError(null);
     try {
-      await membershipApi.approveRequest(communityId, requestId);
+      await withAuthDetect(() => membershipApi.approveRequest(communityId, requestId), signOut);
       setRequests((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to approve request");
     } finally {
       setActingOn(null);
     }
@@ -44,9 +54,12 @@ export default function CommunityMembersPage() {
 
   async function handleReject(requestId: string) {
     setActingOn(requestId);
+    setError(null);
     try {
-      await membershipApi.rejectRequest(communityId, requestId);
+      await withAuthDetect(() => membershipApi.rejectRequest(communityId, requestId), signOut);
       setRequests((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject request");
     } finally {
       setActingOn(null);
     }
@@ -66,6 +79,12 @@ export default function CommunityMembersPage() {
 
         <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8">
           <h1 className="text-3xl font-bold text-foreground mb-6">Pending Join Requests</h1>
+
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-900/50 bg-red-900/20 p-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
 
           {loading && <p className="text-gray-500">Loading…</p>}
 

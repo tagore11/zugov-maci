@@ -1,3 +1,5 @@
+import { parseErrorOr } from "@/src/services/httpClient";
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
 export type ProposalPrivacy = "public" | "privacy_preserving";
@@ -52,14 +54,6 @@ export interface CreateDraftInput {
   executionLocation: ProposalExecutionLocation;
   votingProtocolType: ProposalVotingProtocolType;
   eligibleTierIds: string[];
-}
-
-async function parseErrorOr<T>(res: Response, fallback: string): Promise<T> {
-  if (!res.ok) {
-    const data = (await res.json()) as { error: string };
-    throw new Error(data.error ?? fallback);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function createDraft(

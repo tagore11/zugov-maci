@@ -1,3 +1,5 @@
+import { parseErrorOr } from "@/src/services/httpClient";
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
 export type EventKind = "talk" | "workshop" | "social" | "meeting" | "other";
@@ -38,32 +40,10 @@ export interface EventRsvp {
   cancelledAt: number | null;
 }
 
-async function parseErrorOr<T>(res: Response, fallback: string): Promise<T> {
-  if (!res.ok) {
-    const data = (await res.json()) as { error: string };
-    throw new Error(data.error ?? fallback);
-  }
-  return res.json() as Promise<T>;
-}
-
 export async function listVenues(communityId: string): Promise<Venue[]> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/venues`);
   const data = await parseErrorOr<{ venues: Venue[] }>(res, `Failed to fetch venues: ${res.status}`);
   return data.venues;
-}
-
-export async function createVenue(
-  communityId: string,
-  input: { name: string; address?: string; mapUrl?: string },
-): Promise<Venue> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/venues`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(input),
-  });
-  const data = await parseErrorOr<{ venue: Venue }>(res, `Failed to create venue: ${res.status}`);
-  return data.venue;
 }
 
 export interface CreateEventInput {
@@ -158,15 +138,6 @@ export async function duplicateEvent(
     body: JSON.stringify(input),
   });
   const data = await parseErrorOr<{ events: Event[] }>(res, `Failed to duplicate event: ${res.status}`);
-  return data.events;
-}
-
-export async function cancelSeries(communityId: string, seriesId: string): Promise<Event[]> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/series/${seriesId}`, {
-    method: "DELETE",
-    credentials: "include",
-  });
-  const data = await parseErrorOr<{ events: Event[] }>(res, `Failed to cancel series: ${res.status}`);
   return data.events;
 }
 

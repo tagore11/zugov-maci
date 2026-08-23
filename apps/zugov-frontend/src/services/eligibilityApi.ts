@@ -1,3 +1,5 @@
+import { parseErrorOr } from "@/src/services/httpClient";
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
 export type EligibilityMechanism = "open" | "tier" | "erc20_token";
@@ -28,14 +30,6 @@ export interface RuleDraft {
  * it into a real object so callers never juggle both shapes. */
 export interface EligibilityRule extends RuleDraft {
   id: string;
-}
-
-async function parseErrorOr<T>(res: Response, fallback: string): Promise<T> {
-  if (!res.ok) {
-    const data = (await res.json()) as { error: string };
-    throw new Error(data.error ?? fallback);
-  }
-  return res.json() as Promise<T>;
 }
 
 export async function getRuleset(communityId: string): Promise<EligibilityRule[]> {

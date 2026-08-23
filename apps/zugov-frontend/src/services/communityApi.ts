@@ -1,5 +1,6 @@
 import type { SignUpPolicyType, PollDeployConfig } from "@/src/config";
 import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
+import { HttpError } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
@@ -92,9 +93,9 @@ export type CommunityUpdatePayload = Partial<
   directDeploymentEnabled?: boolean;
 };
 
-export class AuthError extends Error {
+export class AuthError extends HttpError {
   constructor() {
-    super("Authentication required. Please sign in with Ethereum.");
+    super(401, "Authentication required. Please sign in with Ethereum.");
   }
 }
 

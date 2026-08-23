@@ -52,6 +52,7 @@ export { DEFAULT_ADVANCED_CONFIG };
 export type { DeployPhase };
 import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
+import { isAuthError } from "@/src/services/httpClient";
 import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZuGovRegistry";
 
 export type WizardStep = "community_info" | "community_setup" | "success";
@@ -126,7 +127,7 @@ async function withAuthRetry<T>(action: () => Promise<T>, signOut: () => Promise
     try {
       return await action();
     } catch (err) {
-      if (err instanceof communityApi.AuthError) {
+      if (isAuthError(err)) {
         await signOut();
         throw err;
       }
