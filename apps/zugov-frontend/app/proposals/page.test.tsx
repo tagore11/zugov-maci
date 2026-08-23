@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import ProposalsPage from "./page";
 
-// This page renders Header -> PrivyConnectButton, which now calls useSiwe() (session-lifecycle
+// This page renders Header -> WalletConnectButton, which calls useSiwe() (session-lifecycle
 // fix, 2026-08-22) — useSiwe needs a real WagmiProvider for useAccount()/useSignMessage(), which
 // this lightweight page test doesn't set up. Mock it out entirely; this test has nothing to do
 // with auth state.
@@ -11,9 +11,11 @@ vi.mock("@/src/hooks/useSiwe", () => ({
   useSiwe: () => ({ isAuthenticated: false, isSigning: false, error: null, signIn: vi.fn(), signOut: vi.fn() }),
 }));
 
-// PrivyConnectButton also calls wagmi's useDisconnect() directly (session-lifecycle fix,
-// 2026-08-22, part 2) — same WagmiProvider issue as above.
+// WalletConnectButton also calls wagmi's useAccount()/useConnect()/useDisconnect() directly
+// (/plan-eng-review, 2026-08-23 — Privy removed) — same WagmiProvider issue as above.
 vi.mock("wagmi", () => ({
+  useAccount: () => ({ address: undefined, status: "disconnected" }),
+  useConnect: () => ({ connectors: [], connect: vi.fn(), isPending: false, error: null }),
   useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 

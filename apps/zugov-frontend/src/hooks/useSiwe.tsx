@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { createSiweMessage } from "viem/siwe";
-import { usePrivy } from "@privy-io/react-auth";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 const SESSION_KEY = "siwe_auth";
@@ -32,7 +31,7 @@ export interface SiweContextValue {
 const SiweContext = createContext<SiweContextValue | null>(null);
 
 // /plan-eng-review (2026-08-23) — a Context provider, not a module-level singleton store. Every
-// `useSiwe()` call site (up to 6 today: PrivyConnectButton, the create-community wizard,
+// `useSiwe()` call site (up to 6 today: WalletConnectButton, the create-community wizard,
 // SiweGate's own fallback, the register/edit pages, JoinSection) used to mount an INDEPENDENT
 // instance of this state and its own copy of the auto-sign-in/invalidation effect below — a
 // confirmed, live race: a fresh wallet connecting could trigger 2-3 simultaneous auto-sign-in
@@ -49,13 +48,6 @@ export function SiweProvider({ children }: { children: ReactNode }) {
 
   const { address, chainId } = useAccount();
   const { signMessageAsync } = useSignMessage();
-  // Privy's own login for an external wallet (MetaMask etc. via the 'wallet' login method) can
-  // itself request a signature to verify wallet ownership before wagmi's address/chainId settle
-  // into their final connected values. Without waiting for Privy's `authenticated` flag, the
-  // auto-sign-in effect below could fire OUR SIWE signature request while Privy's own is still
-  // in flight — two uncoordinated signature prompts racing for the same wallet, observed as
-  // MetaMask confirming successfully but our SIWE session never actually establishing.
-  const { authenticated: privyAuthenticated } = usePrivy();
 
   const signIn = useCallback(async () => {
     if (!address || !chainId) {
@@ -164,11 +156,11 @@ export function SiweProvider({ children }: { children: ReactNode }) {
       autoSignInAttemptedFor.current = address;
       return;
     }
-    if (!chainId || isSigning || !privyAuthenticated) return;
+    if (!chainId || isSigning) return;
     if (autoSignInAttemptedFor.current === address) return;
     autoSignInAttemptedFor.current = address;
     void signIn();
-  }, [address, chainId, isAuthenticated, isSigning, privyAuthenticated, signIn, signOut]);
+  }, [address, chainId, isAuthenticated, isSigning, signIn, signOut]);
 
   const value: SiweContextValue = { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
 

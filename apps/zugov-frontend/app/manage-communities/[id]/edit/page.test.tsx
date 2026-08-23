@@ -10,7 +10,10 @@ vi.mock("wagmi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wagmi")>();
   return {
     ...actual,
-    useAccount: () => ({ address: CREATOR_ADDRESS }),
+    useAccount: () => ({ address: CREATOR_ADDRESS, status: "connected" }),
+    // WalletConnectButton (in Header) calls useConnect() directly too (/plan-eng-review,
+    // 2026-08-23 — Privy removed); overriding avoids needing a real WagmiProvider here.
+    useConnect: () => ({ connectors: [], connect: vi.fn(), isPending: false, error: null }),
     useDisconnect: () => ({ disconnect: vi.fn() }),
   };
 });

@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { usePrivy } from "@privy-io/react-auth";
-import { useAccount } from "wagmi";
+import { useAccount, useConnect } from "wagmi";
 import { useCreateCommunity, type WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 import { StepCommunitySetup } from "./StepCommunitySetup";
@@ -29,7 +28,7 @@ interface Props {
 
 export function CreateCommunityWizard({ onSubmittingChange }: Props) {
   const { address } = useAccount();
-  const { login } = usePrivy();
+  const { connectors, connect } = useConnect();
   // One shared instance, passed to both SiweGate and useCreateCommunity — a session invalidated
   // by an AuthError partway through (withAuthRetry's signOut()) is reflected in the gate
   // immediately instead of the gate's own stale copy still believing isAuthenticated: true
@@ -47,10 +46,10 @@ export function CreateCommunityWizard({ onSubmittingChange }: Props) {
         <p className="text-gray-300">Sign in to create a community.</p>
         <button
           type="button"
-          onClick={() => login()}
+          onClick={() => connect({ connector: connectors[0]! })}
           className="px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors"
         >
-          Sign in
+          Connect Wallet
         </button>
       </div>
     );

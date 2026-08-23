@@ -4,11 +4,9 @@ import type { Config } from "wagmi";
 import { getWalletClient } from "wagmi/actions";
 
 /**
- * Builds an ethers Signer from a wagmi walletClient — works for ANY connected wallet
- * (Privy embedded wallets, MetaMask, WalletConnect, etc.), unlike reading window.ethereum
- * directly, which only browser-extension wallets set. Privy's embedded wallets are reachable
- * only through the wagmi connector, not the global — code that falls back to window.ethereum
- * silently breaks for every non-crypto resident who signed in by email.
+ * Builds an ethers Signer from a wagmi walletClient — works for any connected wallet the
+ * registered connector supports, unlike reading window.ethereum directly, which only
+ * browser-extension wallets set.
  */
 export function getSignerFromWalletClient(walletClient: Client | undefined): JsonRpcSigner {
   if (!walletClient?.account) throw new Error("No wallet found");

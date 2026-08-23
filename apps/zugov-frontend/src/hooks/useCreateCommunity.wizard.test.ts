@@ -13,10 +13,10 @@ vi.mock("wagmi", () => ({
 }));
 
 // useCreateCommunity.ts imports wagmiConfig (src/services/wagmiConfig.ts) for module-level
-// signer access (see wagmiSigner.ts) — that module calls real wagmi/@privy-io/wagmi functions
-// at load time, which the plain "wagmi" mock above doesn't provide. Not needed for this test
-// (nothing here exercises the actual deploy/signer path), so mock it out entirely rather than
-// trying to make createConfig() work under the mock.
+// signer access (see wagmiSigner.ts) — that module calls real wagmi functions at load time,
+// which the plain "wagmi" mock above doesn't provide. Not needed for this test (nothing here
+// exercises the actual deploy/signer path), so mock it out entirely rather than trying to make
+// createConfig() work under the mock.
 vi.mock("@/src/services/wagmiConfig", () => ({
   wagmiConfig: {},
   CHAINS: [],

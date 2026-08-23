@@ -16,10 +16,6 @@ both dev servers, and both test suites, all passing. This doc covers `apps/zugov
   use the wrong version instead of the pin; run `which pnpm` to check, and prefer corepack's shim
   (found under `$(dirname "$(nvm which 20)")` if using nvm) over a global standalone install.
 - **Docker**, for a local Postgres instance — no other local Postgres setup is assumed.
-- A **Privy App ID** — required for the frontend to boot at all (`providers.tsx` throws loudly if
-  `VITE_PRIVY_APP_ID` is missing, by design — a broken sign-in button is worse than a clear error).
-  Sign up at [dashboard.privy.io](https://dashboard.privy.io), create an app, copy the App ID. This
-  is a one-time, manual, per-developer (or shared team) step — nothing here automates it.
 
 ## 1. Clone and install
 
@@ -61,7 +57,6 @@ cp apps/zugov-backend/.env.example apps/zugov-backend/.env.local
 
 # apps/zugov-frontend/.env.local
 cp apps/zugov-frontend/.env.local.example apps/zugov-frontend/.env.local
-# Fill in VITE_PRIVY_APP_ID with your own App ID from dashboard.privy.io.
 ```
 
 Neither `.env.local` is committed — both are gitignored, matching the `.example` files' role as

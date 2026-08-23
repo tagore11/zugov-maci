@@ -22,10 +22,12 @@ vi.mock("@/src/hooks/useSiwe", () => ({
   useSiwe: () => ({ signOut: mockSignOut }),
 }));
 
-// Header -> PrivyConnectButton calls wagmi's useDisconnect() directly, which needs a real
-// WagmiProvider this lightweight page test doesn't set up (matches delegates/page.test.tsx's
-// established pattern for the same issue).
+// Header -> WalletConnectButton calls wagmi's useAccount()/useConnect()/useDisconnect() directly,
+// which need a real WagmiProvider this lightweight page test doesn't set up (matches
+// delegates/page.test.tsx's established pattern for the same issue).
 vi.mock("wagmi", () => ({
+  useAccount: () => ({ address: undefined, status: "disconnected" }),
+  useConnect: () => ({ connectors: [], connect: vi.fn(), isPending: false, error: null }),
   useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 

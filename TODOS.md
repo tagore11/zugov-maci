@@ -437,34 +437,36 @@ registration-timing question)
 **Depends on:** Batch 1 landing first (needs the shared `HttpError`/`parseErrorOr`
 foundation to build on).
 
-### Unify Privy's wallet-connect signature and ZuGov's own SIWE signature
+### ~~Unify Privy's wallet-connect signature and ZuGov's own SIWE signature~~ — RESOLVED (2026-08-23, Privy removed)
 
-**What:** Connecting an external wallet (MetaMask etc.) today produces TWO separate
-MetaMask "Sign-in request" prompts in a row: Privy's own signature, requested by its
-SDK to verify wallet ownership for Privy's backend session (`loginMethods: ["email",
-"wallet"]` in `app/providers.tsx`), immediately followed by ZuGov's own SIWE signature
-(`useSiwe.tsx`'s `signIn()` — `createSiweMessage` + `signMessageAsync`, establishing
-the separate httpOnly-cookie backend session). Reported live during dogfooding
-(2026-08-23) as confusing/broken-looking, but not a regression — same behavior existed
-before the SiweProvider Context migration.
+**Resolution:** Both candidate directions from the original write-up turned out to be
+dead ends: Option A (bypass Privy's own wallet-auth signature, keep Privy only for
+`embeddedWallets`) was blocked by `wagmiConfig.ts` importing `createConfig` from
+`@privy-io/wagmi` — wagmi's connector state was entirely Privy-driven, with no
+independent raw wagmi connector existing anywhere in the app, making "just bypass
+Privy for external wallets" a real unknown-feasibility spike, not a simple change.
+Option B (one signature satisfying both) was confirmed architecturally infeasible —
+Privy's own "bring your own SIWE flow" API (`useLoginWithSiwe`/`generateSiweMessage`)
+still requires PRIVY'S OWN generated message/nonce for its own replay protection, not
+an arbitrary caller-supplied one.
 
-**Why:** `useSiwe.tsx`'s auto-sign-in effect already waits for Privy's `authenticated`
-flag before firing (`b551991d`, 2026-08-21) — that fix SEQUENCES the two signature
-requests so they no longer race and silently fail each other, but doesn't reduce the
-count from two to one. `b551991d`'s own commit message flagged unifying them as "a
-separate, larger architecture question" needing its own review — never scheduled.
-Two candidate directions, neither trivial: (1) bypass Privy's own wallet-auth signature
-for external-wallet users entirely (connect via a raw wagmi connector instead of
-Privy's `login()` for the `'wallet'` method, keeping Privy only for its
-`embeddedWallets` email-signup path), or (2) find a way for one signature to satisfy
-both Privy's ownership check and the backend's SIWE verification. Needs its own
-`/plan-eng-review` before touching the Privy/wagmi wiring, not a quick patch.
+Founder's call once both were ruled out: drop Privy entirely rather than find a third
+option — "supporting both Privy and raw wagmi seems to be burdensome and causing
+problems." A `/plan-eng-review` (2026-08-23) scoped and shipped the full removal:
+plain wagmi `WagmiProvider` (a real registered `injected()` connector in
+`wagmiConfig.ts`, replacing Privy's own wagmi bridge), `WalletConnectButton.tsx`
+replacing `PrivyConnectButton.tsx`, `useSiwe.tsx`'s auto-sign-in effect no longer
+gated on `usePrivy().authenticated` (nothing left to wait on). One signature now,
+by construction — not two sequenced ones.
 
-**Effort:** M-L (real Privy/wagmi wiring change either way; needs a design pass to
-pick a direction)
-**Priority:** P2
-**Depends on:** None technically, but should follow the 3-gating-pattern
-consolidation above so route-level auth guards aren't designed twice
+**Accepted tradeoff:** email/social sign-in and Privy's auto-provisioned embedded
+wallet are gone with no in-house replacement yet — explicitly confirmed by the
+founder ("wallet-only for now, accept the tradeoff") given the 401/403/route-guard
+work this was bundled with needed a clean auth foundation before Zukas 2026. See
+"Investigate passkey/smart-contract-wallet auth" below, now the only path back to
+non-wallet-owning residents, and the now-obsolete embedded-wallet-funding TODO below.
+
+**Depends on:** N/A — complete.
 
 ### Per-community configurable visibility policy (public vs. members-only)
 
@@ -486,22 +488,60 @@ folded in silently.
 landing first — a reliable "is this user authenticated" answer needs to exist before
 building a visibility policy on top of it.
 
-### Consolidate the 3 uncoordinated auth-gating patterns across pages
+### Consolidate the 3 uncoordinated auth-gating patterns across pages (Phase B — scoped, not yet implemented)
 
 **What:** Today, each page invents its own rule for "does this need auth to view/act":
 `SiweGate`-wrapped (wizard, register, edit, community Join), wallet-address-only with
-no SIWE check (`manage-profile`, `manage-communities` list), or no client-side gating
-at all with misleading error copy (`manage-communities/[id]/members` shows "You don't
-have permission" for a not-signed-in-at-all visitor, no path to sign in). Needs one
-consistent rule, likely including route-level guards (`src/App.tsx` has zero today).
+no SIWE check (`manage-profile`, `manage-communities` list), or a sub-pattern found
+during the 2026-08-23 audit — components that call `useSiwe()` only reactively (for
+`signOut()` cleanup after a 401), never proactively (never reading `isAuthenticated`
+to gate rendering), which is functionally identical to "no gating" but easy to mistake
+for real gating on a quick grep (`manage-communities/[id]/members` shows byte-identical
+"You don't have permission" text for both a not-signed-in-at-all visitor and a
+signed-in-but-unauthorized one). Other concrete offenders: `/community/:id`'s Join
+button is `SiweGate`-wrapped in one governance-state branch but completely ungated in
+the sibling branch; `/manage-communities/:id/edit`'s authorization gate is wallet-
+address equality, not a SIWE check, and its "Save Changes" write bypasses `SiweGate`
+entirely unlike its sibling register page.
 
-**Why:** Found during the 2026-08-22 auth audit; explicitly deferred from the
-auth-unification wedge as a UX/consistency question distinct from the underlying
-session-state mechanism being fixed first.
+A full route audit (all 14 routes in `src/App.tsx`) during the same `/plan-eng-review`
+found no page actually needs its whole view blocked from an unauthenticated visitor —
+the inconsistency is entirely action-level — but locked a `RequireAuth` route-guard
+component anyway (react-router-dom v6 nested-route pattern), applied to exactly 2
+routes with a genuine UX case for it: `/manage-communities` and `/manage-profile`
+(both "your own stuff" pages that today show a misleadingly-empty view to a
+disconnected visitor rather than a real sign-in prompt). Also locked: a symmetric
+`isForbiddenError(err)` helper alongside the existing `isAuthError`/`withAuthDetect`
+(`src/services/httpClient.ts`) for the 403-shaping half of this work (see the
+"structural 401-detection" TODO above for the parallel 401 gap) — 403 status codes
+are already correct everywhere on the backend (34 call sites), but response-SHAPING is
+ad hoc (two idioms: inline `isAuthorized()`/`hasTierPermission()` + `c.json(...,403)`,
+or catch-and-map custom error classes — no shared dispatcher like 401's `requireAuth`).
+
+**Why:** Found during the 2026-08-22 auth audit; fully scoped during the 2026-08-23
+Privy-removal `/plan-eng-review` (founder: "removing privy support needs to be full on
+auth, 401, 403 handling, route guards and all, with unified gating") but deliberately
+deferred as its own follow-up pass, not bundled into the Phase A Privy-removal commit.
 
 **Effort:** M
 **Priority:** P2
-**Depends on:** Auth architecture unification (this pass) landing first
+**Depends on:** Phase A (Privy removal, done 2026-08-23) landing first
+
+### WalletConnect/mobile-wallet support
+
+**What:** `wagmiConfig.ts` registers only a single `injected()` connector (auto-
+discovers every EIP-6963 browser-extension wallet — MetaMask, Rabby, Coinbase
+extension, etc. — under one entry), no `walletConnect()` connector for QR-code/mobile
+wallet flows.
+
+**Why:** Deliberately deferred during the 2026-08-23 Privy-removal `/plan-eng-review`
+— adding it needs a new WalletConnect Cloud project ID, a new vendor dependency the
+review didn't want to pull in in the same pass as the Privy removal it was meant to
+simplify.
+
+**Effort:** S (one new connector + a WalletConnect Cloud project ID)
+**Priority:** P3
+**Depends on:** None
 
 ### No rate limiting on `/api/auth/nonce` / `/api/auth/verify`; nonce not cleared on failed verify
 
@@ -525,8 +565,8 @@ a non-null assertion with no runtime guard — an unset/empty `CORS_ORIGIN` cras
 whole backend at module load with "Cannot read properties of undefined (reading
 'split')" instead of a clear, actionable error.
 
-**Why:** Found during the 2026-08-22 auth audit. Contrast with the frontend's
-`VITE_PRIVY_APP_ID` check, which fails loudly with setup instructions.
+**Why:** Found during the 2026-08-22 auth audit. Contrast with the fail-loudly-with-
+setup-instructions pattern this codebase otherwise favors for missing required config.
 
 **Effort:** S (one explicit guard + error message, matching the frontend's pattern)
 **Priority:** P3
@@ -662,17 +702,18 @@ for the real fix
 
 ## Repo Infrastructure
 
-### Manually fund each resident's embedded wallet with Sepolia test ETH
+### ~~Manually fund each resident's embedded wallet with Sepolia test ETH~~ — OBSOLETE (2026-08-23, Privy removed)
 
-**What:** After a resident signs up via email (Privy auto-provisions an embedded wallet), the wallet has 0 Sepolia ETH and cannot sign any transaction (MACI signup, voting). Tarik/Sait need to manually send test ETH to each resident's wallet address (visible in the Privy dashboard or via the app) before that resident can actually participate.
+**Resolution:** Moot. The premise was Privy auto-provisioning a zero-balance embedded
+wallet for email sign-ups, which Tarik/Sait would then need to manually fund one by
+one. Privy (and its embedded-wallet path) is gone as of the 2026-08-23 auth
+`/plan-eng-review` — every resident now connects their own external wallet (MetaMask
+etc.), which they're responsible for funding themselves (public Sepolia faucets are
+still linked in `src/config.ts`). No more per-resident manual funding step for the
+team to remember under event-day pressure — a positive side-effect of the removal,
+not something that needs separate follow-up.
 
-**Why:** No auto-funding path exists anywhere in the codebase (`src/config.ts` only lists manual faucet _links_ — Google Cloud Web3 Faucet, QuickNode, etc. — not an automated flow). Discovered during eng review's outside-voice pass, alongside the `window.ethereum` signer bug it's adjacent to (fixed separately).
-
-**Context:** Given the small expected headcount for Zukas 2026 and Sepolia's free public faucets, this is an operational workaround, not a blocker — but it's a real step that must actually happen for each resident, and it's easy to forget under event-day pressure. Consider batch-funding all registered residents' addresses in one pass right before the event rather than one-by-one reactively.
-
-**Effort:** S (operational, not engineering)
-**Priority:** P1
-**Depends on:** None — but blocks any embedded-wallet resident from actually signing up/voting until done
+**Depends on:** N/A — obsolete.
 
 ### Deploy MerkleProof policy factory to Sepolia
 
@@ -722,11 +763,18 @@ for the real fix
 **Priority:** P3
 **Depends on:** None
 
-### Investigate passkey/smart-contract-wallet auth as a Privy replacement
+### Investigate passkey/smart-contract-wallet auth for in-house email/passkey sign-in
 
-**What:** Replace Privy's custodial-ish embedded wallet with a genuinely vendor-free path: WebAuthn passkeys signing through a smart contract wallet (ERC-4337 account abstraction + ERC-1271 signature verification), instead of a standard EOA/SIWE flow.
+**What:** A genuinely vendor-free path back to non-wallet-owning residents: WebAuthn
+passkeys signing through a smart contract wallet (ERC-4337 account abstraction +
+ERC-1271 signature verification), instead of a standard EOA/SIWE flow.
 
-**Why:** Privy (and every embedded-wallet SDK evaluated — Dynamic, Web3Auth, Magic) means real vendor lock-in. Passkeys are the only path that avoids a wallet-infrastructure vendor entirely, and fit ZuGov's own values (minimizing trusted third parties) better than any custodial/MPC SaaS option.
+**Why:** Originally framed as "a Privy replacement" — now more directly load-bearing:
+the 2026-08-23 Privy-removal `/plan-eng-review` dropped email/social sign-in entirely
+(accepted tradeoff, "wallet-only for now"), with no in-house replacement built yet.
+This is the only scoped path back to it. Passkeys also avoid a wallet-infrastructure
+vendor entirely, fitting ZuGov's own values (minimizing trusted third parties) better
+than any custodial/MPC SaaS option (Privy, Dynamic, Web3Auth, Magic) would have.
 
 **Context:** Researched during T1 (2026-08-18) and explicitly rejected for Sept 9 because it's the heaviest option, not the lightest: (1) WebAuthn uses secp256r1, Ethereum uses secp256k1 — mathematically incompatible, so this REQUIRES a smart contract wallet, not a simple key swap. (2) P-256 verification costs ~330k-400k gas without the RIP-7212 precompile (~$25/signature at L1 prices); RIP-7212 is deployed on major L2s but its status on plain Ethereum Sepolia (the chain locked in for Zukas 2026) is unconfirmed — check this first before any implementation attempt. (3) Requires an ERC-4337 bundler — either self-hosted (real new production infrastructure, arguably bigger than the MACI coordinator ops work) or a commercial bundler (Alchemy, Pimlico, Biconomy, ZeroDev, etc.) — which is still a vendor, just one layer lower. (4) `useSiwe.ts` and backend `auth.ts`/`session.ts` assume standard EOA `personal_sign` verification; a smart contract wallet needs ERC-1271 verification instead — real rework, not a provider swap. Worth revisiting once there's time to do it properly, not under event-deadline pressure.
 
