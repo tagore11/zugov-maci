@@ -10,16 +10,16 @@ after that change ships.
 ## System Context
 
 - **Monorepo layout:** `apps/zugov-backend` (Hono + Drizzle ORM + Postgres), `apps/zugov-frontend`
-  (React/Vite, react-router-dom, wagmi + Privy, TanStack Query), plus a subgraph package for
+  (React/Vite, react-router-dom, wagmi, TanStack Query), plus a subgraph package for
   per-community indexing.
 - **Auth has two independent layers:**
-  - **Privy** (client-side) — wallet connection. Supports both self-custody wallets (MetaMask
-    etc.) and email sign-in, which auto-provisions an embedded/custodial wallet
-    (`embeddedWallets.ethereum.createOnLogin: "users-without-wallets"` in `providers.tsx`) so
-    residents without crypto experience never see a seed phrase.
+  - **wagmi** (client-side) — wallet connection, via a single `injected()` connector
+    (`wagmiConfig.ts`) covering every EIP-6963 browser-extension wallet (MetaMask, Rabby, etc.).
+    Privy was removed 2026-08-23 (see Decisions Log) — no more email sign-in or auto-provisioned
+    embedded wallet; every resident brings their own wallet.
   - **SIWE session** (server-side) — a separate httpOnly-cookie-backed session (`sessions`
     table), required for any authenticated write. `requireAuth` middleware enforces it;
-    `getSession(c)` reads it where auth is optional. A connected Privy wallet does not imply an
+    `getSession(c)` reads it where auth is optional. A connected wallet does not imply an
     authenticated backend session — write flows gate on `SiweGate`/`useSiwe()` independently.
 
 ## Data Model (current)
@@ -186,7 +186,7 @@ deferred until a 2nd real adapter exists to design against, see TODOS.md).
   that read the same resource (e.g. `["community", id]` used by both the detail page and
   `ProposalsList`) so mounting both doesn't double-fetch — check for an existing query
   key before inventing a new one for data you're already fetching elsewhere.
-- wagmi + Privy own wallet/auth state; `useCreateCommunity` orchestrates the multi-phase
+- wagmi owns wallet/auth state; `useCreateCommunity` orchestrates the multi-phase
   on-chain community deployment (sign-up policy → MACI → set target → attach governance) with a
   `localStorage` checkpoint so a page refresh mid-deployment can resume instead of restarting.
 
