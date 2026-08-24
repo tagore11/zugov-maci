@@ -716,6 +716,45 @@ for the real fix
 
 ## Repo Infrastructure
 
+### Drizzle migration snapshots (`drizzle/meta/*.json`) drifted from reality since migration 0019
+
+**What:** `drizzle/meta/0019_snapshot.json` and `0020_snapshot.json` still record
+`governance_actions`/`governance_action_sponsors` as the live table names, even though
+migration `0019_proposal_rename.sql`'s actual SQL (`ALTER TABLE ... RENAME TO`) really
+did rename them to `proposals`/`proposal_sponsors` — confirmed against the live
+`zugov_dev` DB directly. The SQL migration files and the real database are correct;
+only the snapshot bookkeeping is stale. Running `drizzle-kit generate` today hits this
+immediately: it diffs `schema.ts` against the last (wrong) snapshot and asks an
+ambiguous "is `proposal_sponsors` a new table or a rename from
+`governance_action_sponsors`" prompt — neither interactive answer produces a migration
+that actually applies cleanly against the real, already-renamed database.
+
+**How it was worked around (2026-08-24):** `main`'s zupoll decision-adapter feature
+added 3 new tables + 2 new `proposals` columns to `schema.ts` with no migration ever
+generated for them (a separate, now-fixed gap — see migration `0021_add_zupoll_tables.sql`,
+hand-written directly against the confirmed real DB state and the real schema diff,
+bypassing `drizzle-kit generate` entirely to sidestep the snapshot-drift prompt). This
+unblocks `0021` specifically but does NOT fix the underlying snapshot corruption —
+the next schema change touching `proposals`/`proposal_sponsors` (or anything descended
+from a table `drizzle-kit` already has stale snapshot state for) will hit the same
+ambiguous prompt again.
+
+**Why:** Root cause unconfirmed — likely `0019`'s migration was hand-adjusted or
+generated in a way that didn't get its snapshot regenerated/committed alongside it, a
+gap from the 2026-08-20 governance-restructure work, predating this discovery.
+
+**Fix direction (not scoped):** Regenerate `0019`/`0020`'s snapshots to match what
+their SQL actually did (rename, not the stale pre-rename state), most likely via
+`drizzle-kit introspect`/`pull` against a DB migrated only up to that point, or by
+hand-editing the snapshot JSON's table-name keys — needs verification either way
+before trusting `drizzle-kit generate`'s output blindly again.
+
+**Effort:** S–M (once the right regeneration approach is confirmed)
+**Priority:** P2 — not urgent (hand-writing migrations works fine as a workaround,
+this repo's migrations are already small/simple), but will keep resurfacing on every
+future `proposals`/`proposal_sponsors`-touching schema change until fixed
+**Depends on:** None
+
 ### ~~Manually fund each resident's embedded wallet with Sepolia test ETH~~ — OBSOLETE (2026-08-23, Privy removed)
 
 **Resolution:** Moot. The premise was Privy auto-provisioning a zero-balance embedded

@@ -148,6 +148,13 @@
       "when": 1787227737572,
       "tag": "0020_proposal_person_type_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1787565600000,
+      "tag": "0021_add_zupoll_tables",
+      "breakpoints": true
     }
   ]
 }
