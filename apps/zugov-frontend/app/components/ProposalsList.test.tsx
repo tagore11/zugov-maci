@@ -26,6 +26,16 @@ vi.mock("@/src/services/membershipApi", () => ({
   getTiers: (...args: unknown[]) => getTiersMock(...args),
 }));
 
+// Merged in from the zupoll decision-adapter feature (main) — DraftRow's Sponsor button and the
+// create-proposal/admin affordances now gate on real tier permissions. Mocked directly (not via
+// membershipApi's getMembershipStatus/getTiers) since these tests are about the sponsor/authorize/
+// formalize flow, not permission computation; every test here assumes a fully-permissioned viewer
+// unless it says otherwise.
+vi.mock("@/src/hooks/useMembershipPermission", () => ({
+  useHasTierPermission: () => true,
+  useIsCommunityAdmin: () => true,
+}));
+
 const communityGetMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   get: (...args: unknown[]) => communityGetMock(...args),

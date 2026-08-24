@@ -12,6 +12,7 @@ import { JoinSection } from "./JoinSection";
 import { UnionsSection } from "./UnionsSection";
 import { ProposalsList } from "../../components/ProposalsList";
 import { EventsSection } from "../../components/EventsSection";
+import { ZupollSection } from "../../components/ZupollSection";
 import { fetchMembers, fetchPolls } from "@/src/services/subgraph";
 import { fetchNumMessages, fetchIsEligible } from "@/src/services/readContract";
 
@@ -294,8 +295,10 @@ export default function CommunityPage() {
           </div>
 
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
-            <ProposalsList communityId={dc.id} connected={!!address} />
+            <ProposalsList communityId={dc.id} connected={!!address} walletAddress={address} />
           </div>
+
+          <ZupollSection communityId={dc.id} connected={!!address} />
         </main>
       </div>
     );

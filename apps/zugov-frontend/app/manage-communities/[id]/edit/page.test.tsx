@@ -52,6 +52,14 @@ vi.mock("@/src/services/eligibilityApi", () => ({
   replaceRuleset: vi.fn(),
 }));
 
+// Merged in from the zupoll decision-adapter feature (main) — this page now also fetches which
+// decision adapters are attached, unrelated to what this file actually tests (the save flow's
+// 401-handling). Mocked out entirely so the load effect's Promise.all doesn't hit a real fetch.
+const listDecisionAdaptersMock = vi.fn();
+vi.mock("@/src/services/zupollApi", () => ({
+  listDecisionAdapters: (...args: unknown[]) => listDecisionAdaptersMock(...args),
+}));
+
 const COMMUNITY = {
   id: "community-1",
   displayName: "Zukas Residency",
@@ -61,9 +69,8 @@ const COMMUNITY = {
   membershipPolicy: "open" as const,
   tierChangesRequireVote: false,
   directDeploymentEnabled: false,
-  // true so the page renders the plain "Governance is configured" text instead of
-  // DeployGovernanceSection, which pulls in useChainId()/useZuGovRegistry() and needs a real
-  // WagmiProvider -- unrelated to what this file tests (the save flow's 401-handling).
+  // Required by the Community type; the page's DeployGovernanceSection gate now reads
+  // attachedAdapters (mocked via listDecisionAdaptersMock below), not this field directly.
   governanceConfigured: true,
   defaultTierId: null,
 };
@@ -85,11 +92,17 @@ beforeEach(() => {
   getTiersMock.mockReset();
   getMembershipStatusMock.mockReset();
   getRulesetMock.mockReset();
+  listDecisionAdaptersMock.mockReset();
 
   getCommunityMock.mockResolvedValue(COMMUNITY);
   getTiersMock.mockResolvedValue([]);
   getMembershipStatusMock.mockResolvedValue({ status: "none" });
   getRulesetMock.mockResolvedValue([]);
+  // "maci" attached (not just the old governanceConfigured flag main replaced it with) so the
+  // page renders the plain "Governance is configured" text instead of DeployGovernanceSection,
+  // which pulls in useChainId()/useZuGovRegistry() and needs a real WagmiProvider -- unrelated
+  // to what this file tests (the save flow's 401-handling).
+  listDecisionAdaptersMock.mockResolvedValue({ adapters: ["maci"] });
 });
 
 describe("EditCommunityPage save flow", () => {

@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { communityDecisionAdapters, type CommunityDecisionAdapter } from "../db/schema.js";
 import type { EligibilityMechanism } from "./eligibilityService.js";
 
-export type DecisionAdapterType = "maci";
+export type DecisionAdapterType = "maci" | "zupoll";
 
 export class NoDecisionAdapterAttachedError extends Error {
   constructor() {
@@ -41,6 +41,17 @@ const ADAPTER_CAPABILITIES: Record<DecisionAdapterType, DecisionAdapterCapabilit
     adapterType: "maci",
     supportedEligibilityMechanisms: ["open", "erc20_token"],
     supportedVotingProtocolTypes: ["simple", "quadratic", "ranked", "full"],
+  },
+  // specs/013-zupoll-decision-adapter — off-chain, anonymous, Semaphore-group-proof survey
+  // voting. "tier" is the only eligibility mechanism it enforces (membershipTiers.canVote via
+  // the eligible-voter group snapshot, see zupollService.snapshotGroup) — unlike MACI it has no
+  // on-chain policy contracts, so "open"/"erc20_token" aren't meaningful here. Only "simple"
+  // (single-choice per question) voting protocol type — no quadratic/ranked/full ballot formats
+  // for this adapter.
+  zupoll: {
+    adapterType: "zupoll",
+    supportedEligibilityMechanisms: ["tier"],
+    supportedVotingProtocolTypes: ["simple"],
   },
 };
 

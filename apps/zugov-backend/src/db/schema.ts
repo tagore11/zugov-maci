@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, primaryKey, index, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, primaryKey, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import type { CredentialStatus, Protocol } from "../services/identity/IdentityProvider.js";
 
 // Server-side session store: the cookie only ever holds an opaque random token (see
@@ -127,7 +127,7 @@ export const communityDecisionAdapters = pgTable(
     communityId: text("community_id")
       .notNull()
       .references(() => communities.id, { onDelete: "cascade" }),
-    adapterType: text("adapter_type").$type<"maci">().notNull(),
+    adapterType: text("adapter_type").$type<"maci" | "zupoll">().notNull(),
     attachedAt: integer("attached_at").notNull(),
   },
   (table) => [primaryKey({ columns: [table.communityId, table.adapterType] })],
@@ -243,6 +243,12 @@ export const proposals = pgTable("proposals", {
   id: text("id").primaryKey(),
   communityId: text("community_id").notNull(),
   type: text("type").$type<"poll">().notNull().default("poll"),
+  // Zupoll decision adapter (specs/013-zupoll-decision-adapter) — explicit adapter dispatch.
+  // NOT inferred from (privacy, executionLocation, votingProtocolType) because that tuple match
+  // is fragile and breaks the moment a second off-chain adapter exists. Defaults to "maci" only
+  // for compatibility with rows created before this column existed — every row created by MACI's
+  // own creation paths sets it explicitly too, the default is a backfill convenience only.
+  decisionAdapterType: text("decision_adapter_type").$type<"maci" | "zupoll">().notNull().default("maci"),
   title: text("title").notNull(),
   description: text("description").notNull(),
   privacy: text("privacy").$type<"public" | "privacy_preserving">().notNull(),
@@ -303,6 +309,11 @@ export const proposals = pgTable("proposals", {
   tallyCompletedAt: integer("tally_completed_at"),
   // JSON-stringified ITallyData from the coordinator's submit response, once completed.
   tallyResult: text("tally_result"),
+  // Zupoll decision adapter — generic across adapters, not Zupoll-namespaced, since any adapter
+  // may eventually want a pre-vote withdraw capability. Set once, never cleared. Withdrawal is
+  // only permitted while zero votes exist (see zupollService.withdraw); other adapters don't
+  // wire up a withdraw path in this feature.
+  withdrawnAt: integer("withdrawn_at"),
 });
 
 export type Proposal = typeof proposals.$inferSelect;
@@ -470,3 +481,75 @@ export const eligibilityRules = pgTable("eligibility_rules", {
 
 export type EligibilityRule = typeof eligibilityRules.$inferSelect;
 export type NewEligibilityRule = typeof eligibilityRules.$inferInsert;
+
+// Zupoll decision adapter (specs/013-zupoll-decision-adapter) — off-chain, anonymous,
+// Semaphore-group-proof survey voting. See research.md for the full anonymity design; the short
+// version: registration (this table) is a wallet-authenticated action and the server legitimately
+// knows "wallet W registered commitment C" — what must never be linkable is a *vote* to a wallet,
+// which is enforced by zupollVotes below having no identity-linking column at all, not by hiding
+// this table's contents.
+//
+// Scoped per-community (one commitment per (walletAddress, communityId), not one per wallet) so a
+// shared commitment can't be used to correlate a member's participation across communities
+// (Clarifications Q1). Upserted on re-registration — there is no admin-assisted recovery path for
+// a lost identity secret (FR-014); a member re-registering forfeits standing tied to the old
+// commitment but loses nothing already snapshotted into an existing proposal's group (see
+// zupollProposalGroups below, which is an immutable copy, not a live reference to this table).
+export const zupollIdentityCommitments = pgTable(
+  "zupoll_identity_commitments",
+  {
+    walletAddress: text("wallet_address").notNull(),
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    // Public Semaphore identity commitment (a Poseidon-hash public value, not a secret) —
+    // generated and held client-side; this column only ever receives the public commitment.
+    commitment: text("commitment").notNull(),
+    registeredAt: integer("registered_at").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.walletAddress, table.communityId] })],
+);
+
+export type ZupollIdentityCommitment = typeof zupollIdentityCommitments.$inferSelect;
+export type NewZupollIdentityCommitment = typeof zupollIdentityCommitments.$inferInsert;
+
+// One row per Zupoll proposal, created once at proposal-creation time and never updated
+// afterward — this IS the historic eligible-voter snapshot (FR-004): a member's eligibility for
+// a given proposal is fixed at creation time, unaffected by later membership/tier changes in
+// either direction (spec User Story 5). groupCommitments is the full list of commitments
+// included in the snapshot (already-public group-membership values, not secrets) so the client
+// can reconstruct the identical Merkle tree for proof generation/verification.
+export const zupollProposalGroups = pgTable("zupoll_proposal_groups", {
+  proposalId: text("proposal_id")
+    .primaryKey()
+    .references(() => proposals.id, { onDelete: "cascade" }),
+  groupRoot: text("group_root").notNull(),
+  groupCommitments: text("group_commitments").notNull(), // JSON-stringified string[]
+  createdAt: integer("created_at").notNull(),
+});
+
+export type ZupollProposalGroup = typeof zupollProposalGroups.$inferSelect;
+export type NewZupollProposalGroup = typeof zupollProposalGroups.$inferInsert;
+
+// The anonymity boundary, enforced structurally by the schema itself, not just service-layer
+// discipline: this table has NO wallet/identity column and NO foreign key to
+// zupollIdentityCommitments — there is no column from which a vote could ever be joined back to
+// an identity (FR-007). UNIQUE (proposalId, nullifier) is the actual double-vote prevention
+// mechanism (FR-006) — a second insert attempt for the same identity on the same proposal fails
+// at the DB constraint level.
+export const zupollVotes = pgTable(
+  "zupoll_votes",
+  {
+    id: text("id").primaryKey(),
+    proposalId: text("proposal_id")
+      .notNull()
+      .references(() => proposals.id, { onDelete: "cascade" }),
+    optionIdx: integer("option_idx").notNull(),
+    nullifier: text("nullifier").notNull(),
+    castAt: integer("cast_at").notNull(),
+  },
+  (table) => [uniqueIndex("zupoll_votes_proposal_nullifier_idx").on(table.proposalId, table.nullifier)],
+);
+
+export type ZupollVote = typeof zupollVotes.$inferSelect;
+export type NewZupollVote = typeof zupollVotes.$inferInsert;

@@ -3,6 +3,7 @@ import { useChainId } from "wagmi";
 import { Plus } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JsonRpcProvider } from "ethers";
+import { useHasTierPermission, useIsCommunityAdmin } from "@/src/hooks/useMembershipPermission";
 import * as proposalApi from "@/src/services/proposalApi";
 import type { ProposalWithMeta, ProposalVotingProtocolType, VoteEligibilityReason } from "@/src/services/proposalApi";
 import * as communityApi from "@/src/services/communityApi";
@@ -29,6 +30,7 @@ import {
 interface ProposalsListProps {
   communityId: string;
   connected: boolean;
+  walletAddress?: string;
 }
 
 const VOTE_REASON_LABELS: Record<VoteEligibilityReason, string> = {
@@ -259,7 +261,15 @@ async function loadPollForVoting(action: ProposalWithMeta, rpcUrl: string): Prom
 
 const IN_PROGRESS_TALLY_STATUSES: proposalApi.TallyStatus[] = ["pending", "processing"];
 
-function TallySection({ communityId, action }: { communityId: string; action: ProposalWithMeta }) {
+function TallySection({
+  communityId,
+  action,
+  isCommunityAdmin,
+}: {
+  communityId: string;
+  action: ProposalWithMeta;
+  isCommunityAdmin: boolean;
+}) {
   const queryClient = useQueryClient();
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
@@ -296,6 +306,7 @@ function TallySection({ communityId, action }: { communityId: string; action: Pr
   };
 
   if (!status || status.tallyStatus === "not_started" || status.tallyStatus === "failed") {
+    if (!isCommunityAdmin) return null;
     return (
       <div className="flex items-center gap-2">
         <button
@@ -339,10 +350,12 @@ function FormalizedActionRow({
   communityId,
   community,
   action,
+  isCommunityAdmin,
 }: {
   communityId: string;
   community: Community | undefined;
   action: ProposalWithMeta;
+  isCommunityAdmin: boolean;
 }) {
   const { data: eligibility } = useQuery({
     queryKey: ["voteEligibility", communityId, action.id],
@@ -402,7 +415,7 @@ function FormalizedActionRow({
           </span>
         </p>
       )}
-      <TallySection communityId={communityId} action={action} />
+      <TallySection communityId={communityId} action={action} isCommunityAdmin={isCommunityAdmin} />
       {loadError && <p className="text-xs text-red-400">{loadError}</p>}
       {votingPoll && rpcUrl && community?.contractAddress && (
         <VoteModal
@@ -440,6 +453,9 @@ function DraftRow({
   const [authorizeState, setAuthorizeState] = useState<"idle" | "authorized" | "rejected">("idle");
   const [authorizeMessage, setAuthorizeMessage] = useState<string | null>(null);
   const { signOut } = useSiwe();
+  // DraftRow only ever renders once ProposalsList has already confirmed `connected` (it returns
+  // early otherwise), so `true` here is safe rather than threading a redundant prop.
+  const canVote = useHasTierPermission(communityId, true, "canVote");
 
   const runAuthorizeIfReady = async (met: boolean) => {
     if (!met) return;
@@ -484,13 +500,15 @@ function DraftRow({
           <h3 className="font-semibold text-foreground">{action.title}</h3>
           <p className="text-sm text-gray-400">{action.description}</p>
         </div>
-        <button
-          onClick={handleSponsor}
-          disabled={isSponsoring}
-          className="shrink-0 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-60"
-        >
-          {isSponsoring ? "Sponsoring..." : "Sponsor"}
-        </button>
+        {canVote && (
+          <button
+            onClick={handleSponsor}
+            disabled={isSponsoring}
+            className="shrink-0 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover disabled:opacity-60"
+          >
+            {isSponsoring ? "Sponsoring..." : "Sponsor"}
+          </button>
+        )}
       </div>
       <p className="text-xs text-gray-500">Sponsors: {sponsorCount} (draft — not yet formalized)</p>
       {sponsorError && <p className="text-xs text-red-400">{sponsorError}</p>}
@@ -519,7 +537,7 @@ function DraftRow({
   );
 }
 
-export function ProposalsList({ communityId, connected }: ProposalsListProps) {
+export function ProposalsList({ communityId, connected, walletAddress }: ProposalsListProps) {
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
@@ -537,6 +555,16 @@ export function ProposalsList({ communityId, connected }: ProposalsListProps) {
     queryFn: () => communityApi.get(communityId),
     enabled: connected,
   });
+
+  const canCreateProposals = useHasTierPermission(communityId, connected, "canCreateProposals");
+  // isAuthorized-equivalent (creator OR canManageMembership) — matches tallyService.ts's server-side
+  // check exactly; useIsCommunityAdmin alone only covers canManageMembership, so the creator match is
+  // composed here, mirroring EventsSection.tsx's existing per-event composition.
+  const isCommunityAdmin =
+    useIsCommunityAdmin(communityId, connected) ||
+    (!!walletAddress &&
+      !!community?.creatorAddress &&
+      walletAddress.toLowerCase() === community.creatorAddress.toLowerCase());
 
   const actions = data?.proposals ?? [];
   const drafts = actions.filter((a) => a.status === "draft");
@@ -558,13 +586,15 @@ export function ProposalsList({ communityId, connected }: ProposalsListProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">Governance Actions</h2>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover"
-        >
-          <Plus className="w-4 h-4" />
-          {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}
-        </button>
+        {canCreateProposals && (
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-lg text-sm font-medium hover:bg-accent-hover"
+          >
+            <Plus className="w-4 h-4" />
+            {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}
+          </button>
+        )}
       </div>
 
       {actions.length === 0 && <p className="text-sm text-gray-500">No governance actions yet.</p>}
@@ -586,6 +616,7 @@ export function ProposalsList({ communityId, connected }: ProposalsListProps) {
           key={action.id}
           communityId={communityId}
           community={community ?? undefined}
+          isCommunityAdmin={isCommunityAdmin}
           action={action}
         />
       ))}

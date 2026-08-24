@@ -2,10 +2,16 @@ import { randomUUID } from "node:crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { communities, memberships, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
-import type { CreateDraftBody, DirectAuthorizeBody, DirectConfirmBody } from "../validators/proposalSchema.js";
+import type {
+  CreateDraftBody,
+  DirectAuthorizeBody,
+  DirectConfirmBody,
+  ZupollCreateBody,
+} from "../validators/proposalSchema.js";
 import { isExecutableCombination } from "./proposalConstants.js";
 import * as membershipService from "./membershipService.js";
-import { assertHasAnyAdapterAttached, NoDecisionAdapterAttachedError } from "./decisionAdapterService.js";
+import { isAttached, NoDecisionAdapterAttachedError, type DecisionAdapterType } from "./decisionAdapterService.js";
+import * as zupollService from "./zupollService.js";
 
 export { NoDecisionAdapterAttachedError };
 
@@ -158,6 +164,7 @@ async function validateElectionOptions(
 async function validateTierAndAxis(
   communityId: string,
   creatorAddress: string,
+  decisionAdapterType: DecisionAdapterType,
   body: CreateDraftBody & {
     decisionTargetType?: Proposal["decisionTargetType"];
     optionMemberAddresses?: string[];
@@ -166,10 +173,15 @@ async function validateTierAndAxis(
 ): Promise<void> {
   // Governance restructure Phase 1 (2026-08-20) — a community with no decision adapter attached
   // (governance never configured, D2's accepted "loses proposal mechanisms" tradeoff) cannot
-  // create a proposal at all. Checked first, before the authorization/axis checks below, so the
-  // error a caller sees names the actual reason (no governance configured) rather than a
-  // confusing permission or axis-combination failure.
-  await assertHasAnyAdapterAttached(communityId);
+  // create a proposal at all. specs/013-zupoll-decision-adapter tightened this from "any adapter
+  // attached" to "the specific adapter this proposal declares is attached" — a community with
+  // only "maci" attached must not be able to create a decisionAdapterType: "zupoll" proposal.
+  // Checked first, before the authorization/axis checks below, so the error a caller sees names
+  // the actual reason (no governance configured) rather than a confusing permission or
+  // axis-combination failure.
+  if (!(await isAttached(communityId, decisionAdapterType))) {
+    throw new NoDecisionAdapterAttachedError();
+  }
 
   if (!(await membershipService.hasTierPermission(communityId, creatorAddress, "canCreateProposals"))) {
     throw new NotAuthorizedToCreateError();
@@ -236,7 +248,7 @@ export async function createDraft(
   if (await getDirectDeploymentEnabled(communityId)) {
     throw new DraftPathDisabledError();
   }
-  await validateTierAndAxis(communityId, creatorAddress, body);
+  await validateTierAndAxis(communityId, creatorAddress, "maci", body);
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomUUID();
@@ -427,7 +439,7 @@ export async function authorizeDirect(
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
   }
-  await validateTierAndAxis(communityId, creatorAddress, body);
+  await validateTierAndAxis(communityId, creatorAddress, "maci", body);
   return { authorized: true };
 }
 
@@ -439,7 +451,7 @@ export async function confirmDirect(
   if (!(await getDirectDeploymentEnabled(communityId))) {
     throw new DirectDeploymentDisabledError();
   }
-  await validateTierAndAxis(communityId, creatorAddress, body);
+  await validateTierAndAxis(communityId, creatorAddress, "maci", body);
 
   const now = Math.floor(Date.now() / 1000);
   const id = randomUUID();
@@ -470,6 +482,64 @@ export async function confirmDirect(
       formalizedAt: now,
     })
     .returning();
+
+  return deserialize(inserted!);
+}
+
+/** specs/013-zupoll-decision-adapter — Zupoll's own single-step creation function, deliberately
+ * NOT reusing authorizeDirect/confirmDirect's two-step MACI-shaped flow: that flow exists so a
+ * wallet-signed on-chain deploy transaction can happen between "authorize" and "confirm", and it
+ * gates on communities.directDeploymentEnabled (a flag about the risk of an irreversible
+ * on-chain deployment). Neither applies to an off-chain DB insert — Zupoll proposals are created
+ * immediately (FR-002) regardless of a community's directDeploymentEnabled setting, and are
+ * reversible up until the first vote (see zupollService.withdraw). Calls
+ * zupollService.snapshotGroup immediately after the insert — see that function's own doc comment
+ * for why this is the one and only time the eligible-voter query ever runs for a given proposal. */
+export async function createZupollProposal(
+  communityId: string,
+  creatorAddress: string,
+  body: ZupollCreateBody,
+): Promise<ViewableProposal> {
+  await validateTierAndAxis(communityId, creatorAddress, "zupoll", {
+    title: body.title,
+    description: "",
+    privacy: "privacy_preserving",
+    executionLocation: "offchain",
+    votingProtocolType: "simple",
+    eligibleTierIds: body.eligibleTierIds,
+  });
+
+  const now = Math.floor(Date.now() / 1000);
+  const id = randomUUID();
+
+  const [inserted] = await db
+    .insert(proposals)
+    .values({
+      id,
+      communityId,
+      type: "poll",
+      decisionAdapterType: "zupoll",
+      title: body.title,
+      description: "",
+      privacy: "privacy_preserving",
+      executionLocation: "offchain",
+      votingProtocolType: "simple",
+      decisionTargetType: "opinion",
+      eligibleTierIds: JSON.stringify(body.eligibleTierIds),
+      status: "formalized",
+      creationPath: "direct",
+      creatorAddress,
+      pollAddress: null,
+      pollId: null,
+      pollStartDate: now,
+      pollEndDate: body.pollEndDate,
+      options: JSON.stringify(body.options),
+      createdAt: now,
+      formalizedAt: now,
+    })
+    .returning();
+
+  await zupollService.snapshotGroup(communityId, id, body.eligibleTierIds);
 
   return deserialize(inserted!);
 }

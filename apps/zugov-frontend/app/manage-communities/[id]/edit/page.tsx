@@ -6,6 +6,8 @@ import { ArrowLeft } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 import * as membershipApi from "@/src/services/membershipApi";
 import * as eligibilityApi from "@/src/services/eligibilityApi";
+import * as zupollApi from "@/src/services/zupollApi";
+import { AttachZupollAdapter } from "@/app/components/AttachZupollAdapter";
 import type { RuleDraft } from "@/src/services/eligibilityApi";
 import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
@@ -105,7 +107,7 @@ export default function EditCommunityPage() {
   const [tiers, setTiers] = useState<EditableTier[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<Set<string>>(new Set());
   const [eligibilityRules, setEligibilityRules] = useState<RuleDraft[]>([]);
-  const [governanceConfigured, setGovernanceConfigured] = useState(false);
+  const [attachedAdapters, setAttachedAdapters] = useState<string[]>([]);
   const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
   const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
 
@@ -114,11 +116,12 @@ export default function EditCommunityPage() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const [community, tierRows, membershipStatus, rules] = await Promise.all([
+      const [community, tierRows, membershipStatus, rules, decisionAdapters] = await Promise.all([
         communityApi.get(communityId),
         membershipApi.getTiers(communityId),
         membershipApi.getMembershipStatus(communityId),
         eligibilityApi.getRuleset(communityId),
+        zupollApi.listDecisionAdapters(communityId),
       ]);
       if (cancelled) return;
       if (!community) {
@@ -132,7 +135,7 @@ export default function EditCommunityPage() {
       setMembershipPolicy(community.membershipPolicy);
       setTierChangesRequireVote(community.tierChangesRequireVote);
       setDirectDeploymentEnabled(community.directDeploymentEnabled);
-      setGovernanceConfigured(community.governanceConfigured);
+      setAttachedAdapters(decisionAdapters.adapters);
       setCreatorAddress(community.creatorAddress);
       setTiers(tierRows);
       setOriginalTierIds(new Set(tierRows.map((t) => t.id)));
@@ -307,12 +310,21 @@ export default function EditCommunityPage() {
             </Link>
           </div>
 
-          <div>
+          <div className="space-y-4">
             <h2 className="text-lg font-semibold text-foreground mb-3">Governance</h2>
-            {governanceConfigured ? (
+            {attachedAdapters.includes("maci") ? (
               <p className="text-sm text-gray-400">Governance is configured for this community.</p>
             ) : (
               <DeployGovernanceSection communityId={communityId} config={deployConfig} />
+            )}
+            {attachedAdapters.includes("zupoll") ? (
+              <p className="text-sm text-gray-400">Zupoll (anonymous surveys) is enabled for this community.</p>
+            ) : (
+              <AttachZupollAdapter
+                communityId={communityId}
+                isAttached={false}
+                onAttached={() => setAttachedAdapters((prev) => [...prev, "zupoll"])}
+              />
             )}
           </div>
 
