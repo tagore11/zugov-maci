@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, ilike } from "drizzle-orm";
 import { createPublicClient, getAddress, http, type Address } from "viem";
 import { db } from "../db/client.js";
 import {
@@ -130,12 +130,18 @@ export async function list(
   limit: number,
   chainId?: number,
   creatorAddress?: string,
+  search?: string,
 ): Promise<{ communities: CommunityRecord[]; total: number; hasMore: boolean }> {
   const offset = (page - 1) * limit;
 
+  // Community creation wizard fix (2026-08-21) — feeds the parent-community picker's search
+  // box. Case-insensitive substring match on displayName; no index needed at this scale (see
+  // /plan-eng-review's outside-voice finding — a client-side filter over the paginated list
+  // silently excluded any parent past the first page, this fixes that properly).
   const conditions = [
     chainId !== undefined ? eq(maciGovernanceConfigs.chainId, chainId) : undefined,
     creatorAddress !== undefined ? eq(communities.creatorAddress, creatorAddress) : undefined,
+    search !== undefined && search.trim() !== "" ? ilike(communities.displayName, `%${search.trim()}%`) : undefined,
   ].filter((condition) => condition !== undefined);
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -437,7 +443,7 @@ export interface CommunityUpdatePatch {
   description?: string;
   logo?: string;
   membershipPolicy?: "open" | "approval";
-  category?: "residency" | "regional" | "network_state" | "social";
+  category?: "residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao";
   tierChangesRequireVote?: boolean;
   defaultTierLabel?: string;
   cosponsorshipThreshold?: number;

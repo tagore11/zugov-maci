@@ -5,6 +5,8 @@ import * as eventApi from "@/src/services/eventApi";
 import type { Event, EventKind } from "@/src/services/eventApi";
 import { useIsCommunityAdmin, useHasTierPermission } from "@/src/hooks/useMembershipPermission";
 import { CreateEventModal } from "./CreateEventModal";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 interface EventsSectionProps {
   communityId: string;
@@ -49,12 +51,13 @@ function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; 
   const [intervalDays, setIntervalDays] = useState(7);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { signOut } = useSiwe();
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
     setError(null);
     try {
-      await eventApi.duplicateEvent(communityId, eventId, { count, intervalDays });
+      await withAuthDetect(() => eventApi.duplicateEvent(communityId, eventId, { count, intervalDays }), signOut);
       await queryClient.invalidateQueries({ queryKey: ["events", communityId] });
       onDone();
     } catch (err) {
@@ -131,6 +134,7 @@ function EventRow({
   const [showDuplicate, setShowDuplicate] = useState(false);
   const [rsvpPending, setRsvpPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { signOut } = useSiwe();
 
   const { data: rsvps = [] } = useQuery({
     queryKey: ["eventRsvps", event.id],
@@ -153,11 +157,9 @@ function EventRow({
     setRsvpPending(true);
     setActionError(null);
     try {
-      if (hasRsvped) {
-        await eventApi.cancelRsvp(communityId, event.id);
-      } else {
-        await eventApi.rsvp(communityId, event.id);
-      }
+      await withAuthDetect(() => {
+        return hasRsvped ? eventApi.cancelRsvp(communityId, event.id) : eventApi.rsvp(communityId, event.id);
+      }, signOut);
       await invalidate();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to update RSVP");
@@ -169,7 +171,7 @@ function EventRow({
   const handleCancelConfirm = async () => {
     setActionError(null);
     try {
-      await eventApi.cancelEvent(communityId, event.id);
+      await withAuthDetect(() => eventApi.cancelEvent(communityId, event.id), signOut);
       await queryClient.invalidateQueries({ queryKey: ["events", communityId] });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to cancel event");

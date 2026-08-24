@@ -38,12 +38,13 @@ communitiesRouter.get("/", async (c) => {
   const limitStr = c.req.query("limit") ?? "20";
   const chainIdStr = c.req.query("chainId");
   const creatorAddress = c.req.query("creatorAddress");
+  const search = c.req.query("search");
 
   const page = Math.max(1, Number(pageStr));
   const limit = Math.min(50, Math.max(1, Number(limitStr)));
   const chainId = chainIdStr !== undefined ? Number(chainIdStr) : undefined;
 
-  const result = await communityService.list(page, limit, chainId, creatorAddress);
+  const result = await communityService.list(page, limit, chainId, creatorAddress, search);
   return c.json(result);
 });
 

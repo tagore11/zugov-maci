@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { PrivyConnectButton } from "./PrivyConnectButton";
+import { WalletConnectButton } from "./WalletConnectButton";
 import { Search } from "lucide-react";
 
 export function Header() {
@@ -49,7 +49,7 @@ export function Header() {
             <button className="p-2 text-gray-500 hover:text-gray-300">
               <Search className="w-5 h-5" />
             </button>
-            <PrivyConnectButton />
+            <WalletConnectButton />
           </div>
         </div>
       </div>

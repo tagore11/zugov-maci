@@ -1,3 +1,5 @@
+import { parseErrorOr } from "@/src/services/httpClient";
+
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
 export type Protocol = "zupass" | "zkid";
@@ -11,8 +13,10 @@ export type CredentialResult = {
 
 export async function list(): Promise<CredentialResult[]> {
   const res = await fetch(`${BASE_URL}/api/credentials`, { credentials: "include" });
-  if (!res.ok) throw new Error(`Failed to fetch credentials: ${res.status}`);
-  const data = (await res.json()) as { credentials: CredentialResult[] };
+  const data = await parseErrorOr<{ credentials: CredentialResult[] }>(
+    res,
+    `Failed to fetch credentials: ${res.status}`,
+  );
   return data.credentials;
 }
 
@@ -23,9 +27,5 @@ export async function verify(protocol: Protocol, proofPayload: unknown): Promise
     credentials: "include",
     body: JSON.stringify(proofPayload),
   });
-  if (!res.ok) {
-    const data = (await res.json()) as { error: string };
-    throw new Error(data.error ?? `Verification failed: ${res.status}`);
-  }
-  return res.json() as Promise<CredentialResult>;
+  return parseErrorOr(res, `Verification failed: ${res.status}`);
 }

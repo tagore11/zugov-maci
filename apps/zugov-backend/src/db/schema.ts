@@ -58,11 +58,12 @@ export const communities = pgTable("communities", {
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
   tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
   defaultTierId: text("default_tier_id"),
-  // Creator-selected community type tag (Residency/Regional/Network State/Social), shown on the
-  // community explorer's filter chips. Nullable: communities created before this column existed
-  // have no value, and the explorer's "All" filter still includes them. Unrelated to governance —
-  // never conflate with governanceType/subgraphStatus (see the landing page's governance badge).
-  category: text("category").$type<"residency" | "regional" | "network_state" | "social">(),
+  // Creator-selected community type tag (Residency/Pop-up City/Network State/Social/Regional),
+  // shown on the community explorer's filter chips. Nullable: communities created before this
+  // column existed have no value, and the explorer's "All" filter still includes them. Unrelated
+  // to governance — never conflate with governanceType/subgraphStatus (see the landing page's
+  // governance badge).
+  category: text("category").$type<"residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao">(),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
   directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
   createdAt: integer("created_at").notNull(),

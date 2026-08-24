@@ -1,13 +1,4 @@
 import { useState } from "react";
-import {
-  POLICY_TYPE_OPTIONS,
-  DEFAULT_POLICY_INPUTS,
-  buildPolicyArgs,
-  PolicyArgsFields,
-  type PolicyInputState,
-} from "@/app/components/PolicyArgsFields";
-import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
-import { type SignUpPolicyType, type SignUpPolicyArgs, MECHANISM_FAMILIES } from "@/src/config";
 import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import { RESIDENT_ORGANIZER_TIERS } from "@/src/hooks/useCreateCommunity";
@@ -15,105 +6,30 @@ import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
 
 interface Props {
   initialMembershipPolicy?: MembershipPolicy;
-  initialSignUpPolicy?: SignUpPolicyArgs;
-  initialPolicies?: number[];
-  initialModes?: number[];
   initialTiers?: EditableTier[];
+  // Community creation wizard fix (2026-08-21) — lifted from local state into
+  // useCreateCommunity's own state, single source of truth shared with CreateCommunityModal's
+  // X-button gating (see useCreateCommunity.ts's WizardState.isSubmitting).
+  isSubmitting: boolean;
   setCommunitySetup: UseCreateCommunityResult["setCommunitySetup"];
   goBack: UseCreateCommunityResult["goBack"];
 }
 
-/** Reverse of buildPolicyArgs (PolicyArgsFields.tsx) — reconstructs the form input strings from
- * a previously-built policy, so re-opening Advanced settings after navigating Back shows what
- * was actually configured instead of blank fields. */
-function hydratePolicyInputs(policy: SignUpPolicyArgs | undefined): PolicyInputState {
-  if (!policy) return DEFAULT_POLICY_INPUTS;
-  switch (policy.type) {
-    case "FreeForAll":
-      return DEFAULT_POLICY_INPUTS;
-    case "Zupass":
-      return {
-        ...DEFAULT_POLICY_INPUTS,
-        zupassEventId: policy.eventId,
-        zupassSigner1: policy.signer1,
-        zupassSigner2: policy.signer2,
-      };
-    case "EAS":
-      return { ...DEFAULT_POLICY_INPUTS, easSchemaUid: policy.schemaUid, easAttester: policy.attesterAddress };
-    case "GitcoinPassport":
-      return { ...DEFAULT_POLICY_INPUTS, gitcoinScore: String(policy.thresholdScore) };
-    case "Semaphore":
-      return { ...DEFAULT_POLICY_INPUTS, semaphoreGroupId: policy.groupId };
-    case "AnonAadhaar":
-      return { ...DEFAULT_POLICY_INPUTS, anonAadhaarSeed: String(policy.nullifierSeed) };
-    case "ERC20Token":
-      return { ...DEFAULT_POLICY_INPUTS, erc20Token: policy.tokenAddress, erc20Threshold: String(policy.threshold) };
-    case "ERC20Votes":
-      return {
-        ...DEFAULT_POLICY_INPUTS,
-        erc20VotesToken: policy.tokenAddress,
-        erc20VotesThreshold: String(policy.threshold),
-        erc20VotesSnapshotBlock: String(policy.snapshotBlock),
-      };
-    case "Token":
-      return { ...DEFAULT_POLICY_INPUTS, tokenAddress: policy.tokenAddress };
-    case "MerkleProof":
-      return { ...DEFAULT_POLICY_INPUTS, merkleRoot: policy.merkleRoot };
-    case "HatsProtocol":
-      return { ...DEFAULT_POLICY_INPUTS, hatsIds: policy.criterionHats.join(", ") };
-  }
-}
-
-const DEFAULT_POLICY_TYPE: SignUpPolicyType = "FreeForAll";
-const DEFAULT_POLICIES = [1];
-const DEFAULT_MODES = [1];
-
 export function StepCommunitySetup({
   initialMembershipPolicy,
-  initialSignUpPolicy,
-  initialPolicies,
-  initialModes,
   initialTiers,
+  isSubmitting,
   setCommunitySetup,
   goBack,
 }: Props) {
   const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>(initialMembershipPolicy ?? "open");
-  // Only "maci" has a working backend today (research.md #8) — the other options are shown,
-  // disabled, so this is an honest selector rather than static text pretending to be one.
-  const [mechanism, setMechanism] = useState<string>("maci");
   // Pre-filled with the Resident/Organizer preset, fully editable (2026-08-19
   // community-creation-rework review, D3) — matches today's actual default so nothing changes
   // for a creator who clicks straight through, but they can now rename, adjust permissions on,
   // add, or remove tiers instead of being stuck with the preset. The first tier in the list is
   // the default tier a new member lands in, mirroring the original hardcoded "Resident" default.
   const [tiers, setTiers] = useState<EditableTier[]>(initialTiers ?? RESIDENT_ORGANIZER_TIERS);
-
-  // Advanced settings default to sensible values — only touched if the resident opens the
-  // section. FreeForAll / policy id 1 / mode id 1 match useCreateCommunity's own defaults,
-  // so leaving this collapsed produces the same config as engaging with it. If the resident
-  // already configured something non-default (e.g. navigated Back and forward again), restore
-  // it AND start the section open — losing it silently on Back would be a real regression for
-  // the one screen Tarik/Sait actually depend on.
-  const hadNonDefaultAdvanced =
-    (initialSignUpPolicy && initialSignUpPolicy.type !== DEFAULT_POLICY_TYPE) ||
-    (initialPolicies && initialPolicies.join(",") !== DEFAULT_POLICIES.join(",")) ||
-    (initialModes && initialModes.join(",") !== DEFAULT_MODES.join(","));
-
-  const [advancedOpen, setAdvancedOpen] = useState(Boolean(hadNonDefaultAdvanced));
-  const [policyType, setPolicyType] = useState<SignUpPolicyType>(initialSignUpPolicy?.type ?? DEFAULT_POLICY_TYPE);
-  const [inputs, setInputs] = useState<PolicyInputState>(() => hydratePolicyInputs(initialSignUpPolicy));
-  const [policies, setPolicies] = useState<number[]>(initialPolicies ?? DEFAULT_POLICIES);
-  const [modes, setModes] = useState<number[]>(initialModes ?? DEFAULT_MODES);
-  const [advancedError, setAdvancedError] = useState<string | undefined>();
-  // setCommunitySetup now creates the community's identity (Architecture 1A/1B: id known before
-  // deployment starts) — a real network call, not a pure state update, so this step needs its
-  // own loading/error handling like the later network-check/deploy steps already have.
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | undefined>();
-
-  function updateInput(key: keyof PolicyInputState, value: string) {
-    setInputs((prev) => ({ ...prev, [key]: value }));
-  }
 
   async function handleNext() {
     setSubmitError(undefined);
@@ -121,25 +37,11 @@ export function StepCommunitySetup({
       setSubmitError("Add at least one tier.");
       return;
     }
-    const advanced = advancedOpen
-      ? (() => {
-          const signUpPolicy = buildPolicyArgs(policyType, inputs);
-          if (!signUpPolicy || policies.length === 0 || modes.length === 0) {
-            setAdvancedError("Fill in the advanced settings, or collapse the section to use the defaults.");
-            return undefined;
-          }
-          return { signUpPolicy, allowedPolicies: policies, supportedModes: modes };
-        })()
-      : undefined;
-    if (advancedOpen && !advanced) return;
 
-    setIsSubmitting(true);
     try {
-      await setCommunitySetup({ membershipPolicy, tiers, defaultTierLabel: tiers[0].label, advanced });
+      await setCommunitySetup({ membershipPolicy, tiers, defaultTierLabel: tiers[0].label });
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Failed to create community identity");
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -183,121 +85,8 @@ export function StepCommunitySetup({
       </div>
 
       <div className="space-y-2">
-        <span className="block text-sm font-medium text-gray-300">Roles</span>
+        <span className="block text-sm font-medium text-gray-300">Tiers</span>
         <TierEditor tiers={tiers} onChange={setTiers} />
-      </div>
-
-      <div className="rounded-lg border border-gray-700">
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((v) => !v)}
-          aria-expanded={advancedOpen}
-          className="w-full min-h-[44px] flex items-center justify-between px-4 py-3 text-sm text-gray-300
-            hover:text-foreground transition-colors"
-        >
-          <span>Advanced settings</span>
-          <span className="text-gray-500" aria-hidden="true">
-            {advancedOpen ? "−" : "+"}
-          </span>
-        </button>
-        {advancedOpen && (
-          <div className="px-4 pb-4 space-y-5 border-t border-gray-700 pt-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Voting mechanism</label>
-              <select
-                value={mechanism}
-                onChange={(e) => setMechanism(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-foreground
-                  focus:outline-none focus:ring-2 focus:ring-accent text-sm"
-              >
-                {MECHANISM_FAMILIES.map((family) => (
-                  <option key={family.value} value={family.value} disabled={!family.enabled}>
-                    {family.label}
-                    {!family.enabled ? " (coming soon)" : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-gray-500">
-                {MECHANISM_FAMILIES.find((f) => f.value === mechanism)?.description} Deploy it now or skip for now and
-                add it later from the community's settings.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Sign-up policy</label>
-              <p className="text-xs text-gray-500 mb-2">Controls who can register to vote in this community.</p>
-              <select
-                value={policyType}
-                onChange={(e) => setPolicyType(e.target.value as SignUpPolicyType)}
-                className="w-full min-h-[44px] px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-foreground text-sm
-                  focus:outline-none focus:ring-2 focus:ring-accent"
-              >
-                {POLICY_TYPE_OPTIONS.map(({ type, label }) => (
-                  <option key={type} value={type}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <PolicyArgsFields policyType={policyType} inputs={inputs} updateInput={updateInput} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Allowed poll eligibility methods</label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1.5">
-                {ALLOWED_POLICIES.map((policy) => {
-                  const id = parseInt(policy.id, 10);
-                  const checked = policies.includes(id);
-                  return (
-                    <label key={policy.id} className="flex items-center gap-2 cursor-pointer group py-1">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setPolicies((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]))
-                        }
-                        className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                      />
-                      <span
-                        className={`text-sm ${checked ? "text-foreground" : "text-gray-400"} group-hover:text-gray-200`}
-                      >
-                        {policy.name}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Voting styles</label>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
-                {VOTING_MODES.map((mode) => {
-                  const id = parseInt(mode.id, 10);
-                  const checked = modes.includes(id);
-                  return (
-                    <label key={mode.id} className="flex items-center gap-2 cursor-pointer group py-1">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setModes((prev) => (prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]))
-                        }
-                        className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
-                      />
-                      <span
-                        className={`text-sm ${checked ? "text-foreground" : "text-gray-400"} group-hover:text-gray-200`}
-                      >
-                        {mode.name}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {advancedError && <p className="text-xs text-red-400">{advancedError}</p>}
-          </div>
-        )}
       </div>
 
       {submitError && <p className="text-xs text-red-400">{submitError}</p>}
@@ -319,7 +108,7 @@ export function StepCommunitySetup({
           className="flex-1 min-h-[44px] py-2 px-4 rounded-lg bg-accent text-white font-medium
             hover:bg-accent-hover transition-colors text-sm disabled:opacity-60"
         >
-          {isSubmitting ? "Creating…" : "Next"}
+          {isSubmitting ? "Creating…" : "Create Community"}
         </button>
       </div>
     </div>

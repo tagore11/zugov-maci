@@ -1,4 +1,5 @@
 import type { TierDraft } from "@/src/services/checkpointStore";
+import { parseErrorOr } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
@@ -6,14 +7,6 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http:/
 // toggle), but the backend's GET /tiers response includes it (a full `select()` over membershipTiers),
 // so the read type declares it separately rather than widening TierDraft's create/update shape.
 export type Tier = TierDraft & { id: string; isDefault: boolean; canCreateEvents: boolean };
-
-async function parseErrorOr<T>(res: Response, fallback: string): Promise<T> {
-  if (!res.ok) {
-    const data = (await res.json()) as { error: string };
-    throw new Error(data.error ?? fallback);
-  }
-  return res.json() as Promise<T>;
-}
 
 export async function getTiers(communityId: string): Promise<Tier[]> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/tiers`);

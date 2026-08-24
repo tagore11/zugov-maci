@@ -3,9 +3,11 @@ import type { Community, UnionWithMemberCount } from "@/src/services/communityAp
 // Backend enum values (communities.category) -> the exact labels the category filter chips use.
 const CATEGORY_LABELS: Record<string, string> = {
   residency: "Residency",
+  pop_up_city: "Pop-up City",
   regional: "Regional",
   network_state: "Network State",
   social: "Social",
+  dao: "DAO",
 };
 
 /** The creator-selected community type label, or "" if none is set. Independent of governance

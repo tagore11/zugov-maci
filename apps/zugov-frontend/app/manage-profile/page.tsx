@@ -10,7 +10,6 @@ import * as communityApi from "@/src/services/communityApi";
 import { useMaci } from "@/src/context/MaciContext";
 import * as credentialApi from "@/src/services/credentialApi";
 import { useCredentialScan } from "@/src/hooks/useCredentialScan";
-import { CustodialWalletCard } from "./CustodialWalletCard";
 import { AwaitingActions } from "./AwaitingActions";
 
 /** Fetches every registered community across all pages, not just the first. */
@@ -99,8 +98,6 @@ export default function ManageProfilePage() {
         </div>
 
         <AwaitingActions address={address} />
-
-        <CustodialWalletCard />
 
         {/* Identity Badges Section */}
         <div className="rounded-xl border border-gray-700 bg-gray-900 p-6 space-y-4">

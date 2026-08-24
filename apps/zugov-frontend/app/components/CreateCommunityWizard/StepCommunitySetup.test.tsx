@@ -4,54 +4,38 @@ import { StepCommunitySetup } from "./StepCommunitySetup";
 
 // Regression test for a real bug found in eng review: this step is remounted on wizard
 // navigation (index.tsx conditionally renders it), so without initial-value props it silently
-// wiped any Advanced settings and reset membershipPolicy to "open" whenever a resident hit
-// Back then forward again — for the one screen Tarik/Sait actually depend on.
+// reset membershipPolicy to "open" whenever a resident hit Back then forward again — for the
+// one screen Tarik/Sait actually depend on.
 describe("StepCommunitySetup — restores state across Back navigation", () => {
   it("pre-selects 'approval-required' when initialMembershipPolicy is 'approval'", () => {
-    render(<StepCommunitySetup initialMembershipPolicy="approval" setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
-
-    const approvalButton = screen.getByRole("button", { name: /organizers approve new residents/i });
-    expect(approvalButton).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("opens Advanced settings and restores a non-default sign-up policy", () => {
     render(
       <StepCommunitySetup
-        initialSignUpPolicy={{ type: "MerkleProof", merkleRoot: "0xabc123" }}
-        initialPolicies={[2]}
-        initialModes={[0]}
+        initialMembershipPolicy="approval"
+        isSubmitting={false}
         setCommunitySetup={vi.fn()}
         goBack={vi.fn()}
       />,
     );
 
-    // Advanced section should already be open, not collapsed, since there's non-default
-    // content to show.
-    const toggle = screen.getByRole("button", { name: /advanced settings/i });
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-
-    const merkleRootInput = screen.getByPlaceholderText("0x...", { exact: false }) as HTMLInputElement;
-    expect(merkleRootInput.value).toBe("0xabc123");
+    const approvalButton = screen.getByRole("button", { name: /organizers approve new residents/i });
+    expect(approvalButton).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("stays collapsed with defaults when no initial values are provided (first visit)", () => {
-    render(<StepCommunitySetup setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
-
-    const toggle = screen.getByRole("button", { name: /advanced settings/i });
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  it("defaults to 'anyone can join' when no initial value is provided (first visit)", () => {
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
 
     const openButton = screen.getByRole("button", { name: /anyone can join/i });
     expect(openButton).toHaveAttribute("aria-pressed", "true");
   });
 
-  // Same class of bug as the membership-policy/advanced-settings restore tests above, now for
-  // the creation-time tier editor (2026-08-19 community-creation-rework review, D3) — a
-  // creator's renamed/customized tiers must survive Back-then-forward, not silently reset to
-  // the Resident/Organizer preset.
+  // Same class of bug as the membership-policy restore test above, now for the creation-time
+  // tier editor (2026-08-19 community-creation-rework review, D3) — a creator's renamed/
+  // customized tiers must survive Back-then-forward, not silently reset to the preset.
   it("restores creator-edited tiers when initialTiers is provided", () => {
     render(
       <StepCommunitySetup
         initialTiers={[{ label: "Neighbor", canVote: true, canCreateProposals: false, canManageMembership: false }]}
+        isSubmitting={false}
         setCommunitySetup={vi.fn()}
         goBack={vi.fn()}
       />,
@@ -62,30 +46,57 @@ describe("StepCommunitySetup — restores state across Back navigation", () => {
   });
 
   it("defaults to the Resident/Organizer preset when no initialTiers is provided (first visit)", () => {
-    render(<StepCommunitySetup setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
 
     expect(screen.getByDisplayValue("Resident")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Organizer")).toBeInTheDocument();
   });
 });
 
-// specs/010 US8: voting mechanism must be a real, interactive control — not hardcoded text —
-// with only MACI actually selectable (research.md #8).
-describe("StepCommunitySetup — voting mechanism selector", () => {
-  it("renders MACI selectable and the other families visibly present but disabled", () => {
-    render(<StepCommunitySetup setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: /advanced settings/i }));
+// Community creation wizard fix (2026-08-21): Advanced Settings (mechanism/sign-up-policy/
+// voting-mode config) removed from this step entirely — that's now governance deployment,
+// reachable only from the community's edit page (Governance Phase 1, D2), not the wizard. The
+// "Roles" section is relabeled "Tiers" here (user's exact requested wording).
+describe("StepCommunitySetup — Advanced Settings removed", () => {
+  it("has no Advanced Settings section", () => {
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /advanced settings/i })).not.toBeInTheDocument();
+  });
 
-    const select = screen.getByDisplayValue("MACI") as HTMLSelectElement;
-    expect(select.tagName).toBe("SELECT");
-    expect(select.value).toBe("maci");
+  it("labels the tier editor section 'Tiers', not 'Roles'", () => {
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+    expect(screen.getByText("Tiers")).toBeInTheDocument();
+    expect(screen.queryByText("Roles")).not.toBeInTheDocument();
+  });
+});
 
-    const tokenWeightedOption = screen.getByRole("option", { name: /token-weighted/i }) as HTMLOptionElement;
-    expect(tokenWeightedOption.disabled).toBe(true);
-    const offchainOption = screen.getByRole("option", { name: /off-chain/i }) as HTMLOptionElement;
-    expect(offchainOption.disabled).toBe(true);
+// Community creation wizard fix (2026-08-21): isSubmitting is now a required prop, the single
+// source of truth shared with CreateCommunityModal's X-button gating — no more local state here.
+describe("StepCommunitySetup — isSubmitting prop", () => {
+  it("shows 'Create Community' and enables Back/submit when not submitting", () => {
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
 
-    const maciOption = screen.getByRole("option", { name: "MACI" }) as HTMLOptionElement;
-    expect(maciOption.disabled).toBe(false);
+    expect(screen.getByRole("button", { name: "Create Community" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back" })).not.toBeDisabled();
+  });
+
+  it("shows 'Creating…' and disables Back/submit while submitting", () => {
+    render(<StepCommunitySetup isSubmitting={true} setCommunitySetup={vi.fn()} goBack={vi.fn()} />);
+
+    expect(screen.getByRole("button", { name: "Creating…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back" })).toBeDisabled();
+  });
+
+  it("calls setCommunitySetup with membershipPolicy, tiers, and defaultTierLabel on submit", () => {
+    const setCommunitySetup = vi.fn().mockResolvedValue(undefined);
+    render(<StepCommunitySetup isSubmitting={false} setCommunitySetup={setCommunitySetup} goBack={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create Community" }));
+
+    expect(setCommunitySetup).toHaveBeenCalledWith({
+      membershipPolicy: "open",
+      tiers: expect.arrayContaining([expect.objectContaining({ label: "Resident" })]),
+      defaultTierLabel: "Resident",
+    });
   });
 });

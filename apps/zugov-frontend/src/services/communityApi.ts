@@ -1,9 +1,10 @@
 import type { SignUpPolicyType, PollDeployConfig } from "@/src/config";
 import type { MembershipPolicy, TierDraft } from "@/src/services/checkpointStore";
+import { HttpError } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-export type CommunityCategory = "residency" | "regional" | "network_state" | "social";
+export type CommunityCategory = "residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao";
 
 // Flat merged shape (Architecture Issue 3) — identity fields are always present; governance
 // fields are null until governanceConfigured is true. A community's identity can exist before
@@ -92,9 +93,9 @@ export type CommunityUpdatePayload = Partial<
   directDeploymentEnabled?: boolean;
 };
 
-export class AuthError extends Error {
+export class AuthError extends HttpError {
   constructor() {
-    super("Authentication required. Please sign in with Ethereum.");
+    super(401, "Authentication required. Please sign in with Ethereum.");
   }
 }
 
@@ -115,10 +116,16 @@ export function subgraphQueryUrl(id: string): string {
   return `${BASE_URL}/api/communities/${id}/subgraph/query`;
 }
 
-export async function list(page = 1, chainId?: number, creatorAddress?: string): Promise<ListResponse> {
+export async function list(
+  page = 1,
+  chainId?: number,
+  creatorAddress?: string,
+  search?: string,
+): Promise<ListResponse> {
   const params = new URLSearchParams({ page: String(page) });
   if (chainId !== undefined) params.set("chainId", String(chainId));
   if (creatorAddress !== undefined) params.set("creatorAddress", creatorAddress);
+  if (search !== undefined && search.trim() !== "") params.set("search", search.trim());
   const res = await fetch(`${BASE_URL}/api/communities?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch communities: ${res.status}`);
   return res.json() as Promise<ListResponse>;

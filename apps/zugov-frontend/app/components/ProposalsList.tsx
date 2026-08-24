@@ -17,6 +17,8 @@ import type { SubgraphPoll, PollMode } from "@/src/services/subgraph";
 import { CreateProposalModal, policyIdToType } from "./CreateProposalModal";
 import { VoteModal } from "./VoteModal";
 import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 import {
   POLICY_TYPE_OPTIONS,
   DEFAULT_POLICY_INPUTS,
@@ -88,6 +90,7 @@ function DeployPollPrompt({
   const [policyInputs, setPolicyInputs] = useState<PolicyInputState>(DEFAULT_POLICY_INPUTS);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const chainId = useChainId();
+  const { signOut } = useSiwe();
   const { isDeploying, deployStep, deployError, deployPoll } = useDeployPoll(GovernanceTypes.MACI);
 
   const filledOptionCount = options.filter((o) => o.trim() !== "").length;
@@ -118,14 +121,18 @@ function DeployPollPrompt({
           options,
         },
       });
-      await proposalApi.confirmFormalize(communityId, action.id, {
-        pollAddress,
-        pollId,
-        txHash,
-        pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
-        pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
-        options: options.filter((o) => o.trim() !== ""),
-      });
+      await withAuthDetect(
+        () =>
+          proposalApi.confirmFormalize(communityId, action.id, {
+            pollAddress,
+            pollId,
+            txHash,
+            pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+            pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+            options: options.filter((o) => o.trim() !== ""),
+          }),
+        signOut,
+      );
       onDeployed();
     } catch (err) {
       setConfirmError(err instanceof Error ? err.message : "Poll deployment failed");
@@ -266,6 +273,7 @@ function TallySection({
   const queryClient = useQueryClient();
   const [triggerError, setTriggerError] = useState<string | null>(null);
   const [isTriggering, setIsTriggering] = useState(false);
+  const { signOut } = useSiwe();
   const now = useNow();
 
   const { data: status } = useQuery({
@@ -288,7 +296,7 @@ function TallySection({
     setTriggerError(null);
     setIsTriggering(true);
     try {
-      await proposalApi.triggerTally(communityId, action.id);
+      await withAuthDetect(() => proposalApi.triggerTally(communityId, action.id), signOut);
       await queryClient.invalidateQueries({ queryKey: ["tallyStatus", communityId, action.id] });
     } catch (err) {
       setTriggerError(err instanceof Error ? err.message : "Failed to trigger tallying");
@@ -444,6 +452,7 @@ function DraftRow({
   const [sponsorError, setSponsorError] = useState<string | null>(null);
   const [authorizeState, setAuthorizeState] = useState<"idle" | "authorized" | "rejected">("idle");
   const [authorizeMessage, setAuthorizeMessage] = useState<string | null>(null);
+  const { signOut } = useSiwe();
   // DraftRow only ever renders once ProposalsList has already confirmed `connected` (it returns
   // early otherwise), so `true` here is safe rather than threading a redundant prop.
   const canVote = useHasTierPermission(communityId, true, "canVote");
@@ -451,7 +460,7 @@ function DraftRow({
   const runAuthorizeIfReady = async (met: boolean) => {
     if (!met) return;
     try {
-      await proposalApi.authorizeFormalize(communityId, action.id);
+      await withAuthDetect(() => proposalApi.authorizeFormalize(communityId, action.id), signOut);
       setAuthorizeState("authorized");
     } catch (err) {
       setAuthorizeState("rejected");
@@ -463,7 +472,7 @@ function DraftRow({
     setIsSponsoring(true);
     setSponsorError(null);
     try {
-      const result = await proposalApi.sponsor(communityId, action.id);
+      const result = await withAuthDetect(() => proposalApi.sponsor(communityId, action.id), signOut);
       queryClient.invalidateQueries({ queryKey: ["proposals", communityId] });
       await runAuthorizeIfReady(result.thresholdMet);
     } catch (err) {

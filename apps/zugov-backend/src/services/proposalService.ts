@@ -62,6 +62,12 @@ export class CreatorNoLongerAuthorizedError extends Error {
   }
 }
 
+export class NotAuthorizedToFormalizeError extends Error {
+  constructor() {
+    super("Not authorized to formalize this proposal");
+  }
+}
+
 export class ThresholdNotMetError extends Error {
   constructor() {
     super("Co-sponsorship threshold not met");
@@ -350,9 +356,25 @@ export async function sponsor(
   return { sponsorCount, thresholdMet: sponsorCount >= threshold };
 }
 
-async function assertReadyToFormalize(communityId: string, actionId: string): Promise<ViewableProposal> {
+async function assertReadyToFormalize(
+  communityId: string,
+  actionId: string,
+  walletAddress: string,
+): Promise<ViewableProposal> {
   const action = await getActionOrThrow(communityId, actionId);
   if (action.status !== "draft") throw new AlreadyFormalizedError();
+
+  // Caller check (2026-08-23, security fix) — these two endpoints previously never checked WHO
+  // was calling them, only that the proposal's stored creator still had permission. Any
+  // authenticated wallet from any community could formalize (and confirm's body-supplied
+  // pollAddress/txHash onto) someone else's proposal once its threshold was met. Matches
+  // events.ts's assertCanManageEvent precedent (creator-of-the-resource OR community-level
+  // isAuthorized), the same reusable pattern ENGINEERING.md documents.
+  if (action.creatorAddress.toLowerCase() !== walletAddress.toLowerCase()) {
+    if (!(await membershipService.isAuthorized(communityId, walletAddress))) {
+      throw new NotAuthorizedToFormalizeError();
+    }
+  }
 
   if (!(await membershipService.hasTierPermission(communityId, action.creatorAddress, "canCreateProposals"))) {
     throw new CreatorNoLongerAuthorizedError();
@@ -365,14 +387,19 @@ async function assertReadyToFormalize(communityId: string, actionId: string): Pr
   return action;
 }
 
-export async function authorizeFormalize(communityId: string, actionId: string): Promise<{ authorized: true }> {
-  await assertReadyToFormalize(communityId, actionId);
+export async function authorizeFormalize(
+  communityId: string,
+  actionId: string,
+  walletAddress: string,
+): Promise<{ authorized: true }> {
+  await assertReadyToFormalize(communityId, actionId, walletAddress);
   return { authorized: true };
 }
 
 export async function confirmFormalize(
   communityId: string,
   actionId: string,
+  walletAddress: string,
   result: {
     pollAddress: string;
     pollId: string;
@@ -382,7 +409,7 @@ export async function confirmFormalize(
     options?: string[];
   },
 ): Promise<ViewableProposal> {
-  await assertReadyToFormalize(communityId, actionId);
+  await assertReadyToFormalize(communityId, actionId, walletAddress);
 
   const now = Math.floor(Date.now() / 1000);
   const eligibleTierIds = await getVotingTierIds(communityId);

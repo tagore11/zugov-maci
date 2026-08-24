@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Loader2, Users2, X } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 type OwnedCommunity = { id: string; name: string; logo: string };
 
@@ -22,6 +24,7 @@ function CreateUnionModal({
   const [description, setDescription] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { signOut } = useSiwe();
 
   if (!isOpen) return null;
 
@@ -31,11 +34,15 @@ function CreateUnionModal({
     setError(null);
     setIsSubmitting(true);
     try {
-      await communityApi.createUnion({
-        displayName: displayName.trim(),
-        description: description.trim() || undefined,
-        foundingCommunityId,
-      });
+      await withAuthDetect(
+        () =>
+          communityApi.createUnion({
+            displayName: displayName.trim(),
+            description: description.trim() || undefined,
+            foundingCommunityId,
+          }),
+        signOut,
+      );
       setDisplayName("");
       setDescription("");
       onCreated();
@@ -135,13 +142,17 @@ function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; ac
   // 409 (duplicate invite) permanently disables re-inviting this pair rather than letting the
   // user retry into the same error (Design Issue 2, locked).
   const [invited, setInvited] = useState(false);
+  const { signOut } = useSiwe();
 
   async function handleInvite() {
     if (!targetId.trim()) return;
     setError(null);
     setIsInviting(true);
     try {
-      await communityApi.inviteToUnion(unionId, { communityId: targetId.trim(), actingCommunityId });
+      await withAuthDetect(
+        () => communityApi.inviteToUnion(unionId, { communityId: targetId.trim(), actingCommunityId }),
+        signOut,
+      );
       setInvited(true);
     } catch (err) {
       if (err instanceof communityApi.ConflictError) {
@@ -198,6 +209,7 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
   const [respondingUnionId, setRespondingUnionId] = useState<string | null>(null);
   const [leavingUnionId, setLeavingUnionId] = useState<string | null>(null);
   const [errorByUnionId, setErrorByUnionId] = useState<Record<string, string>>({});
+  const { signOut } = useSiwe();
 
   // Shared query key with the community detail page's UnionsSection — same cache entry, no
   // duplicate network request when both are mounted.
@@ -210,7 +222,10 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
     setErrorByUnionId((prev) => ({ ...prev, [unionId]: "" }));
     setRespondingUnionId(unionId);
     try {
-      await communityApi.respondToUnionInvite(unionId, { communityId: community.id, accept });
+      await withAuthDetect(
+        () => communityApi.respondToUnionInvite(unionId, { communityId: community.id, accept }),
+        signOut,
+      );
       void queryClient.invalidateQueries({ queryKey: ["communityUnions", community.id] });
     } catch (err) {
       const message =
@@ -231,7 +246,7 @@ function UnionMembershipRow({ community }: { community: OwnedCommunity }) {
     setErrorByUnionId((prev) => ({ ...prev, [unionId]: "" }));
     setLeavingUnionId(unionId);
     try {
-      await communityApi.leaveUnion(unionId, { communityId: community.id });
+      await withAuthDetect(() => communityApi.leaveUnion(unionId, { communityId: community.id }), signOut);
       void queryClient.invalidateQueries({ queryKey: ["communityUnions", community.id] });
     } catch (err) {
       const message =

@@ -5,8 +5,19 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import CommunityPage from "./page";
 
 vi.mock("wagmi", () => ({
-  useAccount: () => ({ address: undefined }),
+  useAccount: () => ({ address: undefined, status: "disconnected" }),
   useChainId: () => 11155111,
+  // WalletConnectButton (in Header) calls useConnect()/useDisconnect() directly too
+  // (/plan-eng-review, 2026-08-23 — Privy removed).
+  useConnect: () => ({ connectors: [], connect: vi.fn(), isPending: false, error: null }),
+  useDisconnect: () => ({ disconnect: vi.fn() }),
+}));
+
+// This page renders Header -> WalletConnectButton, which calls useSiwe() (session-lifecycle
+// fix, 2026-08-22) — useSiwe needs useSignMessage() too, which the wagmi mock above doesn't
+// provide, and none of that is relevant to this test's actual concern.
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ isAuthenticated: false, isSigning: false, error: null, signIn: vi.fn(), signOut: vi.fn() }),
 }));
 
 // Avoids ProposalsList's transitive useDeployPoll -> wagmiConfig.ts import, which needs

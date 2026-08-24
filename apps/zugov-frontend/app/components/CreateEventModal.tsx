@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
 import type { Event, EventKind } from "@/src/services/eventApi";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 const KIND_OPTIONS: { value: EventKind; label: string }[] = [
   { value: "talk", label: "Talk" },
@@ -20,6 +22,20 @@ function toLocalInputValue(unixSec: number): string {
   return new Date(d.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
+// A datetime-local input's year segment has no format constraint on its own — typing a stray
+// digit produces something like "24.02.83333" with no feedback beyond "end must be after start"
+// (which a huge-but-still-ordered year trivially satisfies). The `max` attribute caps what the
+// native picker/typing allows; the matching JS check below covers browsers that don't enforce
+// `max` on manual typing and gives an explicit error message (2026-08-23 /investigate). Mirrors
+// the backend's own bound in routes/events.ts's createEventSchema/updateEventSchema.
+const MAX_EVENT_YEARS_OUT = 5;
+function maxEventInputValue(): string {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + MAX_EVENT_YEARS_OUT);
+  const offsetMs = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
 interface CreateEventModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +48,7 @@ interface CreateEventModalProps {
 
 export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, editingEvent }: CreateEventModalProps) {
   const isEdit = !!editingEvent;
+  const { signOut } = useSiwe();
 
   const { data: venues = [] } = useQuery({
     queryKey: ["venues", communityId],
@@ -94,9 +111,19 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   // Only enforced on create — editing an already-past event (e.g. fixing a typo in a concluded
   // event's title) must stay possible, matching updateEventSchema's own scope on the backend.
   const hasFutureStart = isEdit || !startAt || new Date(startAt).getTime() > Date.now();
+  const maxTimestamp = new Date(maxEventInputValue()).getTime();
+  const hasSaneStart = !startAt || new Date(startAt).getTime() < maxTimestamp;
+  const hasSaneEnd = !endAt || new Date(endAt).getTime() < maxTimestamp;
   const hasLocation = locationMode === "venue" ? !!venueId : locationText.trim().length > 0;
   const canSubmit =
-    title.trim().length > 0 && !!startAt && !!endAt && hasEndAfterStart && hasFutureStart && hasLocation;
+    title.trim().length > 0 &&
+    !!startAt &&
+    !!endAt &&
+    hasEndAfterStart &&
+    hasFutureStart &&
+    hasSaneStart &&
+    hasSaneEnd &&
+    hasLocation;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,27 +133,29 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     try {
       const startAtSec = Math.floor(new Date(startAt).getTime() / 1000);
       const endAtSec = Math.floor(new Date(endAt).getTime() / 1000);
-      if (isEdit && editingEvent) {
-        await eventApi.updateEvent(communityId, editingEvent.id, {
-          title,
-          description: description || undefined,
-          venueId: locationMode === "venue" ? venueId : null,
-          locationText: locationMode === "custom" ? locationText : null,
-          startAt: startAtSec,
-          endAt: endAtSec,
-          kind,
-        });
-      } else {
-        await eventApi.createEvent(communityId, {
-          title,
-          description: description || undefined,
-          venueId: locationMode === "venue" ? venueId : undefined,
-          locationText: locationMode === "custom" ? locationText : undefined,
-          startAt: startAtSec,
-          endAt: endAtSec,
-          kind,
-        });
-      }
+      await withAuthDetect(async () => {
+        if (isEdit && editingEvent) {
+          await eventApi.updateEvent(communityId, editingEvent.id, {
+            title,
+            description: description || undefined,
+            venueId: locationMode === "venue" ? venueId : null,
+            locationText: locationMode === "custom" ? locationText : null,
+            startAt: startAtSec,
+            endAt: endAtSec,
+            kind,
+          });
+        } else {
+          await eventApi.createEvent(communityId, {
+            title,
+            description: description || undefined,
+            venueId: locationMode === "venue" ? venueId : undefined,
+            locationText: locationMode === "custom" ? locationText : undefined,
+            startAt: startAtSec,
+            endAt: endAtSec,
+            kind,
+          });
+        }
+      }, signOut);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to ${isEdit ? "update" : "create"} event`);
@@ -215,6 +244,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
                 id="event-start"
                 type="datetime-local"
                 required
+                max={maxEventInputValue()}
                 value={startAt}
                 onChange={(e) => setStartAt(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
@@ -228,6 +258,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
                 id="event-end"
                 type="datetime-local"
                 required
+                max={maxEventInputValue()}
                 value={endAt}
                 onChange={(e) => setEndAt(e.target.value)}
                 className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
@@ -236,6 +267,9 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
           </div>
           {!hasEndAfterStart && <p className="text-xs text-error">End time must be after the start time.</p>}
           {!hasFutureStart && <p className="text-xs text-error">Start time must be in the future.</p>}
+          {(!hasSaneStart || !hasSaneEnd) && (
+            <p className="text-xs text-error">Event dates must be within {MAX_EVENT_YEARS_OUT} years from now.</p>
+          )}
 
           <div>
             <span className="block text-sm font-semibold text-foreground mb-2">Location *</span>

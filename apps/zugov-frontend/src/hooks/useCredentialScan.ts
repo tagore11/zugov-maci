@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { zuAuthPopup, ETHBERLIN04, type ZuAuthArgs } from "@pcd/zuauth";
 import * as credentialApi from "@/src/services/credentialApi";
 import type { CredentialResult, Protocol } from "@/src/services/credentialApi";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 
 /**
  * Placeholder ticket config — mirrors apps/zugov-backend's zupassAdapter.ts. ZuGov needs
@@ -39,6 +41,7 @@ export function useCredentialScan(walletAddress: string | undefined) {
   const [credentials, setCredentials] = useState<CredentialsByProtocol>({});
   const [checkErrors, setCheckErrors] = useState<CheckErrorsByProtocol>({});
   const [isScanning, setIsScanning] = useState(false);
+  const { signOut } = useSiwe();
 
   // Results are scoped strictly to the currently connected wallet (spec.md FR-007) — clear
   // them synchronously on address change so a previous wallet's status is never shown while
@@ -48,15 +51,18 @@ export function useCredentialScan(walletAddress: string | undefined) {
     setCheckErrors({});
   }, [walletAddress]);
 
-  const checkZupass = useCallback(async (address: string): Promise<CredentialResult | null> => {
-    const result = await zuAuthPopup({
-      watermark: address,
-      config: ZUPASS_TICKET_CONFIG,
-      fieldsToReveal: {},
-    });
-    if (result.type !== "pcd") return null; // popupClosed/popupBlocked/aborted/multi-pcd/pendingPcd
-    return credentialApi.verify("zupass", result.pcdStr);
-  }, []);
+  const checkZupass = useCallback(
+    async (address: string): Promise<CredentialResult | null> => {
+      const result = await zuAuthPopup({
+        watermark: address,
+        config: ZUPASS_TICKET_CONFIG,
+        fieldsToReveal: {},
+      });
+      if (result.type !== "pcd") return null; // popupClosed/popupBlocked/aborted/multi-pcd/pendingPcd
+      return withAuthDetect(() => credentialApi.verify("zupass", result.pcdStr), signOut);
+    },
+    [signOut],
+  );
 
   const checkZkid = useCallback(async (_address: string): Promise<CredentialResult | null> => {
     const stored = readStoredZkidCredential();

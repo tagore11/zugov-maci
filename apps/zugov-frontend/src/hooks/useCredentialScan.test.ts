@@ -15,12 +15,21 @@ vi.mock("@/src/services/credentialApi", () => ({
   verify: (...args: unknown[]) => verifyMock(...args),
 }));
 
+// /plan-eng-review (2026-08-23) Batch 4 -- this hook now calls useSiwe() for withAuthDetect.
+// Mocking the module directly (matching JoinSection.test.tsx's convention), not wrapping in a
+// real SiweProvider -- no test here exercises SiweProvider's own state machine.
+const mockSignOut = vi.fn();
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ signOut: mockSignOut }),
+}));
+
 const WALLET_ADDRESS = "0x1234567890123456789012345678901234567890";
 
 beforeEach(() => {
   zuAuthPopupMock.mockReset();
   listMock.mockReset();
   verifyMock.mockReset();
+  mockSignOut.mockReset();
   localStorage.clear();
   listMock.mockResolvedValue([]);
 });
@@ -125,6 +134,22 @@ describe("useCredentialScan", () => {
 
     expect(result.current.credentials.zupass).toBeUndefined();
     expect(result.current.checkErrors.zupass).toBe("zupass service unreachable");
+  });
+
+  // /plan-eng-review (2026-08-23) Batch 4
+  it("signs the wallet out when verify fails with an expired session (401)", async () => {
+    const { HttpError } = await import("@/src/services/httpClient");
+    zuAuthPopupMock.mockResolvedValue({ type: "pcd", pcdStr: "mock-pcd-string" });
+    verifyMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+
+    const { result } = renderHook(() => useCredentialScan(WALLET_ADDRESS));
+
+    await act(async () => {
+      await result.current.scan();
+    });
+
+    expect(result.current.checkErrors.zupass).toBe("Authentication required. Please sign in with Ethereum.");
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
   it("clears a previous check failure once a later check succeeds", async () => {

@@ -322,19 +322,444 @@
 **Priority:** P3
 **Depends on:** Communities/sub-communities nesting (done, 2026-08-18)
 
+## ZuGov / Auth architecture follow-ups (from 2026-08-22 `/office-hours` + `/plan-eng-review`)
+
+### ~~Roll out shared 401-detect wrapper to all write call sites~~ — RESOLVED (2026-08-23, Batches 1-4)
+
+**What:** A `/plan-eng-review` pass (2026-08-23) audited every authenticated write call
+site precisely, replacing this entry's old "~40 call sites" estimate: **31 real write
+functions** across 6 service files, of which **21 have zero 401-handling** (2 more —
+`eventApi.ts`'s `createVenue`/`cancelSeries` — turned out to be dead code, deleted in
+Batch 1). Batch 1 (implemented this pass) covers `communityApi.ts`'s own internal
+consistency (only 3 of its 8 writes auto-signed-out on a 401; now all 8 do, via the new
+`withAuthDetect` wrapper in `src/services/httpClient.ts`) plus `membershipApi.ts`'s two
+real landmines (`app/manage-communities/[id]/members/page.tsx`'s `handleApprove`/
+`handleReject` had NO catch clause at all — worse than a swallow, a bare
+`try {...} finally {...}` — now fixed).
+
+**Batch 2 (implemented 2026-08-23) — DONE.** `membershipApi.ts`'s 3 remaining writes
+(`createTier`, `updateTier`, `deleteTier`) plus `eligibilityApi.ts`'s `replaceRuleset`
+(pulled forward from Batch 4) all get called from the same `edit/page.tsx`
+`handleSubmit`, alongside `communityApi.update`'s edit-page call site — which turned
+out to be a call site Batch 1's own audit had already flagged as inconsistent
+(`communityApi.ts:200-218 update`'s TWO call sites: the wizard's, wrapped via
+`withAuthRetry`; this edit page's, left on the old generic catch) but Batch 1's
+Implementation Tasks never actually listed it, so it got missed. Fixed now: the whole
+5-call save sequence (`update` → tier CRUD loop → `replaceRuleset`) is wrapped in ONE
+`withAuthDetect` call, not one per call — they're one atomic "save" action from the
+user's perspective, so a 401 anywhere in the sequence should sign out exactly once.
+
+**Batch 3 (implemented 2026-08-23) — DONE.** `proposalApi.ts`'s 7 writes, across 2
+call-site files: `CreateProposalModal.tsx` (`authorizeDirect`/`confirmDirect`/
+`createDraft` — one atomic submit, one `withAuthDetect` wrap around the whole
+`handleSubmit` body, matching Batch 2's edit-page precedent) and `ProposalsList.tsx`
+(4 separate wraps in 3 components: `DeployPollPrompt.handleDeploy` for
+`confirmFormalize`, `TallySection.handleTally` for `triggerTally`, and
+`DraftRow`'s two independent handlers — `handleSponsor` for `sponsor` and
+`runAuthorizeIfReady` for `authorizeFormalize` — kept as separate wraps since they're
+two logically distinct actions with two distinct error-state variables, not one
+sequence).
+
+**Batch 4 (implemented 2026-08-23) — DONE.** `eventApi.ts`'s 6 live writes across 2
+call-site files: `CreateEventModal.tsx` (`createEvent`/`updateEvent` — one atomic
+submit, one `withAuthDetect` wrap around the whole `handleSubmit` body) and
+`EventsSection.tsx` (3 separate wraps: `DuplicateForm.handleSubmit` for
+`duplicateEvent`, `EventRow.handleRsvpToggle` for `rsvp`/`cancelRsvp` — one atomic
+toggle, one wrap — and `EventRow.handleCancelConfirm` for `cancelEvent`). Plus
+`credentialApi.ts`'s `verify`, wrapped inside `useCredentialScan.ts`'s `checkZupass` —
+this file had its own hand-rolled duplicate of `parseErrorOr`'s logic (not one of the
+original 4 counted in Batch 1's DRY extraction), migrated to the shared
+`parseErrorOr`/`HttpError` in the same pass.
+
+**Post-rollout re-verification (2026-08-23) caught one real miss:**
+`app/community/[id]/JoinSection.tsx`'s two `membershipApi.join()` call sites
+(`handleJoin`, `handleJoinBackendOnly`) were never wrapped in any of the 4 batches.
+They already surfaced errors correctly (from an earlier, unrelated 2026-08-21 fix), so
+Batch 1's audit didn't flag them as "swallowing" landmines — but nobody had gone back
+to actually wire in the sign-out-on-401 behavior once `withAuthDetect` existed. Fixed:
+both call sites now wrapped. This is exactly the same shape of miss as Batch 2's —
+"already looks fine" is not the same check as "is it wrapped" — worth remembering for
+any future rollout of this kind: audit for the wrapper's actual presence, not just for
+whether the existing behavior already looks acceptable.
+
+**Minor, non-blocking consistency gap found in the same re-verification:**
+`communityApi.ts` never actually migrated to the shared `parseErrorOr` — its 8 write
+functions still use bespoke inline `if (res.status === 401/403/409)` blocks (or the
+file's own `handleCommunityResponse` helper) instead of the shared helper extracted in
+Batch 1. Functionally harmless (`AuthError extends HttpError(401)` still makes
+`isAuthError()`/`withAuthDetect()` work correctly), but it's the one file that never
+got the DRY cleanup the other 5 did. Low priority — a pure refactor with no behavior
+change, worth doing next time this file is touched for another reason, not on its own.
+
+**All batches now complete, independently re-verified.** Every one of the 31 real
+write functions (29 live + 2 confirmed-dead, deleted) across all 6 service files now
+either already had 401-handling (the original 8 `communityApi.ts` functions) or has
+`withAuthDetect` wired in. The "structural instead of opt-in" question (below) is the
+only related work still open.
+
+**Effort (actual, all batches + the post-rollout fix):** ~5 sessions, 1 new shared file
+(`src/services/httpClient.ts`), ~20 files touched across service layer + call sites +
+tests
+**Priority:** was P1 (same root cause already produced 6 live bugs in one session
+during pre-Zukas-2026 dogfooding)
+**Depends on:** N/A — complete.
+
+### Make 401-detection structural instead of opt-in (global interceptor)
+
+**What:** `withAuthDetect` (Batch 1) is opt-in per call site — every write function's
+call site must remember to wrap itself. Nothing structurally prevents a future write
+function (in Batches 2-4, or any new endpoint added later) from being written without
+it, reproducing the exact bug class this rollout exists to fix. Alternative: register a
+global `signOut` callback once from `SiweProvider` (e.g. via a module-level mutable
+reference set in a `useEffect`); the shared `parseErrorOr`/`HttpError` path in
+`httpClient.ts` calls it automatically on any 401, with no per-call-site wrapping
+required at all — every current AND future write gets 401-handling for free.
+
+**Why:** Raised by this review's outside-voice pass (Claude subagent, Codex not
+installed) as a genuine architecture gap in the opt-in design. Not built now because
+this exact tradeoff (opt-in vs. a bigger consolidated mechanism) was already weighed
+and decided at the parent SiweProvider `/plan-eng-review`: Approach B (a consolidated
+API client with built-in 401-handling, zero-touch for future call sites) was rejected
+in favor of Approach A (opt-in wrapper) because its bigger blast radius wasn't
+justified by what was broken at the time. Revisiting it now, with the shared
+`HttpError`/`parseErrorOr` foundation already in place from Batch 1, is a smaller
+version of the same idea and may be worth it once Batches 2-4 reveal whether opt-in
+wrapping keeps getting missed in practice.
+
+**Open design question:** callback-registration timing — `SiweProvider` mounts once at
+app root, but does the global callback exist before the very first API call fires after
+app boot (e.g. a component's own `useEffect` firing before `SiweProvider`'s registration
+effect)? Needs its own design pass, not a quick patch.
+
+**Effort:** M (touches `SiweProvider` + `httpClient.ts`; needs a design pass for the
+registration-timing question)
+**Priority:** P2
+**Depends on:** Batch 1 landing first (needs the shared `HttpError`/`parseErrorOr`
+foundation to build on).
+
+### ~~Unify Privy's wallet-connect signature and ZuGov's own SIWE signature~~ — RESOLVED (2026-08-23, Privy removed)
+
+**Resolution:** Both candidate directions from the original write-up turned out to be
+dead ends: Option A (bypass Privy's own wallet-auth signature, keep Privy only for
+`embeddedWallets`) was blocked by `wagmiConfig.ts` importing `createConfig` from
+`@privy-io/wagmi` — wagmi's connector state was entirely Privy-driven, with no
+independent raw wagmi connector existing anywhere in the app, making "just bypass
+Privy for external wallets" a real unknown-feasibility spike, not a simple change.
+Option B (one signature satisfying both) was confirmed architecturally infeasible —
+Privy's own "bring your own SIWE flow" API (`useLoginWithSiwe`/`generateSiweMessage`)
+still requires PRIVY'S OWN generated message/nonce for its own replay protection, not
+an arbitrary caller-supplied one.
+
+Founder's call once both were ruled out: drop Privy entirely rather than find a third
+option — "supporting both Privy and raw wagmi seems to be burdensome and causing
+problems." A `/plan-eng-review` (2026-08-23) scoped and shipped the full removal:
+plain wagmi `WagmiProvider` (a real registered `injected()` connector in
+`wagmiConfig.ts`, replacing Privy's own wagmi bridge), `WalletConnectButton.tsx`
+replacing `PrivyConnectButton.tsx`, `useSiwe.tsx`'s auto-sign-in effect no longer
+gated on `usePrivy().authenticated` (nothing left to wait on). One signature now,
+by construction — not two sequenced ones.
+
+**Accepted tradeoff:** email/social sign-in and Privy's auto-provisioned embedded
+wallet are gone with no in-house replacement yet — explicitly confirmed by the
+founder ("wallet-only for now, accept the tradeoff") given the 401/403/route-guard
+work this was bundled with needed a clean auth foundation before Zukas 2026. See
+"Investigate passkey/smart-contract-wallet auth" below, now the only path back to
+non-wallet-owning residents, and the now-obsolete embedded-wallet-funding TODO below.
+
+**Depends on:** N/A — complete.
+
+### Per-community configurable visibility policy (public vs. members-only)
+
+**What:** Let each community choose what non-members can see — e.g. proposals/events
+visible to everyone vs. members-only — as a real, per-community setting (a new field
+on `communities`, checked at the route level per resource), not a single hardcoded
+app-wide rule. Distinct from the 3-pattern gating-mechanism inconsistency (which page
+uses SiweGate vs. wallet-only vs. no gating) — this is about what content is visible
+at all, independent of which mechanism enforces it.
+
+**Why:** Raised directly by the founder during the 2026-08-22 `/office-hours` premise
+discussion — an explicit, different frame from "unify the auth mechanism," surfaced
+mid-session and deliberately scoped out of the auth-unification wedge rather than
+folded in silently.
+
+**Effort:** M (schema field + per-resource route checks; UI for admins to set it)
+**Priority:** P2
+**Depends on:** Auth architecture unification (this pass + the 401-rollout TODO above)
+landing first — a reliable "is this user authenticated" answer needs to exist before
+building a visibility policy on top of it.
+
+### ~~Consolidate the 3 uncoordinated auth-gating patterns across pages~~ — RESOLVED (Phase B, 2026-08-23)
+
+**Resolution:** All 3 concrete gating bugs fixed, plus the route-guard mechanism built
+and applied per the locked plan:
+
+1. **`manage-communities/[id]/members`** — the byte-identical "You don't have
+   permission" text is gone. The load failure now branches on the real `HttpError`
+   status (`isAuthError`/new `isForbiddenError`, both in `src/services/httpClient.ts`):
+   a 401 shows "Sign in to review join requests for this community." with a real
+   "Sign in with Ethereum" button (wired to retry the fetch once `isAuthenticated`
+   flips true), a 403 keeps the original permission-denied text, and anything else
+   (network error, 500) now surfaces its own message instead of being lumped into
+   "forbidden."
+2. **`/community/:id`'s Join button** (`JoinSection.tsx`) — the governed-community
+   branch's Join button is now `SiweGate`-wrapped, matching its ungoverned sibling.
+   Auto-sign-in means this renders straight through to the button for the common case;
+   the gate only surfaces when auto-sign-in hasn't (yet) succeeded.
+3. **`manage-communities/[id]/edit`** — "Save Changes" is now `SiweGate`-wrapped (button
+   only, not the whole form — matches the register page's own placement exactly). The
+   page-level `isAuthorized` view gate (creator-or-admin wallet check) was left
+   wallet-based on purpose — deciding who sees the edit UI at all is a legitimate
+   wallet-address check; the fix targets the WRITE bypassing `SiweGate`, not the view
+   gate's shape.
+
+**`RequireAuth`** (new file, `app/components/RequireAuth.tsx`) — a react-router-dom v6
+layout route, applied to exactly `/manage-communities` and `/manage-profile` per the
+locked scope. Gates on `useAccount().address` (wallet connected — the same "connected"
+concept every other page already uses), not a SIWE session, with a loading state for
+wagmi's reconnect-on-mount window (matching `WalletConnectButton`'s same check) so a
+returning connected user never sees a false "Connect your wallet" flash. Verified live
+in the browser: `/manage-communities` and `/manage-profile` now show a clear "Connect
+your wallet to view this page." prompt instead of the old misleading "You don't own any
+communities yet." empty state.
+
+**`isForbiddenError(err)`** added alongside `isAuthError` in `httpClient.ts`, used by
+the members-page fix above. The backend-side 403 response-SHAPING unification (a
+shared dispatcher matching 401's `requireAuth`, replacing the two ad-hoc idioms across
+`communities.ts`/`membership.ts`/etc.) was NOT part of this pass — frontend-only,
+matching what the 3 concrete bugs and the route-guard actually needed. Revisit
+separately if the backend-side inconsistency becomes a real problem, not just a
+documented one.
+
+**Why:** Found during the 2026-08-22 auth audit; fully scoped during the 2026-08-23
+Privy-removal `/plan-eng-review` (founder: "removing privy support needs to be full on
+auth, 401, 403 handling, route guards and all, with unified gating").
+
+**Verification:** Full frontend suite (209 tests, 30 files) + typecheck both pass; new
+tests added for `RequireAuth` (4), the members-page 401/403 split + sign-in retry (3),
+and the governed-Join-button gating (2). Live-browser-verified via `/browse` for both
+guarded routes.
+
+**Depends on:** N/A — complete.
+
+### WalletConnect/mobile-wallet support
+
+**What:** `wagmiConfig.ts` registers only a single `injected()` connector (auto-
+discovers every EIP-6963 browser-extension wallet — MetaMask, Rabby, Coinbase
+extension, etc. — under one entry), no `walletConnect()` connector for QR-code/mobile
+wallet flows.
+
+**Why:** Deliberately deferred during the 2026-08-23 Privy-removal `/plan-eng-review`
+— adding it needs a new WalletConnect Cloud project ID, a new vendor dependency the
+review didn't want to pull in in the same pass as the Privy removal it was meant to
+simplify.
+
+**Effort:** S (one new connector + a WalletConnect Cloud project ID)
+**Priority:** P3
+**Depends on:** None
+
+### No rate limiting on `/api/auth/nonce` / `/api/auth/verify`; nonce not cleared on failed verify
+
+**What:** Neither auth endpoint has rate limiting (confirmed: no rate-limit dependency
+anywhere in `apps/zugov-backend`'s `package.json`). A failed `/api/auth/verify` doesn't
+clear the session's nonce (only a successful verify does), so one session can throw
+unlimited verify attempts at one nonce within its 5-minute TTL.
+
+**Why:** Found during the 2026-08-22 auth audit. Not an authentication bypass (a valid
+ECDSA signature is still required), but a real defense-in-depth gap.
+
+**Effort:** S (a small rate-limit middleware; clearing the nonce on failure is a
+one-line change to the `/verify` handler's failure path)
+**Priority:** P3
+**Depends on:** None
+
+### `CORS_ORIGIN` missing env var crashes the backend at boot with a cryptic error
+
+**What:** `apps/zugov-backend/src/app.ts`'s `process.env.CORS_ORIGIN!.split(",")` uses
+a non-null assertion with no runtime guard — an unset/empty `CORS_ORIGIN` crashes the
+whole backend at module load with "Cannot read properties of undefined (reading
+'split')" instead of a clear, actionable error.
+
+**Why:** Found during the 2026-08-22 auth audit. Contrast with the fail-loudly-with-
+setup-instructions pattern this codebase otherwise favors for missing required config.
+
+**Effort:** S (one explicit guard + error message, matching the frontend's pattern)
+**Priority:** P3
+**Depends on:** None
+
+### Proposals are the only resource with auth-gated reads
+
+**What:** Every route in `apps/zugov-backend/src/routes/proposals.ts` requires
+`requireAuth`, including the two `GET` reads — the only resource in the backend where
+reads require authentication. Every other resource (communities, events, venues,
+eligibility rulesets, membership tiers, unions) has public `GET`s and auth-gated
+writes only.
+
+**Why:** Found during the 2026-08-22 auth audit. Unconfirmed whether this is
+deliberate (proposal contents treated as sensitive) or an accidental over-restriction
+— a logged-out visitor can browse a community's events and venues but can't view its
+proposals at all, inconsistent with the rest of the app.
+
+**Effort:** S (if a deliberate-intent confirmation says to open the reads up) to
+unknown (if there's a real reason proposals need to stay gated, worth documenting why)
+**Priority:** P3
+**Depends on:** A product decision on whether proposal content should be public
+
+## ZuGov / Member count consistency (found 2026-08-23 dogfooding)
+
+### Communities show an incorrect/inconsistent member count
+
+**What:** "Member count" is not one number in this codebase — it's at least 4 different
+counters from 2 unrelated data sources, with nothing reconciling them:
+
+1. What's actually displayed everywhere (community page, home page, manage-communities
+   page) is `fetchMembers()` (`apps/zugov-frontend/src/services/subgraph.ts:120-127`),
+   which queries the **on-chain MACI subgraph's `totalSignups`** — only wallets that
+   completed the on-chain MACI signup transaction.
+2. The Postgres `memberships` table (`apps/zugov-backend/src/db/schema.ts:205-214`) has
+   no `status` column — every row counts. Exposed only via `GET /:id/members`
+   (`membershipService.listMembers`), used solely for an election candidate picker,
+   never rendered as a count anywhere.
+3. A hardcoded `0` (`apps/zugov-frontend/src/lib/communityDisplay.ts:49`,
+   `communityToItem`) shown before the subgraph query resolves, or for governance types
+   the subgraph doesn't support.
+4. `joinRequests` filtered to `status = "pending"` powers the "Pending Join Requests"
+   count on `manage-communities/[id]/members/page.tsx` — easy to mistake for a member
+   count (the page is literally named ".../members") but it's a request queue, not a
+   roster; approved/rejected requests are invisible there.
+
+The concrete divergence a user sees: `communityService.createIdentity`
+(`apps/zugov-backend/src/services/communityService.ts:363-368`) always inserts the
+creator into `memberships` at community-creation time, but the creator is never
+auto-registered on-chain — so a brand-new community shows "0 members" (the on-chain
+count everyone sees) even though the creator already "has membership" in the DB. Same
+gap for anyone whose join request is approved (`approveRequest`,
+`membershipService.ts:375-403`, DB-only) but who never separately completes
+`JoinSection`'s on-chain MACI signup step — approved in the backend, invisible in the
+number everyone else sees.
+
+**Why:** Reported live during 2026-08-23 dogfooding. Root-caused via `/investigate` —
+not a regression, this reflects the same identity/governance split already documented
+in `ENGINEERING.md` ("on-chain state index is ground truth, the backend membership row
+is secondary bookkeeping" — see also `JoinSection.tsx`'s own comments) — but nobody has
+reconciled the _displayed count_ the two sides produce. A field-name collision makes it
+worse: `unionService.listAll`'s `memberCount` (active `unionMemberships` rows) counts
+**communities in a union**, not wallets in a community, yet unions and communities
+render under the identical UI field `members` on the merged discovery/home page
+(`communityDisplay.ts`'s `communityToItem`/`unionToItem`).
+
+**Fix direction (not yet decided):** Two real options, deliberately not chosen yet:
+(A) show the DB `memberships` count everywhere instead of on-chain `totalSignups` —
+matches what "member" means everywhere else in the app (join requests, tiers,
+permissions), shows a number immediately at creation; needs a new backend COUNT
+endpoint plus swapping ~4 frontend call sites off `fetchMembers` for display purposes
+(on-chain signup count likely still matters for voting-eligibility contexts,
+just not as "member count"). (B) keep on-chain count as displayed, but auto-trigger
+MACI signup whenever a DB membership is created — bigger change, adds a blockchain
+transaction to the creation/approval flow, and doesn't fully close the gap for
+communities without governance configured yet (identity can predate governance,
+per `ENGINEERING.md`).
+
+**Effort:** M (new backend query + ~4 frontend call-site swaps for option A; a
+deploy-flow change touching creation/approval for option B)
+**Priority:** P1 (a visibly wrong number on every community-facing page, live in
+front of Zukas 2026 dogfooders)
+**Depends on:** A decision between fix direction A vs. B — needs its own scoping
+pass, not a blind pick
+
+## ZuGov / Schema timestamp columns are Y2038-limited (found 2026-08-23 investigating event dates)
+
+### Every `*At` timestamp column is a 32-bit Postgres `integer` — overflows in January 2038
+
+**What:** While root-causing "event creation accepts garbage dates" (fixed: added a 5-year
+sane-future bound to `createEventSchema`/`updateEventSchema` in
+`apps/zugov-backend/src/routes/events.ts`), the regression test for the fix revealed the
+_real_ failure mode underneath: before the bound existed, submitting a startAt corresponding
+to year ~2126 didn't just get silently accepted — it crashed with a raw, unhandled 500 at
+the DB layer. `apps/zugov-backend/src/db/schema.ts`'s `events.startAt`/`endAt`
+(`integer("start_at")`) are Postgres 4-byte `integer` columns, max value 2,147,483,647 —
+which corresponds to **2038-01-19T03:14:07Z**, the classic Unix Y2038 problem. Every other
+timestamp column in the schema (`createdAt`, `joinedAt`, `expiresAt`, `sponsoredAt`,
+`rsvpedAt`, `respondedAt`, and ~20 more — grep `integer(".*[Aa]t")` in schema.ts) uses the
+same `integer` type; only `events.startAt`/`endAt` are user-controllable far enough into the
+future to trigger it _today_ (everything else gets stamped with `Date.now()` at write time,
+so it won't overflow until 2038 actually arrives — at which point every one of those columns
+breaks app-wide simultaneously, not just events).
+
+**Why:** The 5-year bound just added keeps `events.startAt`/`endAt` safely under the 2038
+ceiling for the next several years (2026 + 5 = 2031), so this isn't an active production
+outage — but it's a deliberate stopgap sitting on top of a real landmine, not a fix for it.
+Two things make it worse than "years away, not urgent": (1) `duplicateEventSchema`
+(`routes/events.ts`) has an unbounded `intervalDays` (`z.number().int().min(1)`, no max) —
+`eventService.duplicate()` computes `source.startAt + intervalDays * 86400 * i` directly,
+bypassing `createEventSchema`'s bound entirely, so a large `intervalDays` can still overflow
+the column today, right now, via a second code path the events fix didn't touch. (2) A raw
+500 (not a clean 4xx) on integer overflow means the failure mode is an unhandled exception,
+not a validated rejection — the same shape of bug could resurface anywhere else a
+user-controlled offset gets added to a stored timestamp.
+
+**Fix direction (not scoped/decided):** Migrating all ~30 timestamp columns from `integer`
+to `bigint` (or Postgres `timestamptz`, arguably the more correct type) is a real schema
+migration — data migration for every existing row, Drizzle schema changes across every table,
+and auditing every service that reads/writes these columns for narrowing assumptions. This is
+architecture-review territory (`/plan-eng-review`), not a quick patch, and shouldn't be scoped
+under time pressure. In the meantime, `duplicateEventSchema`'s `intervalDays` should get the
+same kind of sane-bound treatment `createEventSchema` just got (small, targeted fix, unlike
+the full migration).
+
+**Effort:** S (bounding `intervalDays`, matching this session's events fix) now available as
+a quick follow-up; L-XL (full `integer` → `bigint`/`timestamptz` migration across the schema)
+for the real fix
+**Priority:** P2 (not urgent — 2038 is ~12 years out and the immediate reported bug is fixed
+— but a real ticking liability, and the `duplicateEventSchema` gap is exploitable today)
+**Depends on:** None for the `intervalDays` bound; the full migration needs its own
+`/plan-eng-review` given the blast radius across every table
+
 ## Repo Infrastructure
 
-### Manually fund each resident's embedded wallet with Sepolia test ETH
+### ~~Drizzle migration snapshots (`drizzle/meta/*.json`) drifted from reality since migration 0019~~ — RESOLVED (2026-08-24)
 
-**What:** After a resident signs up via email (Privy auto-provisions an embedded wallet), the wallet has 0 Sepolia ETH and cannot sign any transaction (MACI signup, voting). Tarik/Sait need to manually send test ETH to each resident's wallet address (visible in the Privy dashboard or via the app) before that resident can actually participate.
+**Resolution:** Root cause confirmed: `0019_proposal_rename.sql`'s real SQL
+(`ALTER TABLE governance_actions RENAME TO proposals`, etc.) did rename the tables
+correctly, but Postgres never auto-renames a table's own constraints on `RENAME TO` —
+`proposal_sponsors`'s primary key stayed named
+`governance_action_sponsors_governance_action_id_wallet_address_`. `drizzle/meta`'s
+0019/0020 snapshots were never regenerated to reflect the rename at all (identical to
+0018's), which is what made `drizzle-kit generate` ask its ambiguous "new table or
+rename" prompt.
 
-**Why:** No auto-funding path exists anywhere in the codebase (`src/config.ts` only lists manual faucet _links_ — Google Cloud Web3 Faucet, QuickNode, etc. — not an automated flow). Discovered during eng review's outside-voice pass, alongside the `window.ethereum` signer bug it's adjacent to (fixed separately).
+Fixed via `drizzle-kit introspect` against the live, already-correct `zugov_dev` DB
+(rather than hand-editing complex snapshot JSON, or fighting the ambiguous interactive
+prompt) — only the LATEST snapshot matters for `generate`'s diffing, so the historical
+0018/0019/0020 snapshots were left alone; a freshly-introspected, correctly-chained
+snapshot became the new baseline. Two follow-on migrations landed alongside
+`0021_add_zupoll_tables.sql`: `0022_rename_proposal_sponsors_pk.sql` (the actual root-
+cause fix — a single `RENAME CONSTRAINT`, completing what `0019` should have done) and
+`0023_reconcile_introspected_index_metadata.sql` (a one-time, fully no-op drop+recreate
+of 2 indexes — introspected index metadata isn't byte-identical to schema.ts-declared
+index metadata even for the same index, which `drizzle-kit generate` flagged once).
 
-**Context:** Given the small expected headcount for Zukas 2026 and Sepolia's free public faucets, this is an operational workaround, not a blocker — but it's a real step that must actually happen for each resident, and it's easy to forget under event-day pressure. Consider batch-funding all registered residents' addresses in one pass right before the event rather than one-by-one reactively.
+**Verified two ways:** (1) `drizzle-kit generate` now reports "No schema changes,
+nothing to migrate 😴" against current `schema.ts` — confirmed stable across a second
+`generate` call. (2) The full migration chain (`0000` through `0023`) applied cleanly,
+end to end, against a brand-new empty database (`zugov_migration_test`, dropped after
+verification) — proving this is a reproducible fix for any fresh clone or CI run, not
+just a patch on one already-mutated local DB. Full backend suite: 293/294 passing (1
+pre-existing skip).
 
-**Effort:** S (operational, not engineering)
-**Priority:** P1
-**Depends on:** None — but blocks any embedded-wallet resident from actually signing up/voting until done
+**Depends on:** N/A — complete.
+
+### ~~Manually fund each resident's embedded wallet with Sepolia test ETH~~ — OBSOLETE (2026-08-23, Privy removed)
+
+**Resolution:** Moot. The premise was Privy auto-provisioning a zero-balance embedded
+wallet for email sign-ups, which Tarik/Sait would then need to manually fund one by
+one. Privy (and its embedded-wallet path) is gone as of the 2026-08-23 auth
+`/plan-eng-review` — every resident now connects their own external wallet (MetaMask
+etc.), which they're responsible for funding themselves (public Sepolia faucets are
+still linked in `src/config.ts`). No more per-resident manual funding step for the
+team to remember under event-day pressure — a positive side-effect of the removal,
+not something that needs separate follow-up.
+
+**Depends on:** N/A — obsolete.
 
 ### Deploy MerkleProof policy factory to Sepolia
 
@@ -384,11 +809,18 @@
 **Priority:** P3
 **Depends on:** None
 
-### Investigate passkey/smart-contract-wallet auth as a Privy replacement
+### Investigate passkey/smart-contract-wallet auth for in-house email/passkey sign-in
 
-**What:** Replace Privy's custodial-ish embedded wallet with a genuinely vendor-free path: WebAuthn passkeys signing through a smart contract wallet (ERC-4337 account abstraction + ERC-1271 signature verification), instead of a standard EOA/SIWE flow.
+**What:** A genuinely vendor-free path back to non-wallet-owning residents: WebAuthn
+passkeys signing through a smart contract wallet (ERC-4337 account abstraction +
+ERC-1271 signature verification), instead of a standard EOA/SIWE flow.
 
-**Why:** Privy (and every embedded-wallet SDK evaluated — Dynamic, Web3Auth, Magic) means real vendor lock-in. Passkeys are the only path that avoids a wallet-infrastructure vendor entirely, and fit ZuGov's own values (minimizing trusted third parties) better than any custodial/MPC SaaS option.
+**Why:** Originally framed as "a Privy replacement" — now more directly load-bearing:
+the 2026-08-23 Privy-removal `/plan-eng-review` dropped email/social sign-in entirely
+(accepted tradeoff, "wallet-only for now"), with no in-house replacement built yet.
+This is the only scoped path back to it. Passkeys also avoid a wallet-infrastructure
+vendor entirely, fitting ZuGov's own values (minimizing trusted third parties) better
+than any custodial/MPC SaaS option (Privy, Dynamic, Web3Auth, Magic) would have.
 
 **Context:** Researched during T1 (2026-08-18) and explicitly rejected for Sept 9 because it's the heaviest option, not the lightest: (1) WebAuthn uses secp256r1, Ethereum uses secp256k1 — mathematically incompatible, so this REQUIRES a smart contract wallet, not a simple key swap. (2) P-256 verification costs ~330k-400k gas without the RIP-7212 precompile (~$25/signature at L1 prices); RIP-7212 is deployed on major L2s but its status on plain Ethereum Sepolia (the chain locked in for Zukas 2026) is unconfirmed — check this first before any implementation attempt. (3) Requires an ERC-4337 bundler — either self-hosted (real new production infrastructure, arguably bigger than the MACI coordinator ops work) or a commercial bundler (Alchemy, Pimlico, Biconomy, ZeroDev, etc.) — which is still a vendor, just one layer lower. (4) `useSiwe.ts` and backend `auth.ts`/`session.ts` assume standard EOA `personal_sign` verification; a smart contract wallet needs ERC-1271 verification instead — real rework, not a provider swap. Worth revisiting once there's time to do it properly, not under event-deadline pressure.
 

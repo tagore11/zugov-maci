@@ -3,10 +3,8 @@ import { getSignerFromWalletClient, getSignerFromWagmiConfig } from "./wagmiSign
 
 // Regression test for a critical bug found in eng review: useSignup.ts, useVote.ts,
 // useDeployPoll.ts, and useCreateCommunity.ts all used to read window.ethereum directly to get
-// a signer. Privy embedded wallets (the whole point of the wallet-custody work — non-crypto
-// residents signing in by email) are NOT injected as window.ethereum; that global is reserved
-// for browser-extension wallets like MetaMask. So every one of those flows silently threw
-// "No wallet found" for exactly the population they were built for. These tests prove the fix
+// a signer instead of going through wagmi's own connector state, silently throwing
+// "No wallet found" for any wallet not injected as window.ethereum. These tests prove the fix
 // works with window.ethereum entirely absent.
 const FAKE_ADDRESS = "0x1111111111111111111111111111111111111111";
 

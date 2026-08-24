@@ -52,9 +52,10 @@ export { DEFAULT_ADVANCED_CONFIG };
 export type { DeployPhase };
 import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
+import { isAuthError } from "@/src/services/httpClient";
 import { useZuGovRegistry, type RegistryStatus, type RegistryData } from "./useZuGovRegistry";
 
-export type WizardStep = "community_info" | "community_setup" | "eligibility" | "success";
+export type WizardStep = "community_info" | "community_setup" | "success";
 
 export interface DeploymentSummary {
   displayName: string;
@@ -126,7 +127,7 @@ async function withAuthRetry<T>(action: () => Promise<T>, signOut: () => Promise
     try {
       return await action();
     } catch (err) {
-      if (err instanceof communityApi.AuthError) {
+      if (isAuthError(err)) {
         await signOut();
         throw err;
       }
@@ -477,6 +478,12 @@ export interface WizardState {
   // an advanced setting on the edit page (DeployGovernanceSection), which calls
   // useDeployGovernance directly rather than through this hook.
   identityCommunityId: string | undefined;
+  // True only during setCommunitySetup's registerIdentity()/update() call (community creation
+  // wizard fix, 2026-08-21) — the single source of truth for "is a network call in flight right
+  // now," read by both StepCommunitySetup (disables its own Back/Next) and CreateCommunityModal
+  // (disables the X close button, via CreateCommunityWizard's onSubmittingChange callback). A
+  // click on X during this window used to close the modal mid-request with no cleanup.
+  isSubmitting: boolean;
 }
 
 export interface UseCreateCommunityResult {
@@ -493,17 +500,17 @@ export interface UseCreateCommunityResult {
     membershipPolicy: MembershipPolicy;
     tiers: TierDraft[];
     defaultTierLabel: string;
-    advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
   }) => Promise<void>;
   reset: () => void;
 }
 
-const STEP_ORDER: WizardStep[] = ["community_info", "community_setup", "eligibility", "success"];
+const STEP_ORDER: WizardStep[] = ["community_info", "community_setup", "success"];
 
 const INITIAL_STATE: WizardState = {
   step: "community_info",
   config: {},
   identityCommunityId: undefined,
+  isSubmitting: false,
 };
 
 export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateCommunityResult {
@@ -538,70 +545,70 @@ export function useCreateCommunity(siwe: ReturnType<typeof useSiwe>): UseCreateC
   );
 
   const setCommunitySetup = useCallback(
-    async (config: {
-      membershipPolicy: MembershipPolicy;
-      tiers: TierDraft[];
-      defaultTierLabel: string;
-      advanced?: Pick<MACIDeploymentConfig, "signUpPolicy" | "allowedPolicies" | "supportedModes">;
-    }) => {
+    async (config: { membershipPolicy: MembershipPolicy; tiers: TierDraft[]; defaultTierLabel: string }) => {
       if (!state.config.displayName) throw new Error("Community name is required");
-      const advanced = config.advanced ?? DEFAULT_ADVANCED_CONFIG;
 
-      // Architecture 1A/1B: the identity is created here, before any on-chain deployment starts
-      // — communityId is a server-generated UUID at this point, not yet a contract address. If
-      // the user hit Back from network_check and re-submits this step (e.g. changed the
-      // membership policy), reuse the already-created identity via update() instead of calling
-      // registerIdentity() again, which would silently orphan the first one.
-      const identityId = state.identityCommunityId
-        ? (
-            await withAuthRetry(
-              () =>
-                communityApi.update(state.identityCommunityId as string, {
-                  membershipPolicy: config.membershipPolicy,
+      setState((prev) => ({ ...prev, isSubmitting: true }));
+      try {
+        // Architecture 1A/1B: the identity is created here, before any on-chain deployment
+        // starts — communityId is a server-generated UUID at this point, not yet a contract
+        // address. If the user hit Back and re-submits this step (e.g. changed the membership
+        // policy), reuse the already-created identity via update() instead of calling
+        // registerIdentity() again, which would silently orphan the first one.
+        const identityId = state.identityCommunityId
+          ? (
+              await withAuthRetry(
+                () =>
+                  communityApi.update(state.identityCommunityId as string, {
+                    membershipPolicy: config.membershipPolicy,
+                    category: state.config.category,
+                    tierChangesRequireVote: false,
+                    defaultTierLabel: config.defaultTierLabel,
+                  }),
+                siwe.signOut,
+              )
+            ).id
+          : (
+              await saveIdentityWithRetry(
+                {
+                  displayName: state.config.displayName,
+                  description: state.config.description,
+                  parentCommunityId: state.config.parentCommunityId,
                   category: state.config.category,
+                  membershipPolicy: config.membershipPolicy,
                   tierChangesRequireVote: false,
+                  tiers: config.tiers,
                   defaultTierLabel: config.defaultTierLabel,
-                }),
-              siwe.signOut,
-            )
-          ).id
-        : (
-            await saveIdentityWithRetry(
-              {
-                displayName: state.config.displayName,
-                description: state.config.description,
-                parentCommunityId: state.config.parentCommunityId,
-                category: state.config.category,
-                membershipPolicy: config.membershipPolicy,
-                tierChangesRequireVote: false,
-                tiers: config.tiers,
-                defaultTierLabel: config.defaultTierLabel,
-                source: "wizard",
-              },
-              siwe.signOut,
-            )
-          ).id;
+                  source: "wizard",
+                },
+                siwe.signOut,
+              )
+            ).id;
 
-      setState((prev) => ({
-        ...prev,
-        config: {
-          ...prev.config,
-          ...advanced,
-          membershipPolicy: config.membershipPolicy,
-          tierChangesRequireVote: false,
-          tiers: config.tiers,
-          defaultTierLabel: config.defaultTierLabel,
-          stateTreeDepth: STATE_TREE_DEPTH,
-        },
-        identityCommunityId: identityId,
-        // Off-chain-only is still a real, intentional end state (2026-08-19 community-creation-
-        // rework review, D2) — deploying governance stays an explicit opt-in from the success
-        // screen, not an automatic next step. Lands on "eligibility" first, not "success"
-        // directly (2026-08-19 eligibility-followups review, D2) — the identity (and its tiers)
-        // is now real and persisted, which is the earliest point eligibility rules can target a
-        // tier at all.
-        step: "eligibility",
-      }));
+        setState((prev) => ({
+          ...prev,
+          config: {
+            ...prev.config,
+            membershipPolicy: config.membershipPolicy,
+            tierChangesRequireVote: false,
+            tiers: config.tiers,
+            defaultTierLabel: config.defaultTierLabel,
+            stateTreeDepth: STATE_TREE_DEPTH,
+          },
+          identityCommunityId: identityId,
+          // Community creation wizard fix (2026-08-21) — eligibility rules moved out of the
+          // wizard entirely (configured later from the community's edit page, which already has
+          // a working EligibilityRulesetEditor); this is the wizard's last step now, so success
+          // follows directly. Off-chain-only remains a real, intentional end state (2026-08-19
+          // community-creation-rework review, D2) — deploying governance stays a separate,
+          // explicit opt-in from the edit page, not part of this flow at all anymore.
+          step: "success",
+          isSubmitting: false,
+        }));
+      } catch (err) {
+        setState((prev) => ({ ...prev, isSubmitting: false }));
+        throw err;
+      }
     },
     [state.config, state.identityCommunityId, siwe],
   );

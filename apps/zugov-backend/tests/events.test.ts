@@ -201,6 +201,28 @@ describe("POST /api/communities/:id/events", () => {
     expect(res.status).toBe(422);
   });
 
+  // Reported live (2026-08-23): a datetime-local input's year segment has no format guard, so a
+  // typo like "83333" instead of "2033" produced a huge-but-still-ordered, still-future timestamp
+  // that sailed past both existing checks with zero feedback beyond an unrelated
+  // "end must be after start" message.
+  it("returns 422 when startAt is absurdly far in the future (e.g. a mistyped 5-digit year)", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const absurdYear = NOW + 100 * 365 * DAY; // ~year 2126 — still "ordered" and "future", just insane
+
+    const { res } = await createEvent(cookie, communityId, { startAt: absurdYear, endAt: absurdYear + 3600 });
+    expect(res.status).toBe(422);
+  });
+
+  it("accepts a startAt within the sane future bound", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const oneYearOut = NOW + 365 * DAY;
+
+    const { res } = await createEvent(cookie, communityId, { startAt: oneYearOut, endAt: oneYearOut + 3600 });
+    expect(res.status).toBe(201);
+  });
+
   it("returns 422 when venueId references a venue from a different community", async () => {
     const cookie = await authCookieFor(CREATOR);
     const communityId = await registerCommunity(cookie);
@@ -328,6 +350,20 @@ describe("PATCH /api/communities/:id/events/:eventId", () => {
       body: JSON.stringify({ title: "Retitled After the Fact", startAt: NOW - DAY, endAt: NOW - DAY + 3600 }),
     });
     expect(res.status).toBe(200);
+  });
+
+  it("returns 422 when editing startAt to an absurdly far future date", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event } = await createEvent(cookie, communityId);
+    const absurdYear = NOW + 100 * 365 * DAY;
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ startAt: absurdYear, endAt: absurdYear + 3600 }),
+    });
+    expect(res.status).toBe(422);
   });
 
   it("returns 409 when editing a cancelled event", async () => {

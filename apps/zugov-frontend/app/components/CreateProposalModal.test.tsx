@@ -24,6 +24,14 @@ vi.mock("wagmi", () => ({
   useChainId: () => 11155111,
 }));
 
+// /plan-eng-review (2026-08-23) Batch 3 -- this component now calls useSiwe() for
+// withAuthDetect. Mocking the module directly (matching JoinSection.test.tsx's convention), not
+// wrapping in a real SiweProvider -- no test here exercises SiweProvider's own state machine.
+const mockSignOut = vi.fn();
+vi.mock("@/src/hooks/useSiwe", () => ({
+  useSiwe: () => ({ signOut: mockSignOut }),
+}));
+
 const deployPollMock = vi.fn();
 const getEthersSignerMock = vi.fn(() => Promise.resolve({}));
 vi.mock("@/src/hooks/useDeployPoll", () => ({
@@ -69,6 +77,7 @@ beforeEach(() => {
   authorizeDirectMock.mockReset();
   confirmDirectMock.mockReset();
   deployPollMock.mockReset();
+  mockSignOut.mockReset();
   getTiersMock.mockResolvedValue([
     { id: "tier-voter", label: "Voter", canVote: true, isDefault: false },
     { id: "tier-guest", label: "Guest", canVote: false, isDefault: true },
@@ -125,6 +134,23 @@ describe("CreateProposalModal", () => {
     fireEvent.click(screen.getByText("Create Draft"));
 
     await waitFor(() => expect(screen.getByText("Not authorized to create governance actions")).toBeInTheDocument());
+  });
+
+  // /plan-eng-review (2026-08-23) Batch 3
+  it("signs the wallet out when creating a draft fails with an expired session (401)", async () => {
+    const { HttpError } = await import("@/src/services/httpClient");
+    createDraftMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
+    renderWithProviders(<CreateProposalModal isOpen={true} onClose={() => {}} communityId="0xabc" />);
+
+    await waitFor(() => expect(screen.getByText(/Every voting-capable tier/)).toBeInTheDocument());
+
+    await fillCommonFields();
+    fireEvent.click(screen.getByText("Create Draft"));
+
+    await waitFor(() =>
+      expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+    );
+    expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
   describe("direct deployment mode (specs/007 US2)", () => {
@@ -190,6 +216,34 @@ describe("CreateProposalModal", () => {
 
       await waitFor(() => expect(screen.getByText("Not authorized to create governance actions")).toBeInTheDocument());
       expect(deployPollMock).not.toHaveBeenCalled();
+    });
+
+    // /plan-eng-review (2026-08-23) Batch 3
+    it("signs the wallet out when authorizeDirect fails with an expired session (401)", async () => {
+      const { HttpError } = await import("@/src/services/httpClient");
+      authorizeDirectMock.mockRejectedValue(
+        new HttpError(401, "Authentication required. Please sign in with Ethereum."),
+      );
+
+      renderWithProviders(
+        <CreateProposalModal
+          isOpen={true}
+          onClose={() => {}}
+          communityId="0xabc"
+          directDeploymentEnabled={true}
+          pollDeployConfig={POLL_DEPLOY_CONFIG}
+        />,
+      );
+
+      await waitFor(() => expect(screen.getByLabelText(/Title/)).toBeInTheDocument());
+      await fillDirectModeFields();
+      fireEvent.click(screen.getByText("Deploy Poll"));
+
+      await waitFor(() =>
+        expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
+      );
+      expect(deployPollMock).not.toHaveBeenCalled();
+      expect(mockSignOut).toHaveBeenCalledTimes(1);
     });
 
     // Governance restructure Phase 2 (2026-08-20) — person-type (election) proposals, direct-

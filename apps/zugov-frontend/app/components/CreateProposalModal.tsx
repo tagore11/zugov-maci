@@ -14,6 +14,8 @@ import type { Community } from "@/src/services/communityApi";
 import { useDeployPoll, getEthersSigner, votingMechanismToMode } from "@/src/hooks/useDeployPoll";
 import { deployPolicyContract } from "@/src/services/policyDeploy";
 import { decodeContractError } from "@/src/lib/decodeContractError";
+import { useSiwe } from "@/src/hooks/useSiwe";
+import { withAuthDetect } from "@/src/services/httpClient";
 import { GovernanceTypes, PolicyType, type SignUpPolicyType, type PollDeployConfig } from "@/src/config";
 import {
   POLICY_TYPE_OPTIONS,
@@ -84,6 +86,7 @@ export function CreateProposalModal({
   community,
 }: CreateProposalModalProps) {
   const chainId = useChainId();
+  const { signOut } = useSiwe();
   const { data: tiers = [] } = useQuery({
     queryKey: ["tiers", communityId],
     queryFn: () => membershipApi.getTiers(communityId),
@@ -178,73 +181,79 @@ export function CreateProposalModal({
 
     setIsSubmitting(true);
     try {
-      if (directDeploymentEnabled && pollDeployConfig) {
-        // The backend's checkVoteEligibility (used for the "Vote" button badge) still gates on
-        // eligibleTierIds regardless of creation path — the UI no longer asks for tiers here
-        // since the real gate is now the on-chain eligibility policy below, so every
-        // voting-capable tier is recorded automatically rather than picked manually.
-        const directEligibleTierIds = votingTiers.map((t) => t.id);
+      // /plan-eng-review (2026-08-23) Batch 3 — one withAuthDetect wrap around the whole submit
+      // sequence, matching edit/page.tsx's Batch 2 precedent: authorizeDirect/confirmDirect (or
+      // createDraft) are one atomic "submit this proposal" action from the user's perspective,
+      // sharing one catch/one error state, so a 401 anywhere in it signs out exactly once.
+      await withAuthDetect(async () => {
+        if (directDeploymentEnabled && pollDeployConfig) {
+          // The backend's checkVoteEligibility (used for the "Vote" button badge) still gates on
+          // eligibleTierIds regardless of creation path — the UI no longer asks for tiers here
+          // since the real gate is now the on-chain eligibility policy below, so every
+          // voting-capable tier is recorded automatically rather than picked manually.
+          const directEligibleTierIds = votingTiers.map((t) => t.id);
 
-        await proposalApi.authorizeDirect(communityId, {
-          title,
-          description,
-          privacy,
-          executionLocation,
-          votingProtocolType,
-          eligibleTierIds: directEligibleTierIds,
-          decisionTargetType,
-          ...(decisionTargetType === "person" ? electionPairs : {}),
-        });
-
-        if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
-        const signer = await getEthersSigner();
-        const policyAddress = await deployPolicyContract(newPolicyArgs, signer, chainId);
-
-        const { pollAddress, pollId, txHash } = await deployPoll({
-          maciAddress: communityId,
-          pollDeployConfig,
-          existingPollAddress: null,
-          policyAddress,
-          formData: {
+          await proposalApi.authorizeDirect(communityId, {
             title,
             description,
-            votingMechanism: votingProtocolType,
-            startDate,
-            endDate,
-            eligibility: eligibilityPolicyType,
-            options,
-          },
-        });
-        await proposalApi.confirmDirect(communityId, {
-          title,
-          description,
-          privacy,
-          executionLocation,
-          votingProtocolType,
-          eligibleTierIds: directEligibleTierIds,
-          pollAddress,
-          pollId,
-          txHash,
-          pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
-          pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
-          decisionTargetType,
-          options: electionPairs.options,
-          ...(decisionTargetType === "person" ? { optionMemberAddresses: electionPairs.optionMemberAddresses } : {}),
-        });
-      } else {
-        // Mirrors the direct-deploy branch above (specs/010 research.md #11): this poll's real
-        // eligibility gate is the on-chain policy chosen later, at deploy time (DeployPollPrompt)
-        // — not chosen yet here — so every voting-capable tier is recorded automatically rather
-        // than asking the user to guess eligibility before that policy exists.
-        await proposalApi.createDraft(communityId, {
-          title,
-          description,
-          privacy,
-          executionLocation,
-          votingProtocolType,
-          eligibleTierIds: votingTiers.map((t) => t.id),
-        });
-      }
+            privacy,
+            executionLocation,
+            votingProtocolType,
+            eligibleTierIds: directEligibleTierIds,
+            decisionTargetType,
+            ...(decisionTargetType === "person" ? electionPairs : {}),
+          });
+
+          if (!newPolicyArgs) throw new Error("Fill in all required eligibility policy fields");
+          const signer = await getEthersSigner();
+          const policyAddress = await deployPolicyContract(newPolicyArgs, signer, chainId);
+
+          const { pollAddress, pollId, txHash } = await deployPoll({
+            maciAddress: communityId,
+            pollDeployConfig,
+            existingPollAddress: null,
+            policyAddress,
+            formData: {
+              title,
+              description,
+              votingMechanism: votingProtocolType,
+              startDate,
+              endDate,
+              eligibility: eligibilityPolicyType,
+              options,
+            },
+          });
+          await proposalApi.confirmDirect(communityId, {
+            title,
+            description,
+            privacy,
+            executionLocation,
+            votingProtocolType,
+            eligibleTierIds: directEligibleTierIds,
+            pollAddress,
+            pollId,
+            txHash,
+            pollStartDate: Math.floor(new Date(startDate).getTime() / 1000),
+            pollEndDate: Math.floor(new Date(endDate).getTime() / 1000),
+            decisionTargetType,
+            options: electionPairs.options,
+            ...(decisionTargetType === "person" ? { optionMemberAddresses: electionPairs.optionMemberAddresses } : {}),
+          });
+        } else {
+          // Mirrors the direct-deploy branch above (specs/010 research.md #11): this poll's real
+          // eligibility gate is the on-chain policy chosen later, at deploy time (DeployPollPrompt)
+          // — not chosen yet here — so every voting-capable tier is recorded automatically rather
+          // than asking the user to guess eligibility before that policy exists.
+          await proposalApi.createDraft(communityId, {
+            title,
+            description,
+            privacy,
+            executionLocation,
+            votingProtocolType,
+            eligibleTierIds: votingTiers.map((t) => t.id),
+          });
+        }
+      }, signOut);
       resetForm();
       onSuccess?.();
       onClose();

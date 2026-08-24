@@ -15,6 +15,7 @@ import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
 import UnionsPage from "../app/unions/page";
 import UnionDetailPage from "../app/unions/[id]/page";
+import { RequireAuth } from "../app/components/RequireAuth";
 
 export default function App() {
   return (
@@ -28,11 +29,13 @@ export default function App() {
             <Route path="/community/:id" element={<CommunityPage />} />
             <Route path="/delegates" element={<DelegatesPage />} />
             <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
-            <Route path="/manage-communities" element={<ManageCommunitiesPage />} />
+            <Route element={<RequireAuth />}>
+              <Route path="/manage-communities" element={<ManageCommunitiesPage />} />
+              <Route path="/manage-profile" element={<ManageProfilePage />} />
+            </Route>
             <Route path="/manage-communities/register" element={<RegisterCommunityPage />} />
             <Route path="/manage-communities/:id/edit" element={<EditCommunityPage />} />
             <Route path="/manage-communities/:id/members" element={<CommunityMembersPage />} />
-            <Route path="/manage-profile" element={<ManageProfilePage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
             <Route path="/unions" element={<UnionsPage />} />
             <Route path="/unions/:id" element={<UnionDetailPage />} />

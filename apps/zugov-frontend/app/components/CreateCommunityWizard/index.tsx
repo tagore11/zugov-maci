@@ -1,34 +1,44 @@
-import { usePrivy } from "@privy-io/react-auth";
-import { useAccount } from "wagmi";
+import { useEffect } from "react";
+import { useAccount, useConnect } from "wagmi";
 import { useCreateCommunity, type WizardStep } from "@/src/hooks/useCreateCommunity";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 import { StepCommunitySetup } from "./StepCommunitySetup";
-import { StepEligibility } from "./StepEligibility";
 import { StepSuccess } from "./StepSuccess";
 import { SiweGate } from "@/app/components/SiweGate";
 import { useSiwe } from "@/src/hooks/useSiwe";
 
 const STEP_LABELS: Record<WizardStep, string> = {
-  community_info: "Community Info",
+  community_info: "Community Details",
   community_setup: "Community Setup",
-  eligibility: "Eligibility",
   success: "Done",
 };
 
-// Governance restructure Phase 1 (2026-08-20, D2): the wizard never deploys governance itself
-// any more — that moved to an advanced setting on the edit page. Every reachable wizard step
-// counts toward this progress bar now, so it's just the full WizardStep set minus "success".
-const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup", "eligibility"];
+// Community creation wizard fix (2026-08-21) — eligibility rules moved out of the wizard
+// entirely (configured later from the community's edit page); the wizard is 2 real steps now,
+// not 3. Every reachable step still counts toward this progress bar — just the full WizardStep
+// set minus "success".
+const PROGRESS_STEPS: WizardStep[] = ["community_info", "community_setup"];
 
-export function CreateCommunityWizard() {
+interface Props {
+  // Community creation wizard fix (2026-08-21) — reports the hook's isSubmitting up so
+  // CreateCommunityModal can disable its X (close) button during the registerIdentity() call.
+  // Before that call starts, closing is always safe — nothing has been created yet.
+  onSubmittingChange?: (submitting: boolean) => void;
+}
+
+export function CreateCommunityWizard({ onSubmittingChange }: Props) {
   const { address } = useAccount();
-  const { login } = usePrivy();
+  const { connectors, connect } = useConnect();
   // One shared instance, passed to both SiweGate and useCreateCommunity — a session invalidated
   // by an AuthError partway through (withAuthRetry's signOut()) is reflected in the gate
   // immediately instead of the gate's own stale copy still believing isAuthenticated: true
   // (2026-08-19 community-creation-rework review, D4).
   const siwe = useSiwe();
-  const { state, goToStep, goBack, setCommunityInfo, setCommunitySetup, reset } = useCreateCommunity(siwe);
+  const { state, goBack, setCommunityInfo, setCommunitySetup, reset } = useCreateCommunity(siwe);
+
+  useEffect(() => {
+    onSubmittingChange?.(state.isSubmitting);
+  }, [state.isSubmitting, onSubmittingChange]);
 
   if (!address) {
     return (
@@ -36,10 +46,10 @@ export function CreateCommunityWizard() {
         <p className="text-gray-300">Sign in to create a community.</p>
         <button
           type="button"
-          onClick={() => login()}
+          onClick={() => connect({ connector: connectors[0]! })}
           className="px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors"
         >
-          Sign in
+          Connect Wallet
         </button>
       </div>
     );
@@ -49,7 +59,7 @@ export function CreateCommunityWizard() {
   const currentIdx = PROGRESS_STEPS.indexOf(state.step);
 
   return (
-    <SiweGate message="Sign in to register your community globally" siwe={siwe}>
+    <SiweGate message="Sign in to register your community globally">
       <div className="space-y-5">
         {/* Step progress */}
         {showProgress && (
@@ -92,20 +102,10 @@ export function CreateCommunityWizard() {
         {state.step === "community_setup" && (
           <StepCommunitySetup
             initialMembershipPolicy={state.config.membershipPolicy}
-            initialSignUpPolicy={state.config.signUpPolicy}
-            initialPolicies={state.config.allowedPolicies}
-            initialModes={state.config.supportedModes}
             initialTiers={state.config.tiers}
+            isSubmitting={state.isSubmitting}
             setCommunitySetup={setCommunitySetup}
             goBack={goBack}
-          />
-        )}
-
-        {state.step === "eligibility" && state.identityCommunityId && (
-          <StepEligibility
-            communityId={state.identityCommunityId}
-            goBack={goBack}
-            onContinue={() => goToStep("success")}
           />
         )}
 

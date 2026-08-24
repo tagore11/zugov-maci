@@ -218,6 +218,47 @@ describe("GET /api/communities", () => {
     const body = (await res.json()) as { communities: { id: string }[] };
     expect(body.communities.some((c) => c.id === community.id)).toBe(false);
   });
+
+  // Community creation wizard fix (2026-08-21) — feeds the parent-community picker's search box.
+  // Server-side search replaces a client-side filter over one paginated fetch, which silently
+  // excluded any parent past the first page (/plan-eng-review outside-voice finding).
+  describe("search query param", () => {
+    it("filters by displayName, case-insensitively", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community: match } = await registerIdentity(cookie, { displayName: "Zukas Residency" });
+      const { community: noMatch } = await registerIdentity(cookie, { displayName: "Some Other Place" });
+
+      const res = await app.request("/api/communities?search=zukas");
+      const body = (await res.json()) as { communities: { id: string }[] };
+      const ids = body.communities.map((c) => c.id);
+      expect(ids).toContain(match.id);
+      expect(ids).not.toContain(noMatch.id);
+    });
+
+    it("behaves identically to no search param when empty (backward compatible)", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community } = await registerIdentity(cookie);
+
+      const withEmptySearch = await app.request("/api/communities?search=");
+      const withoutSearch = await app.request("/api/communities");
+      const bodyA = (await withEmptySearch.json()) as { communities: { id: string }[] };
+      const bodyB = (await withoutSearch.json()) as { communities: { id: string }[] };
+      expect(bodyA.communities.some((c) => c.id === community.id)).toBe(true);
+      expect(bodyB.communities.some((c) => c.id === community.id)).toBe(true);
+    });
+
+    it("combines with pagination correctly", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      await registerIdentity(cookie, { displayName: "Searchable Alpha" });
+      await registerIdentity(cookie, { displayName: "Searchable Beta" });
+
+      const res = await app.request("/api/communities?search=Searchable&limit=1&page=1");
+      const body = (await res.json()) as { communities: unknown[]; total: number; hasMore: boolean };
+      expect(body.communities).toHaveLength(1);
+      expect(body.total).toBeGreaterThanOrEqual(2);
+      expect(body.hasMore).toBe(true);
+    });
+  });
 });
 
 describe("GET /api/communities/:id", () => {
@@ -737,6 +778,16 @@ describe("category (specs/010 US5, FR-011/FR-012)", () => {
     const getRes = await app.request(`/api/communities/${community.id}`);
     const { community: fetched } = (await getRes.json()) as { community: { category: string | null } };
     expect(fetched.category).toBe("network_state");
+  });
+
+  it("round-trips pop_up_city through creation and GET", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { res, community } = await registerIdentity(cookie, { category: "pop_up_city" });
+    expect(res.status).toBe(201);
+
+    const getRes = await app.request(`/api/communities/${community.id}`);
+    const { community: fetched } = (await getRes.json()) as { community: { category: string | null } };
+    expect(fetched.category).toBe("pop_up_city");
   });
 
   it("defaults to null when no category is provided", async () => {

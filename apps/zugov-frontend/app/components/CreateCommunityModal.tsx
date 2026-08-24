@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { X } from "lucide-react";
 import { CreateCommunityWizard } from "./CreateCommunityWizard";
 
@@ -7,6 +8,13 @@ interface CreateCommunityModalProps {
 }
 
 export function CreateCommunityModal({ isOpen, onClose }: CreateCommunityModalProps) {
+  // Community creation wizard fix (2026-08-21) — the X button closes the modal outright with no
+  // confirmation, which is fine before the identity is created but would silently orphan an
+  // in-flight registerIdentity() call (and any retry) if closed mid-submission. Disabling it for
+  // the duration of that call is the fix; must be declared before the early return below (Rules
+  // of Hooks — this component had zero hooks until now).
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   if (!isOpen) return null;
 
   return (
@@ -17,14 +25,15 @@ export function CreateCommunityModal({ isOpen, onClose }: CreateCommunityModalPr
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-foreground hover:bg-gray-700 transition-colors"
+            disabled={isSubmitting}
+            className="p-1.5 rounded-lg text-gray-400 hover:text-foreground hover:bg-gray-700 transition-colors disabled:opacity-40 disabled:pointer-events-none"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         <div className="p-5">
-          <CreateCommunityWizard />
+          <CreateCommunityWizard onSubmittingChange={setIsSubmitting} />
         </div>
       </div>
     </div>
