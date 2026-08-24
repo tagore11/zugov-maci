@@ -716,44 +716,37 @@ for the real fix
 
 ## Repo Infrastructure
 
-### Drizzle migration snapshots (`drizzle/meta/*.json`) drifted from reality since migration 0019
+### ~~Drizzle migration snapshots (`drizzle/meta/*.json`) drifted from reality since migration 0019~~ — RESOLVED (2026-08-24)
 
-**What:** `drizzle/meta/0019_snapshot.json` and `0020_snapshot.json` still record
-`governance_actions`/`governance_action_sponsors` as the live table names, even though
-migration `0019_proposal_rename.sql`'s actual SQL (`ALTER TABLE ... RENAME TO`) really
-did rename them to `proposals`/`proposal_sponsors` — confirmed against the live
-`zugov_dev` DB directly. The SQL migration files and the real database are correct;
-only the snapshot bookkeeping is stale. Running `drizzle-kit generate` today hits this
-immediately: it diffs `schema.ts` against the last (wrong) snapshot and asks an
-ambiguous "is `proposal_sponsors` a new table or a rename from
-`governance_action_sponsors`" prompt — neither interactive answer produces a migration
-that actually applies cleanly against the real, already-renamed database.
+**Resolution:** Root cause confirmed: `0019_proposal_rename.sql`'s real SQL
+(`ALTER TABLE governance_actions RENAME TO proposals`, etc.) did rename the tables
+correctly, but Postgres never auto-renames a table's own constraints on `RENAME TO` —
+`proposal_sponsors`'s primary key stayed named
+`governance_action_sponsors_governance_action_id_wallet_address_`. `drizzle/meta`'s
+0019/0020 snapshots were never regenerated to reflect the rename at all (identical to
+0018's), which is what made `drizzle-kit generate` ask its ambiguous "new table or
+rename" prompt.
 
-**How it was worked around (2026-08-24):** `main`'s zupoll decision-adapter feature
-added 3 new tables + 2 new `proposals` columns to `schema.ts` with no migration ever
-generated for them (a separate, now-fixed gap — see migration `0021_add_zupoll_tables.sql`,
-hand-written directly against the confirmed real DB state and the real schema diff,
-bypassing `drizzle-kit generate` entirely to sidestep the snapshot-drift prompt). This
-unblocks `0021` specifically but does NOT fix the underlying snapshot corruption —
-the next schema change touching `proposals`/`proposal_sponsors` (or anything descended
-from a table `drizzle-kit` already has stale snapshot state for) will hit the same
-ambiguous prompt again.
+Fixed via `drizzle-kit introspect` against the live, already-correct `zugov_dev` DB
+(rather than hand-editing complex snapshot JSON, or fighting the ambiguous interactive
+prompt) — only the LATEST snapshot matters for `generate`'s diffing, so the historical
+0018/0019/0020 snapshots were left alone; a freshly-introspected, correctly-chained
+snapshot became the new baseline. Two follow-on migrations landed alongside
+`0021_add_zupoll_tables.sql`: `0022_rename_proposal_sponsors_pk.sql` (the actual root-
+cause fix — a single `RENAME CONSTRAINT`, completing what `0019` should have done) and
+`0023_reconcile_introspected_index_metadata.sql` (a one-time, fully no-op drop+recreate
+of 2 indexes — introspected index metadata isn't byte-identical to schema.ts-declared
+index metadata even for the same index, which `drizzle-kit generate` flagged once).
 
-**Why:** Root cause unconfirmed — likely `0019`'s migration was hand-adjusted or
-generated in a way that didn't get its snapshot regenerated/committed alongside it, a
-gap from the 2026-08-20 governance-restructure work, predating this discovery.
+**Verified two ways:** (1) `drizzle-kit generate` now reports "No schema changes,
+nothing to migrate 😴" against current `schema.ts` — confirmed stable across a second
+`generate` call. (2) The full migration chain (`0000` through `0023`) applied cleanly,
+end to end, against a brand-new empty database (`zugov_migration_test`, dropped after
+verification) — proving this is a reproducible fix for any fresh clone or CI run, not
+just a patch on one already-mutated local DB. Full backend suite: 293/294 passing (1
+pre-existing skip).
 
-**Fix direction (not scoped):** Regenerate `0019`/`0020`'s snapshots to match what
-their SQL actually did (rename, not the stale pre-rename state), most likely via
-`drizzle-kit introspect`/`pull` against a DB migrated only up to that point, or by
-hand-editing the snapshot JSON's table-name keys — needs verification either way
-before trusting `drizzle-kit generate`'s output blindly again.
-
-**Effort:** S–M (once the right regeneration approach is confirmed)
-**Priority:** P2 — not urgent (hand-writing migrations works fine as a workaround,
-this repo's migrations are already small/simple), but will keep resurfacing on every
-future `proposals`/`proposal_sponsors`-touching schema change until fixed
-**Depends on:** None
+**Depends on:** N/A — complete.
 
 ### ~~Manually fund each resident's embedded wallet with Sepolia test ETH~~ — OBSOLETE (2026-08-23, Privy removed)
 
