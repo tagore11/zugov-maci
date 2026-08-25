@@ -827,3 +827,124 @@ than any custodial/MPC SaaS option (Privy, Dynamic, Web3Auth, Magic) would have.
 **Effort:** XL
 **Priority:** P3
 **Depends on:** Confirming RIP-7212 precompile availability on the target chain (or moving to an L2 where it's confirmed live)
+
+## ZuGov / Formalize communities follow-ups (from 2026-08-24/25 `/plan-eng-review`, Child C1)
+
+### Admin UI for category management
+
+**What:** A simple admin UI (or at minimum a documented runbook — psql/drizzle-studio) for
+adding/editing rows in the new `categories` table, instead of a direct DB insert.
+
+**Why:** Child C1 (`specs/20260824-172112-25086-formalize-communities-creation-flow-access-tiers-on-chain.md`)
+deliberately ships with no admin UI — adding a 7th category is a direct DB insert by design, so a
+7th category doesn't require a code deploy. That's fine at current scale (DB access is trivial for
+the founder), but becomes real friction the moment someone other than the founder needs to add a
+category, or once the DB isn't something every contributor has direct access to.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** Child C1 landing first (the `categories` table has to exist)
+
+### No aggregate pending-union-invite view after Child D's relocation
+
+**What:** Some kind of central "you have pending union invites" signal — a count badge on
+`/manage-communities`, a notification, or similar — for a wallet that owns/admins multiple
+communities.
+
+**Why:** Before Child D, `/manage-communities` showed every owned community's pending union
+invites in one place. After Child D moves accept/decline/invite/leave to each community's own
+settings page, a wallet managing N communities has to visit N separate settings pages to find out
+if any has a pending invite waiting — no aggregate view or count exists anywhere (verified: no
+notification/badge pattern exists in `Header.tsx` today). Flagged during Child D's
+`/plan-eng-review` (2026-08-25, outside-voice finding) as a real, accepted UX regression, not built
+now because a notification/badge system is real new infrastructure disproportionate to that
+child's scope.
+
+**Effort:** M (needs an actual notification/badge pattern designed, not just this one use case)
+**Priority:** P2
+**Depends on:** Child D landing first
+
+## ZuGov / Formalize communities follow-ups (from 2026-08-25 `/ship` Review Army)
+
+### Landing-page categories/communities fetch is a serial waterfall, not parallel
+
+**What:** `app/page.tsx`'s initial fetch effect gates `fetchCommunities` on the categories
+query's `isLoading` flag, so the communities+unions fetch doesn't start until the categories
+fetch has already resolved — a serial waterfall on cold cache instead of the two independent
+requests firing concurrently.
+
+**Why:** This is the ship-time fix for the double-fetch regression (categories resolving
+after mount was giving `fetchCommunities` a new identity via `categoryLabels` and re-firing
+the effect) — correctness over parallelism was the deliberate tradeoff at fix time. Flagged
+by the Review Army's performance specialist as a follow-on cost worth tracking separately.
+
+**Effort:** S (look up `categoryLabels` via a ref or lazy re-map instead of closing over it
+in `fetchCommunities`'s dependency array, so the initial fetch no longer needs to wait)
+**Priority:** P3
+**Depends on:** None
+
+### Backfill script for `maci_governance_configs.contract_address` checksum normalization isn't wired into deploy
+
+**What:** Migration `0025_third_swordsman.sql` adds a unique index on `contractAddress`
+assuming all existing rows are already checksum-normalized; `backfillContractAddressChecksum.ts`
+exists to do that normalization but is only runnable manually (`pnpm run
+db:backfill-contract-address-checksum`) — it isn't invoked by `deploy-backend.yml`, a
+postmigrate hook, or CI. Confirmed the gap is actually worse than "a human might forget it":
+the backend's runtime Docker image is a `pnpm deploy --prod` output with no `src/` and no
+`tsx` (a devDependency), so the script as written can't even run from inside the deployed
+container — it can only be run from a full repo checkout with a direct DB connection.
+
+**Why:** Caught by the Review Army's data-migration specialist during the formalize-communities
+ship. Real risk is low right now (pre-production, and the only pre-existing
+`maci_governance_configs` row is the seed data, already checksummed as part of this same
+change), but the structural gap — a migration that silently depends on an out-of-band manual
+step to be fully correct — would resurface for any future backfill of this shape.
+
+**Effort:** S–M depending on direction: (a) teach the deploy image to run one-off backfill
+scripts (compile them into `dist/`, keep a slim `tsx`+`src` path available in the runtime
+image just for this), or (b) accept manual-only forever and just document the runbook step
+explicitly in `LOCAL_DEV.md`/a deploy checklist so it's not tribal knowledge.
+**Priority:** P2
+**Depends on:** A decision on whether one-off DB backfill scripts deserve their own
+deploy-image support, or should stay a documented manual runbook step
+
+### `GET /api/categories` response includes an unused `createdAt` field beyond its declared frontend type
+
+**What:** `communityService.listCategories()` returns `Pick<Category, "id" | "label">` now
+(fixed during ship-time review), matching `communityApi.ts`'s frontend `Category` type
+exactly. No follow-up needed — noted here only because two other, lower-value findings from
+the same review pass are logged below it.
+
+**Why:** N/A — already fixed inline during the 2026-08-25 `/ship` Review Army pass.
+
+**Depends on:** N/A — complete.
+
+### Old `/manage-communities/:id/edit` route is only client-redirected, not a real HTTP 301
+
+**What:** The permanent redirect from the deleted `/manage-communities/:id/edit` route to
+`/community/:id/settings` (Child C1) is a React Router `<Navigate>` — a 200 response with a
+client-side redirect, not a server-level 301 with a `Location` header. A bookmarked deep link
+opened cold, or any non-browser/non-JS consumer of the old URL, gets a real page load before
+redirecting rather than a transparent redirect.
+
+**Why:** Flagged by the Review Army's API-contract specialist. Low priority — this app has no
+non-SPA consumers of its frontend routes today (no bots, no server-rendered deep links, no
+external link-sharing surface that would care about SEO transfer).
+
+**Effort:** S (would need a static redirect rule at the hosting/edge layer, not app code)
+**Priority:** P3
+**Depends on:** None
+
+### `communities.category` (FK to `categories.id`) has no supporting index
+
+**What:** The new `communities.category` column (Child C1) references `categories.id` with
+`ON DELETE SET NULL` but has no index of its own — a future category-scoped lookup on
+`communities`, or a category delete, requires a full table scan.
+
+**Why:** Flagged by the Review Army's data-migration specialist. Non-urgent at current scale
+(pre-production row count, and no admin path exists yet to delete a category — see the "Admin
+UI for category management" TODO above).
+
+**Effort:** S (one migration adding `index("communities_category_idx").on(table.category)`)
+**Priority:** P3
+**Depends on:** None

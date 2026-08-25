@@ -71,6 +71,17 @@ async function registerIdentity(cookie: string, overrides: Record<string, unknow
     body: JSON.stringify({ ...IDENTITY_BODY, ...overrides }),
   });
   const body = (await res.json()) as { community: { id: string; defaultTierId: string } };
+
+  // allowJoin defaults to false for newly-created communities (Child C1, /plan-eng-review
+  // 2026-08-24) — this file's grandfather test joins a second wallet to prove an existing member
+  // isn't retroactively removed when the ruleset changes, so this helper opts every community it
+  // creates into joinable-by-default via the real settings PATCH.
+  await app.request(`/api/communities/${body.community.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ allowJoin: true }),
+  });
+
   return { res, community: body.community };
 }
 

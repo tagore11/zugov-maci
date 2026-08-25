@@ -34,6 +34,18 @@ export interface DecisionAdapterCapabilities {
   // deliberately excluded — there is no distinct on-chain EMode for it; the app aliases it to
   // NON_QV (same mode as "simple") as an honest fallback, not a real 5th protocol type.
   supportedVotingProtocolTypes: ("simple" | "quadratic" | "ranked" | "full")[];
+  // The "substrate" pair (governance-terminology glossary, 2026-08-20) — where this adapter's
+  // decisions execute and whether voter choices stay private. Reuses the exact same enum values
+  // as proposals.executionLocation/proposals.privacy (schema.ts), not new vocabulary — a
+  // 3-value union (not 2), since that's what the real column this mirrors actually declares.
+  // Static per-adapterType (declared once here, not a per-attachment configurable field): the
+  // governance-terminology glossary already tables clr.fund-style/Holographic-Consensus-style
+  // as "on-chain or off-chain" in one row, which a future variant pair should resolve by adding
+  // a second, distinct adapterType value (e.g. clr_fund_onchain/clr_fund_offchain), not by
+  // making this field runtime-configurable (Child B architecture review, 2026-08-24; Child C2
+  // /plan-eng-review, 2026-08-25).
+  executionLocation: "onchain" | "offchain" | "hybrid";
+  privacy: "public" | "privacy_preserving";
 }
 
 const ADAPTER_CAPABILITIES: Record<DecisionAdapterType, DecisionAdapterCapabilities> = {
@@ -41,6 +53,8 @@ const ADAPTER_CAPABILITIES: Record<DecisionAdapterType, DecisionAdapterCapabilit
     adapterType: "maci",
     supportedEligibilityMechanisms: ["open", "erc20_token"],
     supportedVotingProtocolTypes: ["simple", "quadratic", "ranked", "full"],
+    executionLocation: "onchain",
+    privacy: "privacy_preserving",
   },
   // specs/013-zupoll-decision-adapter — off-chain, anonymous, Semaphore-group-proof survey
   // voting. "tier" is the only eligibility mechanism it enforces (membershipTiers.canVote via
@@ -52,6 +66,8 @@ const ADAPTER_CAPABILITIES: Record<DecisionAdapterType, DecisionAdapterCapabilit
     adapterType: "zupoll",
     supportedEligibilityMechanisms: ["tier"],
     supportedVotingProtocolTypes: ["simple"],
+    executionLocation: "offchain",
+    privacy: "privacy_preserving",
   },
 };
 

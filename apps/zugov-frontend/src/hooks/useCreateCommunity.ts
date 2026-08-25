@@ -165,7 +165,8 @@ function getCompletedPhasesFromCheckpoint(lastPhase: DeployPhase | undefined): D
 // extracted so it's usable from two entry points with one implementation (2026-08-19
 // community-creation-rework review, D1):
 //   1. CreateCommunityWizard, right after identity creation, for a just-created community.
-//   2. manage-communities/[id]/edit, any time later, for an already-existing off-chain
+//   2. community/[id]/settings (relocated from manage-communities/[id]/edit, Child C1,
+//      /plan-eng-review 2026-08-24), any time later, for an already-existing off-chain
 //      community — the "deploy governance later" path that makes "governance not set" a real,
 //      recoverable state instead of a trap.
 //

@@ -9,6 +9,7 @@ import {
   DuplicateJoinError,
   RequestNotFoundError,
   NotEligibleError,
+  JoinNotAllowedError,
 } from "../services/membershipService.js";
 
 export const membershipRouter = new Hono();
@@ -123,6 +124,9 @@ membershipRouter.post("/:id/join", requireAuth, async (c) => {
       return c.json({ error: err.message }, 409);
     }
     if (err instanceof NotEligibleError) {
+      return c.json({ error: err.message }, 403);
+    }
+    if (err instanceof JoinNotAllowedError) {
       return c.json({ error: err.message }, 403);
     }
     throw err;

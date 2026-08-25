@@ -4,7 +4,11 @@ import { HttpError } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-export type CommunityCategory = "residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao";
+// A plain string, not a literal union: valid categories live in the categories DB table
+// (GET /api/categories), not a hardcoded list — see communityDisplay.ts and StepCommunityInfo.tsx,
+// both of which render their options directly from that endpoint (formalize-communities epic,
+// Child C1, /plan-eng-review 2026-08-24).
+export type CommunityCategory = string;
 
 // Flat merged shape (Architecture Issue 3) — identity fields are always present; governance
 // fields are null until governanceConfigured is true. A community's identity can exist before
@@ -23,6 +27,10 @@ export type Community = {
   // Creator-selected community type, independent of governance — see app/page.tsx's
   // governanceBadge for why this must never be conflated with governance status.
   category: CommunityCategory | null;
+  // Independent of membershipPolicy — see the backend's communities.allowJoin comment
+  // (apps/zugov-backend/src/db/schema.ts). New communities default false; existing ones were
+  // migrated to true (Child C1, /plan-eng-review 2026-08-24).
+  allowJoin: boolean;
   tierChangesRequireVote: boolean;
   directDeploymentEnabled: boolean;
   defaultTierId: string | null;
@@ -47,6 +55,11 @@ export type ListResponse = {
   communities: Community[];
   total: number;
   hasMore: boolean;
+};
+
+export type Category = {
+  id: string;
+  label: string;
 };
 
 // POST /api/communities — identity-only for the wizard (server generates id).
@@ -91,6 +104,7 @@ export type CommunityUpdatePayload = Partial<
 > & {
   // PATCH-only — not settable at registration time (data-model.md: "Changed only via PATCH").
   directDeploymentEnabled?: boolean;
+  allowJoin?: boolean;
 };
 
 export class AuthError extends HttpError {
@@ -137,6 +151,16 @@ export async function get(id: string): Promise<Community | null> {
   if (!res.ok) throw new Error(`Failed to fetch community: ${res.status}`);
   const data = (await res.json()) as { community: Community };
   return data.community;
+}
+
+// Near-static reference data (no admin UI to change it — adding a category is a direct DB
+// insert). Callers should set a long staleTime (e.g. Infinity) on the query wrapping this —
+// see StepCommunityInfo.tsx and app/page.tsx.
+export async function listCategories(): Promise<Category[]> {
+  const res = await fetch(`${BASE_URL}/api/categories`);
+  if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`);
+  const data = (await res.json()) as { categories: Category[] };
+  return data.categories;
 }
 
 export async function listChildren(id: string): Promise<Community[]> {

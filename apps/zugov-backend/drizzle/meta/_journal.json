@@ -169,6 +169,20 @@
       "when": 1787563311210,
       "tag": "0023_reconcile_introspected_index_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787608824255,
+      "tag": "0024_brief_warlock",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787611311676,
+      "tag": "0025_third_swordsman",
+      "breakpoints": true
     }
   ]
 }

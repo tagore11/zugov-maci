@@ -38,6 +38,16 @@ export class DuplicateJoinError extends Error {
   }
 }
 
+// Distinct from NotEligibleError: allowJoin gates whether joining is possible AT ALL (independent
+// of eligibility rules), so a caller needs to tell "you don't meet the eligibility criteria" apart
+// from "this community isn't accepting members right now" — different messages, different next
+// steps for the user.
+export class JoinNotAllowedError extends Error {
+  constructor() {
+    super("This community is not currently accepting new members");
+  }
+}
+
 export class RequestNotFoundError extends Error {
   constructor() {
     super("Join request not found or already resolved");
@@ -300,13 +310,23 @@ export async function submitJoinRequest(
   if (pendingRequest) throw new DuplicateJoinError();
 
   const [community] = await db
-    .select({ membershipPolicy: communities.membershipPolicy, defaultTierId: communities.defaultTierId })
+    .select({
+      membershipPolicy: communities.membershipPolicy,
+      defaultTierId: communities.defaultTierId,
+      allowJoin: communities.allowJoin,
+    })
     .from(communities)
     .where(eq(communities.id, communityId))
     .limit(1);
   if (!community?.defaultTierId) {
     throw new Error("Community has no default tier configured");
   }
+
+  // Checked before eligibility evaluation, not after — allowJoin=false means joining isn't
+  // possible at all, so there's no reason to spend a (potentially expensive) eligibility ruleset
+  // evaluation on a request that was always going to be blocked (formalize-communities epic,
+  // Child C1, /plan-eng-review 2026-08-24).
+  if (!community.allowJoin) throw new JoinNotAllowedError();
 
   // Eligibility-adapters review (2026-08-19), D2/D2b — eligibility gates whether a wallet may
   // join at all AND resolves which tier it lands in; membershipPolicy (open/approval) is a

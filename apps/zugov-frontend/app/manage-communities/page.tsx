@@ -158,7 +158,7 @@ export default function ManageCommunitiesPage() {
                   </div>
 
                   <Link
-                    to={`/manage-communities/${community.id}/edit`}
+                    to={`/community/${community.id}/settings`}
                     onClick={(e) => e.stopPropagation()}
                     className="flex items-center gap-2 px-4 py-2 border border-gray-600 text-gray-300 rounded-lg hover:bg-gray-800 transition-colors"
                   >

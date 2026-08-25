@@ -16,16 +16,23 @@ describe("governanceBadgeFor (specs/010 US4, FR-010)", () => {
   });
 });
 
-describe("categoryLabelFor (specs/010 US5, FR-011/FR-012)", () => {
-  it("maps the persisted category to its display label", () => {
-    expect(categoryLabelFor({ category: "network_state" })).toBe("Network State");
-    expect(categoryLabelFor({ category: "residency" })).toBe("Residency");
-    expect(categoryLabelFor({ category: "regional" })).toBe("Regional");
-    expect(categoryLabelFor({ category: "social" })).toBe("Social");
+describe("categoryLabelFor (specs/010 US5, FR-011/FR-012; Child C1 /plan-eng-review 2026-08-24 — labels are DB-driven, not hardcoded)", () => {
+  const LABELS = { network_state: "Network State", residency: "Residency", regional: "Regional", social: "Social" };
+
+  it("maps the persisted category id to its display label via the provided labels map", () => {
+    expect(categoryLabelFor({ category: "network_state" }, LABELS)).toBe("Network State");
+    expect(categoryLabelFor({ category: "residency" }, LABELS)).toBe("Residency");
+    expect(categoryLabelFor({ category: "regional" }, LABELS)).toBe("Regional");
+    expect(categoryLabelFor({ category: "social" }, LABELS)).toBe("Social");
   });
 
   it("returns an empty string for a community with none set", () => {
-    expect(categoryLabelFor({ category: null })).toBe("");
+    expect(categoryLabelFor({ category: null }, LABELS)).toBe("");
+  });
+
+  it("returns an empty string for a category id not present in the labels map, and defaults to {} when no map is passed", () => {
+    expect(categoryLabelFor({ category: "unknown_id" }, LABELS)).toBe("");
+    expect(categoryLabelFor({ category: "residency" })).toBe("");
   });
 });
 

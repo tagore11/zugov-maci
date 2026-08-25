@@ -8,6 +8,8 @@ import * as membershipApi from "@/src/services/membershipApi";
 import * as eligibilityApi from "@/src/services/eligibilityApi";
 import * as zupollApi from "@/src/services/zupollApi";
 import { AttachZupollAdapter } from "@/app/components/AttachZupollAdapter";
+import { RegisterExistingContract } from "@/app/components/RegisterExistingContract";
+import { UnionMembershipSection } from "@/app/components/UnionMembershipSection";
 import type { RuleDraft } from "@/src/services/eligibilityApi";
 import type { MembershipPolicy } from "@/src/services/checkpointStore";
 import { TierEditor, type EditableTier } from "@/app/components/TierEditor";
@@ -85,7 +87,7 @@ function DeployGovernanceSection({ communityId, config }: { communityId: string;
   );
 }
 
-export default function EditCommunityPage() {
+export default function CommunitySettingsPage() {
   const params = useParams();
   const communityId = params.id!;
   const navigate = useNavigate();
@@ -101,6 +103,7 @@ export default function EditCommunityPage() {
   const [description, setDescription] = useState("");
   const [logo, setLogo] = useState("");
   const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>("open");
+  const [allowJoin, setAllowJoin] = useState(false);
   const [tierChangesRequireVote, setTierChangesRequireVote] = useState(false);
   const [directDeploymentEnabled, setDirectDeploymentEnabled] = useState(false);
   const [defaultTierLabel, setDefaultTierLabel] = useState("");
@@ -133,6 +136,7 @@ export default function EditCommunityPage() {
       setDescription(community.description ?? "");
       setLogo(community.logo ?? "");
       setMembershipPolicy(community.membershipPolicy);
+      setAllowJoin(community.allowJoin);
       setTierChangesRequireVote(community.tierChangesRequireVote);
       setDirectDeploymentEnabled(community.directDeploymentEnabled);
       setAttachedAdapters(decisionAdapters.adapters);
@@ -144,8 +148,8 @@ export default function EditCommunityPage() {
       setDefaultTierLabel(defaultTier?.label ?? tierRows[0]?.label ?? "");
       // Frontend authorization gate (2026-08-19 community-creation-rework review, D6) — this
       // page previously had none; relying on the backend alone was low-risk when the worst case
-      // was a rejected PATCH, but the new "Deploy governance now" button raises the stakes to
-      // real gas cost for an unauthorized wallet, so gate the whole page section, not just that
+      // was a rejected PATCH, but the "Deploy governance now" button raises the stakes to real
+      // gas cost for an unauthorized wallet, so gate the whole page section, not just that
       // button.
       const memberTier =
         membershipStatus.status === "member" ? tierRows.find((t) => t.label === membershipStatus.tierLabel) : undefined;
@@ -200,6 +204,7 @@ export default function EditCommunityPage() {
           description: description.trim(),
           logo: logo.trim(),
           membershipPolicy,
+          allowJoin,
           tierChangesRequireVote,
           directDeploymentEnabled,
           defaultTierLabel,
@@ -301,7 +306,7 @@ export default function EditCommunityPage() {
 
         <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8 space-y-8">
           <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-foreground">Edit Community</h1>
+            <h1 className="text-3xl font-bold text-foreground">Community Settings</h1>
             <Link
               to={`/manage-communities/${communityId}/members`}
               className="text-sm font-medium text-accent-hover hover:text-accent"
@@ -315,7 +320,19 @@ export default function EditCommunityPage() {
             {attachedAdapters.includes("maci") ? (
               <p className="text-sm text-gray-400">Governance is configured for this community.</p>
             ) : (
-              <DeployGovernanceSection communityId={communityId} config={deployConfig} />
+              <>
+                <DeployGovernanceSection communityId={communityId} config={deployConfig} />
+                <div className="flex items-center gap-3 text-xs text-gray-500">
+                  <div className="h-px flex-1 bg-gray-700" />
+                  or
+                  <div className="h-px flex-1 bg-gray-700" />
+                </div>
+                <RegisterExistingContract
+                  communityId={communityId}
+                  isAttached={false}
+                  onAttached={() => setAttachedAdapters((prev) => [...prev, "maci"])}
+                />
+              </>
             )}
             {attachedAdapters.includes("zupoll") ? (
               <p className="text-sm text-gray-400">Zupoll (anonymous surveys) is enabled for this community.</p>
@@ -327,6 +344,8 @@ export default function EditCommunityPage() {
               />
             )}
           </div>
+
+          <UnionMembershipSection communityId={communityId} />
 
           <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
             <div>
@@ -417,6 +436,22 @@ export default function EditCommunityPage() {
                 </label>
               </div>
             </div>
+
+            <label className="flex items-start gap-2 text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={allowJoin}
+                onChange={(e) => setAllowJoin(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                Allow people to join this community
+                <span className="block text-xs text-gray-500">
+                  Independent of Membership Policy above — off means nobody can submit a join request at all, even under
+                  an open policy. Useful for registering a community before it's ready to accept members.
+                </span>
+              </span>
+            </label>
 
             <label className="flex items-start gap-2 text-sm text-gray-300">
               <input

@@ -35,11 +35,26 @@ describe("decisionAdapterService", () => {
   });
 
   describe("getCapabilities", () => {
-    it("declares maci's supported eligibility mechanisms and voting protocol types", () => {
+    it("declares maci's supported eligibility mechanisms, voting protocol types, and substrate", () => {
       expect(getCapabilities("maci")).toEqual({
         adapterType: "maci",
         supportedEligibilityMechanisms: ["open", "erc20_token"],
         supportedVotingProtocolTypes: ["simple", "quadratic", "ranked", "full"],
+        executionLocation: "onchain",
+        privacy: "privacy_preserving",
+      });
+    });
+
+    // Child C2 (/plan-eng-review 2026-08-25) — zupoll is the only other real adapter; asserting
+    // its substrate too so a future adapterType addition can't silently ship without declaring
+    // executionLocation/privacy (this test would need updating, forcing the omission to be seen).
+    it("declares zupoll's substrate as off-chain and privacy-preserving", () => {
+      expect(getCapabilities("zupoll")).toEqual({
+        adapterType: "zupoll",
+        supportedEligibilityMechanisms: ["tier"],
+        supportedVotingProtocolTypes: ["simple"],
+        executionLocation: "offchain",
+        privacy: "privacy_preserving",
       });
     });
   });

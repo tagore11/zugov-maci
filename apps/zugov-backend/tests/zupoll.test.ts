@@ -114,11 +114,13 @@ describe("zupollService", () => {
   });
 
   describe("decisionAdapterService — zupoll capability (US1)", () => {
-    it("declares zupoll's supported eligibility mechanisms and voting protocol types", () => {
+    it("declares zupoll's supported eligibility mechanisms, voting protocol types, and substrate", () => {
       expect(decisionAdapterService.getCapabilities("zupoll")).toEqual({
         adapterType: "zupoll",
         supportedEligibilityMechanisms: ["tier"],
         supportedVotingProtocolTypes: ["simple"],
+        executionLocation: "offchain",
+        privacy: "privacy_preserving",
       });
     });
 

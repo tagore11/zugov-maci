@@ -1,36 +1,61 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 
 const listMock = vi.fn();
 const getMock = vi.fn();
+const listCategoriesMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   list: (...args: unknown[]) => listMock(...args),
   get: (...args: unknown[]) => getMock(...args),
+  listCategories: (...args: unknown[]) => listCategoriesMock(...args),
 }));
 
 const COMMUNITY_A = { id: "community-a", displayName: "Zukas Residency" };
 const COMMUNITY_B = { id: "community-b", displayName: "Zukas Pop-up" };
 
+function renderWithProviders(ui: React.ReactElement) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+}
+
 beforeEach(() => {
   listMock.mockReset();
   getMock.mockReset();
+  listCategoriesMock.mockReset();
   listMock.mockResolvedValue({ communities: [COMMUNITY_A, COMMUNITY_B], total: 2, hasMore: false });
   getMock.mockResolvedValue(null);
+  listCategoriesMock.mockResolvedValue([
+    { id: "residency", label: "Residency" },
+    { id: "pop_up_city", label: "Pop-up City" },
+    { id: "network_state", label: "Network State" },
+    { id: "social", label: "Social" },
+    { id: "regional", label: "Regional" },
+    { id: "dao", label: "DAO" },
+  ]);
 });
 
 // Community creation wizard fix (2026-08-21) — the parent-community picker is a server-search-
 // backed combobox now, not a client-side filter over one capped page (a client-side filter would
 // silently exclude any parent past the first page — the confirmed bug this replaces).
 describe("StepCommunityInfo — parent combobox", () => {
-  it("shows category options including Pop-up City", () => {
-    render(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
-    expect(screen.getByRole("option", { name: "Pop-up City" })).toBeInTheDocument();
+  it("shows category options including Pop-up City, fetched from the categories API", async () => {
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+    expect(await screen.findByRole("option", { name: "Pop-up City" })).toBeInTheDocument();
+    expect(listCategoriesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a retry message, not a blank dropdown, when the categories fetch fails", async () => {
+    listCategoriesMock.mockRejectedValue(new Error("Network error"));
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+    expect(await screen.findByText(/Couldn.t load categories/)).toBeInTheDocument();
+    expect(screen.getByText("retry")).toBeInTheDocument();
   });
 
   it("searches server-side (debounced) as the user types, not a client-side filter over one fetch", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    render(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
 
     const input = screen.getByPlaceholderText("Search communities…");
     fireEvent.focus(input);
@@ -44,7 +69,7 @@ describe("StepCommunityInfo — parent combobox", () => {
 
   it("selecting a result fills the input and is submitted as parentCommunityId", async () => {
     const setCommunityInfo = vi.fn();
-    render(<StepCommunityInfo setCommunityInfo={setCommunityInfo} goBack={vi.fn()} />);
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={setCommunityInfo} goBack={vi.fn()} />);
 
     const input = screen.getByPlaceholderText("Search communities…");
     fireEvent.focus(input);
@@ -61,7 +86,7 @@ describe("StepCommunityInfo — parent combobox", () => {
 
   it("clicking 'None — top-level community' clears the selection", async () => {
     const setCommunityInfo = vi.fn();
-    render(<StepCommunityInfo setCommunityInfo={setCommunityInfo} goBack={vi.fn()} />);
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={setCommunityInfo} goBack={vi.fn()} />);
 
     const input = screen.getByPlaceholderText("Search communities…");
     fireEvent.focus(input);
@@ -81,7 +106,7 @@ describe("StepCommunityInfo — parent combobox", () => {
 
   it("shows a clear 'no matching communities' message on a zero-result search, not a blank list", async () => {
     listMock.mockResolvedValue({ communities: [], total: 0, hasMore: false });
-    render(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+    renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
 
     const input = screen.getByPlaceholderText("Search communities…");
     fireEvent.focus(input);
@@ -90,7 +115,9 @@ describe("StepCommunityInfo — parent combobox", () => {
 
   it("resolves and pre-fills the already-selected parent's name when returning via Back", async () => {
     getMock.mockResolvedValue({ id: "community-a", displayName: "Zukas Residency" });
-    render(<StepCommunityInfo initialParentCommunityId="community-a" setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+    renderWithProviders(
+      <StepCommunityInfo initialParentCommunityId="community-a" setCommunityInfo={vi.fn()} goBack={vi.fn()} />,
+    );
 
     await waitFor(() => expect(getMock).toHaveBeenCalledWith("community-a"));
     const input = screen.getByPlaceholderText("Search communities…") as HTMLInputElement;

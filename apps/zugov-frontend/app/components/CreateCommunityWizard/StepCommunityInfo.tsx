@@ -1,16 +1,8 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import * as communityApi from "@/src/services/communityApi";
 import type { CommunityCategory } from "@/src/services/communityApi";
-
-const CATEGORY_OPTIONS: { value: CommunityCategory; label: string }[] = [
-  { value: "residency", label: "Residency" },
-  { value: "pop_up_city", label: "Pop-up City" },
-  { value: "network_state", label: "Network State" },
-  { value: "social", label: "Social" },
-  { value: "regional", label: "Regional" },
-  { value: "dao", label: "DAO" },
-];
 
 interface Props {
   initialName?: string;
@@ -34,6 +26,23 @@ export function StepCommunityInfo({
   const [parentCommunityId, setParentCommunityId] = useState(initialParentCommunityId);
   const [category, setCategory] = useState<CommunityCategory | "">(initialCategory ?? "");
   const [touched, setTouched] = useState(false);
+
+  // Categories are DB-driven (GET /api/categories), not hardcoded — adding a category is a
+  // direct DB insert, not a code change (formalize-communities epic, Child C1, /plan-eng-review
+  // 2026-08-24/25). staleTime: Infinity: no admin UI exists to change this list at runtime, so
+  // there's no user-facing staleness risk, and it saves a redundant round-trip on every wizard
+  // open. isError (not just an empty list) distinguishes "genuinely no categories" from "the
+  // fetch failed" — a silently empty dropdown would leave the user unable to tell whether to
+  // retry or report a bug.
+  const {
+    data: categoryOptions = [],
+    isError: categoriesFailed,
+    refetch: retryCategories,
+  } = useQuery({
+    queryKey: ["categories"],
+    queryFn: communityApi.listCategories,
+    staleTime: Infinity,
+  });
 
   // Searchable parent-community combobox (community creation wizard fix, 2026-08-21). Search
   // runs server-side (communityApi.list's new `search` param) rather than filtering client-side
@@ -157,13 +166,22 @@ export function StepCommunityInfo({
             focus:outline-none focus:ring-2 focus:ring-accent text-sm"
         >
           <option value="">No category</option>
-          {CATEGORY_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+          {categoryOptions.map((opt) => (
+            <option key={opt.id} value={opt.id}>
               {opt.label}
             </option>
           ))}
         </select>
-        <p className="mt-1 text-xs text-gray-500">Shown on the community explorer so others can filter by type.</p>
+        {categoriesFailed ? (
+          <p className="mt-1 text-xs text-red-400">
+            Couldn&apos;t load categories —{" "}
+            <button type="button" onClick={() => void retryCategories()} className="underline hover:text-red-300">
+              retry
+            </button>
+          </p>
+        ) : (
+          <p className="mt-1 text-xs text-gray-500">Shown on the community explorer so others can filter by type.</p>
+        )}
       </div>
 
       <div>
