@@ -77,6 +77,20 @@ async function registerIdentity(cookie: string, overrides: Record<string, unknow
     body: JSON.stringify({ ...IDENTITY_BODY, ...overrides }),
   });
   const body = (await res.json()) as { community: { id: string; defaultTierId: string } };
+
+  // allowJoin defaults to false for newly-created communities (Child C1, /plan-eng-review
+  // 2026-08-24) — the vast majority of this file's tests join a second wallet as part of their
+  // setup, unrelated to allowJoin itself, so this helper opts every community it creates into
+  // joinable-by-default via the real settings PATCH. The "POST /:id/join — allow-join gating"
+  // describe block below tests allowJoin's own behavior directly and does NOT use this default.
+  if (res.status === 201 || res.status === 200) {
+    await app.request(`/api/communities/${body.community.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ allowJoin: true }),
+    });
+  }
+
   return { res, community: body.community };
 }
 
@@ -187,6 +201,71 @@ describe("hasTierPermission (regression: widened for canCreateEvents)", () => {
     await expect(hasTierPermission(community.id, strangerAddress, "canVote")).resolves.toBe(false);
     await expect(hasTierPermission(community.id, strangerAddress, "canCreateProposals")).resolves.toBe(false);
     await expect(hasTierPermission(community.id, strangerAddress, "canCreateEvents")).resolves.toBe(false);
+  });
+});
+
+// Child C1 (formalize-communities epic), /plan-eng-review 2026-08-24 — allowJoin is independent
+// of membershipPolicy: OFF blocks joining regardless of policy, checked before eligibility so an
+// ineligible-anyway request doesn't waste an eligibility evaluation.
+describe("POST /:id/join — allow-join gating", () => {
+  it("new communities default to allowJoin=false and block joining with a distinct error", async () => {
+    const cookie = await getAuthCookie();
+    // Deliberately does NOT use this file's registerIdentity default-allowJoin-true patch —
+    // this test exercises the real, unmodified default a brand-new community gets.
+    const res = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify(IDENTITY_BODY),
+    });
+    const { community } = (await res.json()) as { community: { id: string } };
+
+    const joinerCookie = await authCookieFor(privateKeyToAccount(`0x${"cc".repeat(32)}`));
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(joinRes.status).toBe(403);
+    const body = (await joinRes.json()) as { error: string };
+    expect(body.error).toMatch(/not currently accepting new members/i);
+  });
+
+  it("allowJoin=true restores joining, subject to membershipPolicy as before", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie); // this file's helper sets allowJoin: true
+
+    const joinerCookie = await authCookieFor(privateKeyToAccount(`0x${"dd".repeat(32)}`));
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(joinRes.status).toBe(200);
+  });
+
+  it("allowJoin=false is checked before eligibility — an ineligible wallet still gets the allow-join error, not the eligibility error", async () => {
+    const cookie = await getAuthCookie();
+    const res = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify(IDENTITY_BODY),
+    });
+    const { community } = (await res.json()) as { community: { id: string; defaultTierId: string } };
+
+    await app.request(`/api/communities/${community.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        rules: [{ groupIndex: 0, mechanism: "tier", config: { tierId: community.defaultTierId } }],
+      }),
+    });
+
+    const joinerCookie = await authCookieFor(privateKeyToAccount(`0x${"ee".repeat(32)}`));
+    const joinRes = await app.request(`/api/communities/${community.id}/join`, {
+      method: "POST",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(joinRes.status).toBe(403);
+    const body = (await joinRes.json()) as { error: string };
+    expect(body.error).toMatch(/not currently accepting new members/i);
   });
 });
 

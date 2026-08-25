@@ -25,6 +25,7 @@ const communityUpdateSchema = z.object({
   logo: z.string().optional(),
   membershipPolicy: z.enum(["open", "approval"]).optional(),
   category: communityCategorySchema.optional(),
+  allowJoin: z.boolean().optional(),
   tierChangesRequireVote: z.boolean().optional(),
   defaultTierLabel: z.string().min(1).optional(),
   cosponsorshipThreshold: z.number().int().min(0).optional(),
@@ -142,9 +143,13 @@ communitiesRouter.post("/", requireAuth, async (c) => {
     if (
       err instanceof communityService.SelfParentError ||
       err instanceof communityService.ParentCommunityNotFoundError ||
-      err instanceof communityService.GovernanceAlreadyConfiguredError
+      err instanceof communityService.GovernanceAlreadyConfiguredError ||
+      err instanceof communityService.CategoryNotFoundError
     ) {
       return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof communityService.ContractAddressInUseError) {
+      return c.json({ error: err.message }, 409);
     }
     throw err;
   }
@@ -165,6 +170,29 @@ communitiesRouter.post("/:id/governance", requireAuth, async (c) => {
     return c.json({ error: "Validation failed", details: parsed.error.flatten() }, 422);
   }
 
+  // On-chain ownership check (Review Army / security specialist, 2026-08-25): this route was
+  // originally only reachable from the deploy-your-own-contract wizard step, where ownership was
+  // implicit (the caller's own wallet just deployed the contract in-session). Child C2 added a
+  // second caller — RegisterExistingContract.tsx — that lets the caller attach ANY contract
+  // address, so this check is now required here too, not just on the source:"manual" path above.
+  try {
+    await verifyContractOwner(parsed.data.chainId, parsed.data.contractAddress, session.address!);
+  } catch (err) {
+    if (err instanceof ContractNotFoundError) {
+      return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof NotOwnableError) {
+      return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof RpcUnavailableError) {
+      return c.json({ error: `${err.message} — please retry` }, 503);
+    }
+    if (err instanceof OwnershipMismatchError) {
+      return c.json({ error: err.message }, 403);
+    }
+    throw err;
+  }
+
   try {
     const community = await communityService.attachGovernance(id, parsed.data);
     return c.json({ community }, 201);
@@ -173,6 +201,9 @@ communitiesRouter.post("/:id/governance", requireAuth, async (c) => {
       return c.json({ error: err.message }, 404);
     }
     if (err instanceof communityService.GovernanceAlreadyConfiguredError) {
+      return c.json({ error: err.message }, 409);
+    }
+    if (err instanceof communityService.ContractAddressInUseError) {
       return c.json({ error: err.message }, 409);
     }
     throw err;
@@ -198,6 +229,9 @@ communitiesRouter.patch("/:id", requireAuth, async (c) => {
     return c.json({ community });
   } catch (err) {
     if (err instanceof communityService.TierLabelNotFoundError) {
+      return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof communityService.CategoryNotFoundError) {
       return c.json({ error: err.message }, 422);
     }
     throw err;

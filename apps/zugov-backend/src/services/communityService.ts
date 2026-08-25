@@ -6,8 +6,10 @@ import {
   communities,
   memberships,
   maciGovernanceConfigs,
+  categories,
   type Community,
   type MaciGovernanceConfig,
+  type Category,
 } from "../db/schema.js";
 import type { IdentityBody, GovernanceBody, PollDeployConfigBody } from "../validators/communitySchema.js";
 import { getRpcUrl } from "./chainRpc.js";
@@ -299,6 +301,32 @@ export class GovernanceAlreadyConfiguredError extends Error {
   }
 }
 
+export class ContractAddressInUseError extends Error {
+  constructor(address: string) {
+    super(`Contract "${address}" is already registered to a different community`);
+  }
+}
+
+const POSTGRES_UNIQUE_VIOLATION = "23505";
+
+export class CategoryNotFoundError extends Error {
+  constructor(id: string) {
+    super(`Category "${id}" not found`);
+  }
+}
+
+// Reference data for the community explorer's filter chips and the creation wizard's category
+// picker — a real table, not a hardcoded list, so adding a category is a direct DB insert, not a
+// code deploy (formalize-communities epic, Child C1, /plan-eng-review 2026-08-24).
+export async function listCategories(): Promise<Pick<Category, "id" | "label">[]> {
+  return db.select({ id: categories.id, label: categories.label }).from(categories);
+}
+
+async function assertCategoryExists(categoryId: string): Promise<void> {
+  const [row] = await db.select({ id: categories.id }).from(categories).where(eq(categories.id, categoryId)).limit(1);
+  if (!row) throw new CategoryNotFoundError(categoryId);
+}
+
 /**
  * Creates a community's identity — displayName/description/logo, its place in the
  * parent/child hierarchy, and its membership structure (tiers + creator enrollment). No
@@ -322,6 +350,8 @@ export async function createIdentity(
     const parent = await get(data.parentCommunityId);
     if (!parent) throw new ParentCommunityNotFoundError(data.parentCommunityId);
   }
+
+  if (data.category !== undefined) await assertCategoryExists(data.category);
 
   const id = data.id ?? randomUUID();
   const newRecord = {
@@ -390,9 +420,14 @@ export async function attachGovernance(id: string, data: GovernanceBody): Promis
   const identityRows = await db.select().from(communities).where(eq(communities.id, id)).limit(1);
   if (!identityRows[0]) throw new CommunityNotFoundError(id);
 
+  // Checksum-normalize before storing (and before the unique-constraint check below runs) — a
+  // bare unique index on the raw string wouldn't catch two submissions of the same contract in
+  // different letter-casing (Child C2, /plan-eng-review 2026-08-25, outside-voice finding).
+  const contractAddress = getAddress(data.contractAddress);
+
   const newGovernanceRecord = {
     communityId: id,
-    contractAddress: data.contractAddress,
+    contractAddress,
     chainId: data.chainId,
     governanceType: "maci",
     allowedPolicies: JSON.stringify(data.allowedPolicies),
@@ -414,8 +449,19 @@ export async function attachGovernance(id: string, data: GovernanceBody): Promis
   try {
     await db.insert(maciGovernanceConfigs).values(newGovernanceRecord);
   } catch (err: unknown) {
-    const isUniqueViolation = err instanceof Error && err.message.includes("duplicate key");
-    if (isUniqueViolation) throw new GovernanceAlreadyConfiguredError(id);
+    // Two unique constraints share this table now: communityId (the PK — one governance row per
+    // community) and contractAddress (Child C2 — one community per contract). err.code (Postgres
+    // SQLSTATE, not a message string-match) gates whether this is a unique violation at all;
+    // constraint_name (exposed by the `postgres` driver's PostgresError type) tells the two
+    // apart. Matches zupollService.ts's existing err.code precedent rather than the old
+    // message.includes("duplicate key") check, which couldn't distinguish between them.
+    const pgErr = err as { code?: string; constraint_name?: string };
+    if (pgErr.code === POSTGRES_UNIQUE_VIOLATION) {
+      if (pgErr.constraint_name === "maci_governance_configs_contract_address_unique") {
+        throw new ContractAddressInUseError(contractAddress);
+      }
+      throw new GovernanceAlreadyConfiguredError(id);
+    }
     throw err;
   }
 
@@ -429,11 +475,9 @@ export async function attachGovernance(id: string, data: GovernanceBody): Promis
   // Fire-and-forget: deploying the community's subgraph shouldn't block or fail attach.
   // deployCommunitySubgraph never throws — failures land in subgraphStatus for the retry
   // route — but .catch is kept as a defensive backstop.
-  void deployCommunitySubgraph(id, data.contractAddress, data.chainId, data.maciDeploymentBlock).catch(
-    (err: unknown) => {
-      console.error(`[communityService] Unexpected error deploying subgraph for ${id}:`, err);
-    },
-  );
+  void deployCommunitySubgraph(id, contractAddress, data.chainId, data.maciDeploymentBlock).catch((err: unknown) => {
+    console.error(`[communityService] Unexpected error deploying subgraph for ${id}:`, err);
+  });
 
   return (await get(id))!;
 }
@@ -443,7 +487,8 @@ export interface CommunityUpdatePatch {
   description?: string;
   logo?: string;
   membershipPolicy?: "open" | "approval";
-  category?: "residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao";
+  category?: string;
+  allowJoin?: boolean;
   tierChangesRequireVote?: boolean;
   defaultTierLabel?: string;
   cosponsorshipThreshold?: number;
@@ -464,7 +509,11 @@ export async function update(id: string, patch: CommunityUpdatePatch): Promise<C
   if (patch.description !== undefined) dbPatch.description = patch.description;
   if (patch.logo !== undefined) dbPatch.logo = patch.logo;
   if (patch.membershipPolicy !== undefined) dbPatch.membershipPolicy = patch.membershipPolicy;
-  if (patch.category !== undefined) dbPatch.category = patch.category;
+  if (patch.category !== undefined) {
+    await assertCategoryExists(patch.category);
+    dbPatch.category = patch.category;
+  }
+  if (patch.allowJoin !== undefined) dbPatch.allowJoin = patch.allowJoin;
   if (patch.tierChangesRequireVote !== undefined) dbPatch.tierChangesRequireVote = patch.tierChangesRequireVote;
   if (patch.cosponsorshipThreshold !== undefined) dbPatch.cosponsorshipThreshold = patch.cosponsorshipThreshold;
   if (patch.directDeploymentEnabled !== undefined) dbPatch.directDeploymentEnabled = patch.directDeploymentEnabled;

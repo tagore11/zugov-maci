@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
+import { eq } from "drizzle-orm";
 import { clearCommunities, clearCredentials, testDb } from "./helpers/testDb.js";
 import * as schema from "../src/db/schema.js";
 
@@ -114,6 +115,13 @@ async function createCommunityWithTiers(
   await testDb
     .insert(schema.communityDecisionAdapters)
     .values({ communityId: community.id, adapterType: "maci", attachedAt: Math.floor(Date.now() / 1000) });
+
+  // allowJoin defaults to false for newly-created communities (Child C1, /plan-eng-review
+  // 2026-08-24) — this file's tests routinely join a second wallet to become an admin/voter, so
+  // this helper opts every community it creates into joinable-by-default, matching this file's
+  // existing convention of patching test communities directly via testDb rather than a real
+  // settings-page round trip (see the decisionAdapters insert above).
+  await testDb.update(schema.communities).set({ allowJoin: true }).where(eq(schema.communities.id, community.id));
 
   return { communityId: community.id, tierIds: Object.fromEntries(created.map((t) => [t.label, t.id])) };
 }

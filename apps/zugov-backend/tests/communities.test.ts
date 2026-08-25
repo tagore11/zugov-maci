@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
-import { encodeFunctionResult } from "viem";
+import { encodeFunctionResult, getAddress } from "viem";
 import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
 import { communities, maciGovernanceConfigs, communityDecisionAdapters } from "../src/db/schema.js";
@@ -290,7 +290,10 @@ describe("GET /api/communities/:id", () => {
     };
     expect(body.community.governanceConfigured).toBe(true);
     expect(body.community.chainId).toBe(GOVERNANCE_BODY.chainId);
-    expect(body.community.contractAddress).toBe(GOVERNANCE_BODY.contractAddress);
+    // attachGovernance checksum-normalizes via viem's getAddress() before storing (Child C2,
+    // /plan-eng-review 2026-08-25) — compare against the normalized form, not the raw fixture
+    // literal, which isn't itself checksum-cased.
+    expect(body.community.contractAddress).toBe(getAddress(GOVERNANCE_BODY.contractAddress));
   });
 
   describe("creatorAddress reconciliation against the subgraph's owner", () => {
@@ -528,6 +531,34 @@ describe("POST /api/communities", () => {
     expect(community.governanceConfigured).toBe(false);
   });
 
+  // Child C1 (formalize-communities epic), /plan-eng-review 2026-08-24/25 — a single schema
+  // DEFAULT can't give new rows false and pre-existing rows true at once (see the migration's own
+  // comment); this proves the new-community half of that split holds at the API level.
+  it("defaults allowJoin to false for a newly-created community", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    expect((community as unknown as { allowJoin: boolean }).allowJoin).toBe(false);
+  });
+
+  it("rejects a category that doesn't exist in the categories table", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const res = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ ...IDENTITY_BODY, source: "wizard", category: "not_a_real_category" }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/not found/i);
+  });
+
+  it("accepts a category that exists in the categories table", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { res, community } = await registerIdentity(cookie, { category: "residency" });
+    expect(res.status).toBe(201);
+    expect((community as unknown as { category: string }).category).toBe("residency");
+  });
+
   describe("source: manual (specs/002 FR-013 ownership verification)", () => {
     it("does not call verifyContractOwner for a wizard-sourced registration", async () => {
       const cookie = await authCookieFor(REGISTRANT);
@@ -577,6 +608,23 @@ describe("POST /api/communities", () => {
       verifyContractOwnerMock.mockRejectedValue(new RpcUnavailableError(11155111));
       const res = await registerManualCommunity(cookie, "0x666666666666666666666666666666666666666f");
       expect(res.status).toBe(503);
+    });
+
+    // Ship-time coverage audit finding, 2026-08-25 — POST / (manual source, createIdentity +
+    // attachGovernance fused) has its own ContractAddressInUseError catch branch, separate from
+    // POST /:id/governance's — this exercises that specific route handler's mapping, not just
+    // the service-layer behavior already covered via the governance-attach endpoint's own tests.
+    it("returns 409 when the contract is already attached to a different community (manual registration)", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const firstId = "0x7777777777777777777777777777777777777777";
+      const first = await registerManualCommunity(cookie, firstId);
+      expect(first.status).toBe(201);
+
+      const secondId = "0x8888888888888888888888888888888888888888";
+      const second = await registerManualCommunity(cookie, secondId, { contractAddress: firstId });
+      expect(second.status).toBe(409);
+      const body = (await second.json()) as { error: string };
+      expect(body.error).toMatch(/already registered to a different community/i);
     });
   });
 
@@ -708,6 +756,107 @@ describe("POST /api/communities/:id/governance", () => {
     expect(first.status).toBe(201);
     const second = await attachGovernance(cookie, community.id);
     expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: string };
+    expect(body.error).toMatch(/already has governance configured/i);
+  });
+
+  // Child C2 (formalize-communities epic), /plan-eng-review 2026-08-25 — a new unique constraint
+  // on contractAddress, distinct from the communityId PK violation tested above. Both violations
+  // share one catch block in attachGovernance; this proves they're told apart, not conflated.
+  it("returns 409 with a distinct error when the same contract is already attached to a different community", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community: communityA } = await registerIdentity(cookie);
+    const { community: communityB } = await registerIdentity(cookie);
+
+    const first = await attachGovernance(cookie, communityA.id);
+    expect(first.status).toBe(201);
+
+    const second = await attachGovernance(cookie, communityB.id);
+    expect(second.status).toBe(409);
+    const body = (await second.json()) as { error: string };
+    expect(body.error).toMatch(/already registered to a different community/i);
+    expect(body.error).not.toMatch(/already has governance configured/i);
+  });
+
+  // Review Army / security specialist, 2026-08-25 — this route was originally only reachable
+  // from the deploy-your-own-contract wizard step, where ownership was implicit (the caller's
+  // wallet just deployed the contract in-session). Child C2 added a second caller
+  // (RegisterExistingContract.tsx) that lets the caller name ANY existing contract address, so
+  // an on-chain ownership check is now required here too, matching the source:"manual" path.
+  it("calls verifyContractOwner before attaching governance", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(201);
+    expect(verifyContractOwnerMock).toHaveBeenCalledWith(
+      GOVERNANCE_BODY.chainId,
+      GOVERNANCE_BODY.contractAddress,
+      REGISTRANT.address,
+    );
+  });
+
+  it("returns 403 and does not attach governance when the caller doesn't own the contract", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+    const { OwnershipMismatchError } = await import("../src/services/contractOwnership.js");
+    verifyContractOwnerMock.mockRejectedValue(new OwnershipMismatchError(REGISTRANT.address, "0xSomeoneElse"));
+
+    const res = await attachGovernance(cookie, community.id);
+    expect(res.status).toBe(403);
+
+    verifyContractOwnerMock.mockResolvedValue(undefined);
+    const followUp = await attachGovernance(cookie, community.id);
+    expect(followUp.status).toBe(201);
+  });
+
+  // Outside-voice finding on this review: a bare unique index on the raw string wouldn't catch
+  // two submissions of the same contract in different letter-casing.
+  it("catches a contract already attached, even submitted with different letter-casing", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community: communityA } = await registerIdentity(cookie);
+    const { community: communityB } = await registerIdentity(cookie);
+
+    const first = await attachGovernance(cookie, communityA.id, {
+      contractAddress: GOVERNANCE_BODY.contractAddress.toLowerCase(),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await attachGovernance(cookie, communityB.id, {
+      contractAddress: GOVERNANCE_BODY.contractAddress.toUpperCase().replace("0X", "0x"),
+    });
+    expect(second.status).toBe(409);
+  });
+
+  // Review Army / red-team finding, 2026-08-25 — the test above only proves two NEW submissions
+  // both going through attachGovernance (both normalized via getAddress() before insert) collide
+  // correctly, which a plain unique index on the post-normalization value would already catch.
+  // It doesn't prove the harder case: a row written with its ORIGINAL, non-normalized casing
+  // (simulating data that predates checksum normalization) still collides with a properly
+  // normalized new submission. That's exactly why the index is on lower(contract_address), not
+  // the raw column — this proves the DB-level guarantee holds independent of row history, not
+  // just independent of app-level normalization.
+  it("catches a contract already attached even when the existing row was never checksum-normalized", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community: communityA } = await registerIdentity(cookie);
+    const { community: communityB } = await registerIdentity(cookie);
+
+    await testDb.insert(maciGovernanceConfigs).values({
+      communityId: communityA.id,
+      contractAddress: GOVERNANCE_BODY.contractAddress.toLowerCase(),
+      chainId: GOVERNANCE_BODY.chainId,
+      governanceType: "maci",
+      allowedPolicies: JSON.stringify(GOVERNANCE_BODY.allowedPolicies),
+      supportedModes: JSON.stringify(GOVERNANCE_BODY.supportedModes),
+      signUpPolicyType: GOVERNANCE_BODY.signUpPolicyType,
+      signUpPolicyAddress: GOVERNANCE_BODY.signUpPolicyAddress,
+      maciDeploymentBlock: GOVERNANCE_BODY.maciDeploymentBlock,
+      stateTreeDepth: GOVERNANCE_BODY.stateTreeDepth,
+    });
+
+    const res = await attachGovernance(cookie, communityB.id, {
+      contractAddress: getAddress(GOVERNANCE_BODY.contractAddress),
+    });
+    expect(res.status).toBe(409);
   });
 
   it("round-trips pollDeployConfig with full fidelity", async () => {
@@ -863,5 +1012,38 @@ describe("PATCH /api/communities/:id — directDeploymentEnabled (specs/007 US1,
       body: JSON.stringify({ directDeploymentEnabled: true }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+// Ship-time coverage audit finding, 2026-08-25 — assertCategoryExists's reject-path was tested
+// via POST / (create) but not via PATCH /:id (update), even though communityService.update
+// calls the same function. Both routes wire the same CategoryNotFoundError -> 422 mapping.
+describe("PATCH /api/communities/:id — category (Child C1, /plan-eng-review 2026-08-24)", () => {
+  it("rejects a category that doesn't exist in the categories table", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+
+    const res = await app.request(`/api/communities/${community.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ category: "not_a_real_category" }),
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/not found/i);
+  });
+
+  it("accepts a category that exists in the categories table", async () => {
+    const cookie = await authCookieFor(REGISTRANT);
+    const { community } = await registerIdentity(cookie);
+
+    const res = await app.request(`/api/communities/${community.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ category: "dao" }),
+    });
+    expect(res.status).toBe(200);
+    const { community: updated } = (await res.json()) as { community: { category: string } };
+    expect(updated.category).toBe("dao");
   });
 });

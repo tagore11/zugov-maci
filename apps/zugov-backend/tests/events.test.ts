@@ -85,6 +85,18 @@ async function registerCommunity(
     }),
   });
   const { community } = (await res.json()) as { community: { id: string } };
+
+  // allowJoin defaults to false for newly-created communities (Child C1, /plan-eng-review
+  // 2026-08-24) — several of this file's tests join a second wallet (MEMBER) to exercise
+  // non-creator permission checks, so this helper opts every community it creates into
+  // joinable-by-default via the real settings PATCH, matching how a community owner would
+  // actually enable it.
+  await app.request(`/api/communities/${community.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Cookie: cookie },
+    body: JSON.stringify({ allowJoin: true }),
+  });
+
   return community.id;
 }
 

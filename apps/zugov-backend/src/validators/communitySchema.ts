@@ -4,15 +4,12 @@ import { tierBodySchema } from "./membershipSchema.js";
 const addressRegex = /^0x[0-9a-fA-F]{40}$/;
 
 // Creator-selected community type tag, shown on the community explorer's filter chips —
-// independent of governance status (specs/010 US5, FR-011).
-export const communityCategorySchema = z.enum([
-  "residency",
-  "pop_up_city",
-  "regional",
-  "network_state",
-  "social",
-  "dao",
-]);
+// independent of governance status (specs/010 US5, FR-011). A plain string, not an enum: valid
+// categories live in the categories DB table (formalize-communities epic, Child C1,
+// /plan-eng-review 2026-08-24), so a category can be added without a code change. This schema
+// only validates shape (non-empty string); communityService checks the value actually exists in
+// the categories table before it's written, and the DB-level FK is the final backstop.
+export const communityCategorySchema = z.string().min(1);
 
 // Mirrors apps/zugov-frontend/src/config.ts's existing PollDeployConfig shape exactly (nested
 // treeDepths) so the frontend can send/receive it with no translation layer of its own — the

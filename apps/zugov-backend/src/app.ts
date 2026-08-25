@@ -11,6 +11,7 @@ import { venuesRouter } from "./routes/venues.js";
 import { eventsRouter } from "./routes/events.js";
 import { eligibilityRulesetRouter } from "./routes/eligibilityRuleset.js";
 import { zupollCommunityRouter, zupollProposalRouter } from "./routes/zupoll.js";
+import { categoriesRouter } from "./routes/categories.js";
 
 export const app = new Hono();
 
@@ -44,3 +45,4 @@ app.route("/api/proposals", zupollProposalRouter);
 app.route("/api/memberships", myMembershipsRouter);
 app.route("/api/unions", unionsRouter);
 app.route("/api/credentials", credentialsRouter);
+app.route("/api/categories", categoriesRouter);
