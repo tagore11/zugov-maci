@@ -41,15 +41,28 @@ describe("UnionsSection", () => {
     expect(screen.queryByText(/awaiting response/)).not.toBeInTheDocument();
   });
 
-  it("shows a secondary-toned pending badge, not an error/warning style, for pending invites", async () => {
+  // Child D (formalize-communities epic), /plan-eng-review 2026-08-25 — pending invites used to
+  // render as a passive text badge on this public page; they're now invisible here entirely.
+  // Accept/decline lives on the community's settings page (UnionMembershipSection.tsx) instead.
+  it("renders nothing for a pending invite, not even a passive badge", async () => {
     listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-2", displayName: "Residency Federation", logo: null, status: "pending" },
+    ]);
+    const { container } = renderWithProviders(<UnionsSection communityId="0xabc" />);
+
+    await waitFor(() => expect(listUnionsForCommunityMock).toHaveBeenCalledWith("0xabc"));
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByText("Residency Federation")).not.toBeInTheDocument();
+  });
+
+  it("shows active unions alongside a pending one, excluding only the pending one", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Pop-up Alliance", logo: null, status: "active" },
       { id: "union-2", displayName: "Residency Federation", logo: null, status: "pending" },
     ]);
     renderWithProviders(<UnionsSection communityId="0xabc" />);
 
-    const badge = await screen.findByText("Invited — awaiting response");
-    expect(badge).toBeInTheDocument();
-    expect(badge.className).toContain("text-gray-400");
-    expect(badge.className).not.toMatch(/red|amber|yellow/);
+    await waitFor(() => expect(screen.getByText("Pop-up Alliance")).toBeInTheDocument());
+    expect(screen.queryByText("Residency Federation")).not.toBeInTheDocument();
   });
 });

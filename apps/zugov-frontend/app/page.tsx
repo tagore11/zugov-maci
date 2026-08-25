@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Header } from "./components/Header";
 import { Search, TrendingUp, Users, FileText } from "lucide-react";
@@ -48,37 +48,64 @@ export default function Home() {
     enabled: statsSources.length > 0,
   });
 
-  const categories = ["All", "Residency", "Pop-up City", "Regional", "Network State", "Social", "DAO"];
+  // Categories are DB-driven (GET /api/categories), not hardcoded — closes the duplication this
+  // array used to have with communityDisplay.ts's own label map (formalize-communities epic,
+  // Child C1, /plan-eng-review 2026-08-24). staleTime: Infinity: no admin UI exists to change
+  // this list at runtime, so there's no user-facing staleness risk.
+  const { data: fetchedCategories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ["categories"],
+    queryFn: communityApi.listCategories,
+    staleTime: Infinity,
+  });
+  const categories = ["All", ...fetchedCategories.map((c) => c.label)];
+  // Memoized so fetchCommunities's useCallback (below) doesn't see a new object reference on
+  // every render — fetchedCategories only actually changes once, on initial load (staleTime:
+  // Infinity), but Object.fromEntries would otherwise allocate a fresh object every render.
+  const categoryLabels = useMemo(
+    () => Object.fromEntries(fetchedCategories.map((c) => [c.id, c.label])),
+    [fetchedCategories],
+  );
 
-  const fetchCommunities = useCallback(async (page: number, reset: boolean) => {
-    setIsLoadingCommunities(true);
-    try {
-      const { communities: items, hasMore: more } = await communityApi.list(page);
-      const converted = items.map(communityToItem);
-      if (reset) {
-        // Unions are communities too (ENGINEERING.md's structural-participation decision) — merge
-        // them into the same discovery list instead of leaving them only on the separate /unions
-        // page. Fetched once on reset (page 1 only); unions are typically far fewer than
-        // communities, so a separate paginated merge isn't warranted yet.
-        const unionItems = await communityApi
-          .listAllUnions(1)
-          .then(({ unions }) => unions.map(unionToItem))
-          .catch(() => []);
-        setCommunities([...converted, ...unionItems]);
-      } else {
-        setCommunities((prev) => [...prev, ...converted]);
+  const fetchCommunities = useCallback(
+    async (page: number, reset: boolean) => {
+      setIsLoadingCommunities(true);
+      try {
+        const { communities: items, hasMore: more } = await communityApi.list(page);
+        const converted = items.map((c) => communityToItem(c, categoryLabels));
+        if (reset) {
+          // Unions are communities too (ENGINEERING.md's structural-participation decision) —
+          // merge them into the same discovery list instead of leaving them only on the separate
+          // /unions page. Fetched once on reset (page 1 only); unions are typically far fewer
+          // than communities, so a separate paginated merge isn't warranted yet.
+          const unionItems = await communityApi
+            .listAllUnions(1)
+            .then(({ unions }) => unions.map(unionToItem))
+            .catch(() => []);
+          setCommunities([...converted, ...unionItems]);
+        } else {
+          setCommunities((prev) => [...prev, ...converted]);
+        }
+        setHasMore(more);
+      } catch {
+        // keep existing items on error
+      } finally {
+        setIsLoadingCommunities(false);
       }
-      setHasMore(more);
-    } catch {
-      // keep existing items on error
-    } finally {
-      setIsLoadingCommunities(false);
-    }
-  }, []);
+    },
+    [categoryLabels],
+  );
 
+  // Ship-time coverage audit finding, 2026-08-25 — fetchCommunities' identity changes once
+  // categoryLabels transitions from {} to its final value (fetchedCategories resolving after
+  // this effect's first run), which used to re-trigger this effect and double-fetch page 1 of
+  // both communities and unions on every landing-page load. Gating on categoriesLoading defers
+  // the first (and only) call until categoryLabels already holds its final value — with
+  // staleTime: Infinity, a warm cache (e.g. navigating back to "/" later in the same session)
+  // resolves categoriesLoading to false immediately, so this adds no perceptible delay.
   useEffect(() => {
+    if (categoriesLoading) return;
     void fetchCommunities(1, true);
-  }, [fetchCommunities]);
+  }, [fetchCommunities, categoriesLoading]);
 
   // Subscribe to community-created event for real-time updates
   useEffect(() => {

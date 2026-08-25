@@ -1,19 +1,12 @@
 import type { Community, UnionWithMemberCount } from "@/src/services/communityApi";
 
-// Backend enum values (communities.category) -> the exact labels the category filter chips use.
-const CATEGORY_LABELS: Record<string, string> = {
-  residency: "Residency",
-  pop_up_city: "Pop-up City",
-  regional: "Regional",
-  network_state: "Network State",
-  social: "Social",
-  dao: "DAO",
-};
-
 /** The creator-selected community type label, or "" if none is set. Independent of governance
- * status — see governanceBadgeFor for why the two must never be conflated (specs/010 US4/US5). */
-export function categoryLabelFor(community: Pick<Community, "category">): string {
-  return community.category ? (CATEGORY_LABELS[community.category] ?? "") : "";
+ * status — see governanceBadgeFor for why the two must never be conflated (specs/010 US4/US5).
+ * `labels` maps category id -> display label, built by the caller from GET /api/categories (not
+ * hardcoded here — formalize-communities epic, Child C1, /plan-eng-review 2026-08-24). Defaults
+ * to {} for callers that don't have the fetched list handy, which resolves to "" same as before. */
+export function categoryLabelFor(community: Pick<Community, "category">, labels: Record<string, string> = {}): string {
+  return community.category ? (labels[community.category] ?? "") : "";
 }
 
 /** "MACI" only once governance is actually configured and its subgraph has finished indexing;
@@ -41,7 +34,7 @@ export type DiscoveryItem = {
   isUnion?: boolean;
 };
 
-export function communityToItem(c: Community): DiscoveryItem {
+export function communityToItem(c: Community, categoryLabels: Record<string, string> = {}): DiscoveryItem {
   return {
     id: c.id,
     name: c.displayName,
@@ -49,7 +42,7 @@ export function communityToItem(c: Community): DiscoveryItem {
     logo: c.logo ?? "🏛️",
     members: 0,
     proposals: 0,
-    category: categoryLabelFor(c),
+    category: categoryLabelFor(c, categoryLabels),
     governanceBadge: governanceBadgeFor(c),
     createdAt: c.createdAt,
     signUpPolicyType: c.signUpPolicyType,
