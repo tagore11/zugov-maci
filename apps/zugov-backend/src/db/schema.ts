@@ -1,4 +1,5 @@
 import { pgTable, text, integer, boolean, primaryKey, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { CredentialStatus, Protocol } from "../services/identity/IdentityProvider.js";
 
 // Server-side session store: the cookie only ever holds an opaque random token (see
@@ -34,6 +35,18 @@ export const credentials = pgTable(
 export type Credential = typeof credentials.$inferSelect;
 export type NewCredential = typeof credentials.$inferInsert;
 
+// Community type tags (Residency/Pop-up City/Network State/Social/Regional/DAO), shown on the
+// community explorer's filter chips. A real table, not a hardcoded union — adding a category is
+// a direct DB insert, not a code deploy (no admin UI for this yet, see TODOS.md). Seeded with
+// today's 6 values by the migration that introduces this table.
+export const categories = pgTable("categories", {
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+
+export type Category = typeof categories.$inferSelect;
+
 // Identity + structure only — deliberately NOT a governance object. A community's identity
 // can exist before any governance tool is configured (see maciGovernanceConfigs below); this
 // table holds only what's true regardless of which governance backend (if any) a community
@@ -58,12 +71,22 @@ export const communities = pgTable("communities", {
   membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
   tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
   defaultTierId: text("default_tier_id"),
-  // Creator-selected community type tag (Residency/Pop-up City/Network State/Social/Regional),
-  // shown on the community explorer's filter chips. Nullable: communities created before this
-  // column existed have no value, and the explorer's "All" filter still includes them. Unrelated
-  // to governance — never conflate with governanceType/subgraphStatus (see the landing page's
-  // governance badge).
-  category: text("category").$type<"residency" | "pop_up_city" | "regional" | "network_state" | "social" | "dao">(),
+  // Creator-selected community type tag, shown on the community explorer's filter chips.
+  // References the categories table (not a hardcoded union) so adding a category never requires
+  // a code change. Nullable: communities created before this column existed have no value, and
+  // the explorer's "All" filter still includes them. Unrelated to governance — never conflate
+  // with governanceType/subgraphStatus (see the landing page's governance badge). ON DELETE SET
+  // NULL: there's no admin UI to delete a category today, but if one ever exists, a deleted
+  // category shouldn't take its communities' identity rows down with it.
+  category: text("category").references(() => categories.id, { onDelete: "set null" }),
+  // Independent of membershipPolicy: membershipPolicy governs HOW a join request is evaluated
+  // (open vs. requires approval); allowJoin governs WHETHER joining is possible at all. Lets a
+  // community register on-chain first, then open joining once ready, without touching
+  // membershipPolicy. New communities default closed (false); communities that existed before
+  // this column was added were migrated to true (see the migration that introduces this column —
+  // a single schema DEFAULT can't give new and existing rows different values, so createIdentity
+  // relies on this DEFAULT for new rows and the migration backfills existing rows explicitly).
+  allowJoin: boolean("allow_join").notNull().default(false),
   cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
   directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
   createdAt: integer("created_at").notNull(),
@@ -79,34 +102,50 @@ export type NewCommunity = typeof communities.$inferInsert;
 // governance configured" (see communityService.parseRecord's governanceConfigured flag).
 // ON DELETE CASCADE: a governance config with no identity behind it is meaningless, unlike
 // parentCommunityId's SET NULL (a child community remains meaningful without its parent).
-export const maciGovernanceConfigs = pgTable("maci_governance_configs", {
-  communityId: text("community_id")
-    .primaryKey()
-    .references(() => communities.id, { onDelete: "cascade" }),
-  // The deployed MACI contract's address. Nullable at the DB level for flexibility, but the
-  // POST /communities/:id/governance request validator requires it — attaching governance
-  // without a known deployed contract is not a state this app's flows ever produce today.
-  contractAddress: text("contract_address"),
-  chainId: integer("chain_id").notNull(),
-  governanceType: text("governance_type").notNull().default("maci"),
-  allowedPolicies: text("allowed_policies").notNull(),
-  supportedModes: text("supported_modes").notNull(),
-  signUpPolicyType: text("sign_up_policy_type"),
-  signUpPolicyAddress: text("sign_up_policy_address"),
-  stateTreeDepth: integer("state_tree_depth").notNull(),
-  coordinatorPublicKey: text("coordinator_public_key"),
-  tallyProcessingStateTreeDepth: integer("tally_processing_state_tree_depth"),
-  voteOptionTreeDepth: integer("vote_option_tree_depth"),
-  messageBatchSize: integer("message_batch_size"),
-  freeForAllPolicyFactory: text("free_for_all_policy_factory"),
-  freeForAllChecker: text("free_for_all_checker"),
-  constantVoiceCreditProxyFactory: text("constant_voice_credit_proxy_factory"),
-  initialVoiceCreditAmount: integer("initial_voice_credit_amount"),
-  // Block the MACI contract was deployed at — the subgraph's indexing start block.
-  maciDeploymentBlock: integer("maci_deployment_block"),
-  subgraphName: text("subgraph_name"),
-  subgraphStatus: text("subgraph_status").$type<"pending" | "ready" | "failed">().notNull().default("pending"),
-});
+export const maciGovernanceConfigs = pgTable(
+  "maci_governance_configs",
+  {
+    communityId: text("community_id")
+      .primaryKey()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    // The deployed MACI contract's address. Nullable at the DB level for flexibility, but the
+    // POST /communities/:id/governance request validator requires it — attaching governance
+    // without a known deployed contract is not a state this app's flows ever produce today.
+    // Unique (see the index below): the same deployed contract must never be attached to two
+    // different communities. Stored checksum-normalized (viem's getAddress()) by
+    // communityService.attachGovernance — a bare unique index on the raw string wouldn't catch
+    // two submissions of the same address in different letter-casing (Child C2,
+    // /plan-eng-review 2026-08-25, outside-voice finding).
+    contractAddress: text("contract_address"),
+    chainId: integer("chain_id").notNull(),
+    governanceType: text("governance_type").notNull().default("maci"),
+    allowedPolicies: text("allowed_policies").notNull(),
+    supportedModes: text("supported_modes").notNull(),
+    signUpPolicyType: text("sign_up_policy_type"),
+    signUpPolicyAddress: text("sign_up_policy_address"),
+    stateTreeDepth: integer("state_tree_depth").notNull(),
+    coordinatorPublicKey: text("coordinator_public_key"),
+    tallyProcessingStateTreeDepth: integer("tally_processing_state_tree_depth"),
+    voteOptionTreeDepth: integer("vote_option_tree_depth"),
+    messageBatchSize: integer("message_batch_size"),
+    freeForAllPolicyFactory: text("free_for_all_policy_factory"),
+    freeForAllChecker: text("free_for_all_checker"),
+    constantVoiceCreditProxyFactory: text("constant_voice_credit_proxy_factory"),
+    initialVoiceCreditAmount: integer("initial_voice_credit_amount"),
+    // Block the MACI contract was deployed at — the subgraph's indexing start block.
+    maciDeploymentBlock: integer("maci_deployment_block"),
+    subgraphName: text("subgraph_name"),
+    subgraphStatus: text("subgraph_status").$type<"pending" | "ready" | "failed">().notNull().default("pending"),
+  },
+  (table) => [
+    // Casing-independent (Review Army red-team finding, 2026-08-25): a plain unique index on
+    // the raw column only guards contracts written after this migration, since attachGovernance
+    // checksum-normalizes via getAddress() on the way in but nothing backfills existing rows.
+    // Indexing lower(contract_address) makes the one-contract-per-community invariant hold
+    // regardless of any pre-existing row's original casing, with no backfill dependency at all.
+    uniqueIndex("maci_governance_configs_contract_address_unique").on(sql`lower(${table.contractAddress})`),
+  ],
+);
 
 export type MaciGovernanceConfig = typeof maciGovernanceConfigs.$inferSelect;
 export type NewMaciGovernanceConfig = typeof maciGovernanceConfigs.$inferInsert;

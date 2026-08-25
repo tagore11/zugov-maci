@@ -89,7 +89,7 @@ const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: Identity
     },
   },
   {
-    id: "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b",
+    id: "0x365d6B5A48dc7D4bC83e78f31c01e4E34567890B",
     creatorAddress: "0x0000000000000000000000000000000000000002",
     identity: {
       displayName: "ETH-NS",
@@ -101,7 +101,7 @@ const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: Identity
       defaultTierLabel: "Regular",
     },
     governance: {
-      contractAddress: "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b",
+      contractAddress: "0x365d6B5A48dc7D4bC83e78f31c01e4E34567890B",
       chainId: 534351,
       allowedPolicies: [0],
       supportedModes: [0],
@@ -116,7 +116,7 @@ const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: Identity
 // specs/007 T022: seeded separately from SEED_COMMUNITIES via update() rather than as a create()
 // field, since directDeploymentEnabled is deliberately PATCH-only (data-model.md) — there's no
 // creation-time path for it.
-const DIRECT_DEPLOYMENT_COMMUNITY_ID = "0x365d6b5a48Dc7D4bc83E78f31C01e4E3456789b";
+const DIRECT_DEPLOYMENT_COMMUNITY_ID = "0x365d6B5A48dc7D4bC83e78f31c01e4E34567890B";
 
 async function seed() {
   console.log("Seeding communities...");
