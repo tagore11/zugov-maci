@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, and, inArray, count } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { unions, unionMemberships, type Union, type UnionMembership } from "../db/schema.js";
-import { get as getCommunity } from "./communityService.js";
+import { get as getCommunity, getAuthorizedCommunityIds } from "./communityService.js";
 
 export class UnionNotFoundError extends Error {
   constructor(id: string) {
@@ -231,6 +231,58 @@ export async function listMembers(unionId: string, includePending = false): Prom
   }));
 }
 
+export interface MyPendingUnionInvite {
+  unionId: string;
+  unionDisplayName: string;
+  communityId: string;
+  communityDisplayName: string;
+}
+
+// Every pending union invite across every community the caller is authorized on — one query,
+// not N (community page redesign, /plan-eng-review 2026-08-26, D2). Session-derived only; never
+// takes an address as free-form input, which is what makes this safe to expose without leaking
+// another wallet's pending invites (unlike the query-param design this replaced during review).
+// Powers both the /unions listing page's per-row badge and manage-profile's "Awaiting Your
+// Action" card (replacing that page's own N+1 loop + page-1-only pagination bug).
+export async function listMyPendingInvites(address: string): Promise<MyPendingUnionInvite[]> {
+  const authorizedIds = await getAuthorizedCommunityIds(address);
+  if (authorizedIds.length === 0) return [];
+
+  const rows = await db
+    .select()
+    .from(unionMemberships)
+    .where(and(inArray(unionMemberships.communityId, authorizedIds), eq(unionMemberships.status, "pending")));
+  if (rows.length === 0) return [];
+
+  const [unionRows, communityRecords] = await Promise.all([
+    db
+      .select()
+      .from(unions)
+      .where(
+        inArray(
+          unions.id,
+          rows.map((r) => r.unionId),
+        ),
+      ),
+    Promise.all(rows.map((r) => getCommunity(r.communityId))),
+  ]);
+  const unionsById = new Map(unionRows.map((u) => [u.id, u]));
+
+  return rows
+    .map((row, i) => {
+      const union = unionsById.get(row.unionId);
+      const community = communityRecords[i];
+      if (!union || !community) return null;
+      return {
+        unionId: union.id,
+        unionDisplayName: union.displayName,
+        communityId: row.communityId,
+        communityDisplayName: community.displayName,
+      };
+    })
+    .filter((entry): entry is MyPendingUnionInvite => entry !== null);
+}
+
 export interface UnionForCommunity {
   id: string;
   displayName: string;
@@ -241,11 +293,18 @@ export interface UnionForCommunity {
 // Unions this community belongs to or has a pending invite for (declined unions are excluded —
 // no reason to keep surfacing a relationship the community turned down). Powers the community
 // detail page's "Unions" section, including the "Invited — awaiting response" state.
-export async function listForCommunity(communityId: string): Promise<UnionForCommunity[]> {
+//
+// includePending defaults to false and must be gated by the route (isAuthorized(communityId,
+// caller)) before passing true — pending invites aren't public, same posture as
+// listMembers()'s includePending. Fixed 2026-08-26: this previously always included pending
+// status with no gating at all, letting any unauthenticated caller see a community's pending
+// union invites via GET /api/communities/:id/unions.
+export async function listForCommunity(communityId: string, includePending = false): Promise<UnionForCommunity[]> {
+  const statuses: ("pending" | "active")[] = includePending ? ["pending", "active"] : ["active"];
   const membershipRows = await db
     .select()
     .from(unionMemberships)
-    .where(and(eq(unionMemberships.communityId, communityId), inArray(unionMemberships.status, ["pending", "active"])));
+    .where(and(eq(unionMemberships.communityId, communityId), inArray(unionMemberships.status, statuses)));
 
   if (membershipRows.length === 0) return [];
 

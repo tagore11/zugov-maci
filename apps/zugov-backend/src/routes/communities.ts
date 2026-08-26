@@ -77,14 +77,19 @@ communitiesRouter.get("/:id/children", async (c) => {
 });
 
 // Unions this community belongs to or has a pending invite for — powers the community detail
-// page's "Unions" section, including the "Invited — awaiting response" state.
+// page's "Unions" section, including the "Invited — awaiting response" state. Pending status is
+// only included for a caller authorized on this community (isAuthorized) — not public, matching
+// GET /api/unions/:id's own pending-visibility gate (security fix, 2026-08-26: this route
+// previously included pending status unconditionally, for anyone).
 communitiesRouter.get("/:id/unions", async (c) => {
   const id = c.req.param("id");
   const community = await communityService.get(id);
   if (!community) {
     return c.json({ error: "Community not found" }, 404);
   }
-  const unions = await unionService.listForCommunity(id);
+  const session = await getSession(c);
+  const includePending = !!session.address && (await isAuthorized(id, session.address));
+  const unions = await unionService.listForCommunity(id, includePending);
   return c.json({ unions });
 });
 

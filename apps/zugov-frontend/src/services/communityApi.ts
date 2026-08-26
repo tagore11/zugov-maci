@@ -309,11 +309,37 @@ export async function createUnion(payload: {
   return data.union;
 }
 
-export async function getUnion(id: string): Promise<{ union: Union; members: UnionMember[] } | null> {
+export type GetUnionResponse = {
+  union: Union;
+  members: UnionMember[];
+  // community page redesign (/plan-eng-review 2026-08-26, D1) — which of the connected wallet's
+  // communities are active/pending here, for the union page's "Your Actions" panel. Empty for
+  // anonymous or non-participating callers.
+  myActiveCommunityIds: string[];
+  myPendingCommunityIds: string[];
+};
+
+export async function getUnion(id: string): Promise<GetUnionResponse | null> {
   const res = await fetch(`${BASE_URL}/api/unions/${id}`, { credentials: "include" });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to fetch union: ${res.status}`);
-  return res.json() as Promise<{ union: Union; members: UnionMember[] }>;
+  return res.json() as Promise<GetUnionResponse>;
+}
+
+export type MyPendingUnionInvite = {
+  unionId: string;
+  unionDisplayName: string;
+  communityId: string;
+  communityDisplayName: string;
+};
+
+// Session-derived only, powers the /unions listing badge and manage-profile's "Awaiting Your
+// Action" card (community page redesign, /plan-eng-review 2026-08-26, D2/D3).
+export async function getMyPendingUnionInvites(): Promise<MyPendingUnionInvite[]> {
+  const res = await fetch(`${BASE_URL}/api/unions/my-pending-invites`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to fetch pending union invites: ${res.status}`);
+  const data = (await res.json()) as { invites: MyPendingUnionInvite[] };
+  return data.invites;
 }
 
 export async function inviteToUnion(

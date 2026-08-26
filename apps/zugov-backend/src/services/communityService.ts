@@ -128,36 +128,41 @@ function parseRecord(identity: Community, governance: MaciGovernanceConfig | nul
   };
 }
 
+// formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on", not
+// just "created" (isAuthorized()'s own definition: creator OR a canManageMembership tier
+// holder). Implemented as two simple queries unioned in application code rather than a
+// correlated SQL subquery, matching this codebase's preference for composed simple queries.
+// Duplicate ids between the two sets are harmless (communities.id is the PK; inArray dedupes
+// by row identity) — every creator is always also a canManageMembership tier holder on their
+// own community (createIdentity enrolls them at that tier), so the union is redundant-but-
+// harmless for that case specifically, not a correctness concern.
+//
+// Extracted (union page redesign, /plan-eng-review 2026-08-26, D2) out of list() below so
+// unionService's "which of my communities have a pending invite" query can reuse the same
+// authorization resolution instead of a third copy.
+export async function getAuthorizedCommunityIds(address: string): Promise<string[]> {
+  const [creatorRows, adminTierRows] = await Promise.all([
+    db.select({ id: communities.id }).from(communities).where(ilike(communities.creatorAddress, address)),
+    db
+      .select({ id: memberships.communityId })
+      .from(memberships)
+      .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+      .where(and(ilike(memberships.walletAddress, address), eq(membershipTiers.canManageMembership, true))),
+  ]);
+  return [...new Set([...creatorRows.map((r) => r.id), ...adminTierRows.map((r) => r.id)])];
+}
+
 export async function list(
   page: number,
   limit: number,
   chainId?: number,
   creatorAddress?: string,
   search?: string,
-  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on", not
-  // just "created" (isAuthorized()'s own definition: creator OR a canManageMembership tier
-  // holder). Implemented as two simple queries unioned in application code rather than a
-  // correlated SQL subquery, matching this codebase's preference for composed simple queries.
-  // Duplicate ids between the two sets are harmless (communities.id is the PK; inArray dedupes
-  // by row identity) — every creator is always also a canManageMembership tier holder on their
-  // own community (createIdentity enrolls them at that tier), so the union is redundant-but-
-  // harmless for that case specifically, not a correctness concern.
   authorizedFor?: string,
 ): Promise<{ communities: CommunityRecord[]; total: number; hasMore: boolean }> {
   const offset = (page - 1) * limit;
 
-  let authorizedIds: string[] | undefined;
-  if (authorizedFor !== undefined) {
-    const [creatorRows, adminTierRows] = await Promise.all([
-      db.select({ id: communities.id }).from(communities).where(ilike(communities.creatorAddress, authorizedFor)),
-      db
-        .select({ id: memberships.communityId })
-        .from(memberships)
-        .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
-        .where(and(ilike(memberships.walletAddress, authorizedFor), eq(membershipTiers.canManageMembership, true))),
-    ]);
-    authorizedIds = [...new Set([...creatorRows.map((r) => r.id), ...adminTierRows.map((r) => r.id)])];
-  }
+  const authorizedIds = authorizedFor !== undefined ? await getAuthorizedCommunityIds(authorizedFor) : undefined;
 
   // Community creation wizard fix (2026-08-21) — feeds the parent-community picker's search
   // box. Case-insensitive substring match on displayName; no index needed at this scale (see

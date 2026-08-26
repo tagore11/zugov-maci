@@ -11,9 +11,13 @@ type AwaitingActionItem =
   | { kind: "governance_vote"; communityId: string; communityName: string; actionId: string; actionTitle: string };
 
 /**
- * Best-effort, N+1-fetch aggregation across three unrelated backend surfaces (unions, join
- * requests, governance actions) — acceptable at this app's live-event scale (Zukas 2026), and
- * each source is independently caught so one failing source doesn't blank the whole section.
+ * Best-effort aggregation across three unrelated backend surfaces (unions, join requests,
+ * governance actions) — each source is independently caught so one failing source doesn't blank
+ * the whole section. Union-invite detection was migrated (community page redesign, /plan-eng-
+ * review 2026-08-26, D3) off its own N+1-per-owned-community loop and page-1-only pagination
+ * onto communityApi.getMyPendingUnionInvites() — a single, session-derived, correctly-paginated
+ * query. Join requests and governance actions still fetch per-owned-community below — acceptable
+ * at this app's live-event scale (Zukas 2026), unrelated to this fix, out of scope for it.
  */
 async function fetchAwaitingActions(address: string): Promise<AwaitingActionItem[]> {
   const items: AwaitingActionItem[] = [];
@@ -22,26 +26,25 @@ async function fetchAwaitingActions(address: string): Promise<AwaitingActionItem
   // only, so a non-creator canManageMembership admin (this function's own "admin authority"
   // comment above already claims to cover them) saw none of their awaiting actions. authorizedFor
   // matches isAuthorized()'s real definition, same fix as manage-communities/page.tsx.
-  const [{ communities: owned }, memberCommunityIds] = await Promise.all([
+  const [{ communities: owned }, memberCommunityIds, pendingUnionInvites] = await Promise.all([
     communityApi.list(1, undefined, undefined, undefined, address),
     membershipApi.listMyMemberships().catch(() => [] as string[]),
+    communityApi.getMyPendingUnionInvites().catch(() => []),
   ]);
 
-  // Union invites + join requests: only communities this wallet owns (admin authority over them).
+  for (const invite of pendingUnionInvites) {
+    items.push({
+      kind: "union_invite",
+      communityId: invite.communityId,
+      communityName: invite.communityDisplayName,
+      unionName: invite.unionDisplayName,
+    });
+  }
+
+  // Join requests: only communities this wallet owns (admin authority over them).
   await Promise.all(
     owned.map(async (community) => {
-      const [unions, requests] = await Promise.all([
-        communityApi.listUnionsForCommunity(community.id).catch(() => []),
-        membershipApi.listPendingRequests(community.id).catch(() => []),
-      ]);
-      for (const union of unions.filter((u) => u.status === "pending")) {
-        items.push({
-          kind: "union_invite",
-          communityId: community.id,
-          communityName: community.displayName,
-          unionName: union.displayName,
-        });
-      }
+      const requests = await membershipApi.listPendingRequests(community.id).catch(() => []);
       if (requests.length > 0) {
         items.push({
           kind: "membership_requests",

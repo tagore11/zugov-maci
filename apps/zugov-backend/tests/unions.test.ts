@@ -102,6 +102,88 @@ afterAll(async () => {
   } catch {}
 });
 
+// community page redesign (/plan-eng-review 2026-08-26, D2) — powers the /unions listing badge
+// and manage-profile's "Awaiting Your Action" card.
+describe("GET /api/unions/my-pending-invites", () => {
+  it("returns an empty list for an unauthenticated caller", async () => {
+    const res = await app.request("/api/unions/my-pending-invites");
+    expect(res.status).toBe(200);
+    const { invites } = (await res.json()) as { invites: unknown[] };
+    expect(invites).toEqual([]);
+  });
+
+  it("returns an empty list when the caller has no pending invites", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+
+    const res = await app.request("/api/unions/my-pending-invites", { headers: { Cookie: founderCookie } });
+    const { invites } = (await res.json()) as { invites: unknown[] };
+    expect(invites).toEqual([]);
+  });
+
+  it("returns the pending invite for a community the caller is authorized on", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity, "Founder's Union");
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+
+    const res = await app.request("/api/unions/my-pending-invites", { headers: { Cookie: peerCookie } });
+    const { invites } = (await res.json()) as {
+      invites: { unionId: string; unionDisplayName: string; communityId: string; communityDisplayName: string }[];
+    };
+    expect(invites).toEqual([
+      {
+        unionId: union.id,
+        unionDisplayName: "Founder's Union",
+        communityId: peerCommunity,
+        communityDisplayName: "Peer Co",
+      },
+    ]);
+  });
+
+  it("does not include an active membership, only pending ones", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    await createUnion(founderCookie, founderCommunity);
+
+    const res = await app.request("/api/unions/my-pending-invites", { headers: { Cookie: founderCookie } });
+    const { invites } = (await res.json()) as { invites: unknown[] };
+    expect(invites).toEqual([]); // founding community is active, not pending
+  });
+
+  it("does not include a declined invite", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+    const createRes = await createUnion(founderCookie, founderCommunity);
+    const { union } = (await createRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: false }),
+    });
+
+    const res = await app.request("/api/unions/my-pending-invites", { headers: { Cookie: peerCookie } });
+    const { invites } = (await res.json()) as { invites: unknown[] };
+    expect(invites).toEqual([]);
+  });
+});
+
 describe("POST /api/unions", () => {
   it("returns 401 without authentication", async () => {
     const res = await app.request("/api/unions", {
@@ -183,6 +265,98 @@ describe("GET /api/unions/:id", () => {
     const res = await app.request(`/api/unions/${union.id}`);
     const { members } = (await res.json()) as { members: unknown[] };
     expect(members).toHaveLength(1); // active only, pending excluded
+  });
+
+  // community page redesign (/plan-eng-review 2026-08-26, D1) — myActiveCommunityIds/
+  // myPendingCommunityIds power the union page's "Your Actions" panel.
+  describe("myActiveCommunityIds / myPendingCommunityIds", () => {
+    it("returns empty arrays for an unauthenticated caller", async () => {
+      const founderCookie = await authCookieFor(FOUNDER);
+      const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+      const createRes = await createUnion(founderCookie, founderCommunity);
+      const { union } = (await createRes.json()) as { union: { id: string } };
+
+      const res = await app.request(`/api/unions/${union.id}`);
+      const body = (await res.json()) as { myActiveCommunityIds: string[]; myPendingCommunityIds: string[] };
+      expect(body.myActiveCommunityIds).toEqual([]);
+      expect(body.myPendingCommunityIds).toEqual([]);
+    });
+
+    it("lists the founding community as an active match for its own authorized caller", async () => {
+      const founderCookie = await authCookieFor(FOUNDER);
+      const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+      const createRes = await createUnion(founderCookie, founderCommunity);
+      const { union } = (await createRes.json()) as { union: { id: string } };
+
+      const res = await app.request(`/api/unions/${union.id}`, { headers: { Cookie: founderCookie } });
+      const body = (await res.json()) as { myActiveCommunityIds: string[]; myPendingCommunityIds: string[] };
+      expect(body.myActiveCommunityIds).toEqual([founderCommunity]);
+      expect(body.myPendingCommunityIds).toEqual([]);
+    });
+
+    // The key gap this extension closes: an invited community's own admin can see (and, via
+    // /respond, act on) its own pending invite even with no OTHER active-member authority in
+    // this union — the pre-existing "any active member" gate only controls seeing EVERYONE
+    // ELSE's pending invites, not the caller's own.
+    it("lists the invited community as a pending match for its own authorized caller, without any active-member authority", async () => {
+      const founderCookie = await authCookieFor(FOUNDER);
+      const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+      const createRes = await createUnion(founderCookie, founderCommunity);
+      const { union } = (await createRes.json()) as { union: { id: string } };
+
+      const peerCookie = await authCookieFor(PEER_ADMIN);
+      const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+      await app.request(`/api/unions/${union.id}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: founderCookie },
+        body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+      });
+
+      const res = await app.request(`/api/unions/${union.id}`, { headers: { Cookie: peerCookie } });
+      const body = (await res.json()) as {
+        members: { communityId: string; status: string }[];
+        myActiveCommunityIds: string[];
+        myPendingCommunityIds: string[];
+      };
+      expect(body.myActiveCommunityIds).toEqual([]);
+      expect(body.myPendingCommunityIds).toEqual([peerCommunity]);
+      // Sees its own pending entry, but the members list still isn't the FULL pending list —
+      // just active members plus its own pending one.
+      const byId = Object.fromEntries(body.members.map((m) => [m.communityId, m.status]));
+      expect(byId[peerCommunity]).toBe("pending");
+    });
+
+    it("does not leak another community's pending invite to a caller only authorized on their own pending community", async () => {
+      const founderCookie = await authCookieFor(FOUNDER);
+      const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co");
+      const createRes = await createUnion(founderCookie, founderCommunity);
+      const { union } = (await createRes.json()) as { union: { id: string } };
+
+      const peerCookie = await authCookieFor(PEER_ADMIN);
+      const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+      await app.request(`/api/unions/${union.id}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: founderCookie },
+        body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+      });
+
+      const outsiderCookie = await authCookieFor(OUTSIDER);
+      const outsiderCommunity = await registerCommunity(outsiderCookie, [MANAGE_TIER], "Outsider Co");
+      await app.request(`/api/unions/${union.id}/invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: founderCookie },
+        body: JSON.stringify({ communityId: outsiderCommunity, actingCommunityId: founderCommunity }),
+      });
+
+      const res = await app.request(`/api/unions/${union.id}`, { headers: { Cookie: peerCookie } });
+      const body = (await res.json()) as {
+        members: { communityId: string; status: string }[];
+        myPendingCommunityIds: string[];
+      };
+      expect(body.myPendingCommunityIds).toEqual([peerCommunity]);
+      const byId = Object.fromEntries(body.members.map((m) => [m.communityId, m.status]));
+      expect(byId[outsiderCommunity]).toBeUndefined();
+    });
   });
 });
 
@@ -784,11 +958,50 @@ describe("GET /api/communities/:id/unions", () => {
       body: JSON.stringify({ communityId: founderCommunity, accept: false }),
     });
 
-    const res = await app.request(`/api/communities/${founderCommunity}/unions`);
+    // Authenticated as the community's own authorized wallet — sees its own pending invite.
+    const res = await app.request(`/api/communities/${founderCommunity}/unions`, {
+      headers: { Cookie: founderCookie },
+    });
     const { unions } = (await res.json()) as { unions: { id: string; status: string }[] };
     const byId = Object.fromEntries(unions.map((u) => [u.id, u.status]));
     expect(byId[activeUnion.id]).toBe("active");
     expect(byId[pendingUnion.id]).toBe("pending");
     expect(byId[declinedUnion.id]).toBeUndefined();
+
+    // Security fix, 2026-08-26: an unauthenticated caller (or one not authorized on this
+    // community) must not see pending status — only active memberships are public. Previously
+    // this route included pending status unconditionally, for anyone.
+    const anonRes = await app.request(`/api/communities/${founderCommunity}/unions`);
+    const { unions: anonUnions } = (await anonRes.json()) as { unions: { id: string; status: string }[] };
+    const anonById = Object.fromEntries(anonUnions.map((u) => [u.id, u.status]));
+    expect(anonById[activeUnion.id]).toBe("active");
+    expect(anonById[pendingUnion.id]).toBeUndefined();
+    expect(anonById[declinedUnion.id]).toBeUndefined();
+  });
+
+  it("does not include pending status for a caller not authorized on this community", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founder Co Two");
+
+    const pendingUnionCreator = await authCookieFor(privateKeyToAccount(`0x${"77".repeat(32)}`));
+    const pendingUnionFounder = await registerCommunity(pendingUnionCreator, [MANAGE_TIER], "Other Union Founder");
+    const pendingUnionRes = await createUnion(pendingUnionCreator, pendingUnionFounder, "Other Pending Union");
+    const { union: pendingUnion } = (await pendingUnionRes.json()) as { union: { id: string } };
+    await app.request(`/api/unions/${pendingUnion.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: pendingUnionCreator },
+      body: JSON.stringify({ communityId: founderCommunity, actingCommunityId: pendingUnionFounder }),
+    });
+
+    // A different, unrelated wallet's own community has no authority over founderCommunity.
+    const outsiderCookie = await authCookieFor(privateKeyToAccount(`0x${"88".repeat(32)}`));
+    await registerCommunity(outsiderCookie, [MANAGE_TIER], "Outsider Co");
+
+    const res = await app.request(`/api/communities/${founderCommunity}/unions`, {
+      headers: { Cookie: outsiderCookie },
+    });
+    const { unions } = (await res.json()) as { unions: { id: string; status: string }[] };
+    const byId = Object.fromEntries(unions.map((u) => [u.id, u.status]));
+    expect(byId[pendingUnion.id]).toBeUndefined();
   });
 });

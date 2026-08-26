@@ -4,8 +4,12 @@ import { Loader2 } from "lucide-react";
 import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
+import { useUnionMembershipActions } from "@/src/hooks/useUnionMembershipActions";
 
-function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; actingCommunityId: string }) {
+// Exported for reuse on the union's own detail page (community page redesign, /plan-eng-review
+// 2026-08-26, D6) — already fully standalone (unionId + actingCommunityId props), no changes
+// needed to make it shareable.
+export function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; actingCommunityId: string }) {
   const [isOpen, setIsOpen] = useState(false);
   const [targetId, setTargetId] = useState("");
   const [isInviting, setIsInviting] = useState(false);
@@ -84,10 +88,6 @@ function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; ac
  * settings page. */
 export function UnionMembershipSection({ communityId }: { communityId: string }) {
   const queryClient = useQueryClient();
-  const [respondingUnionId, setRespondingUnionId] = useState<string | null>(null);
-  const [leavingUnionId, setLeavingUnionId] = useState<string | null>(null);
-  const [errorByUnionId, setErrorByUnionId] = useState<Record<string, string>>({});
-  const { signOut } = useSiwe();
 
   // Shared query key with the community detail page's UnionsSection — same cache entry, no
   // duplicate network request when both are mounted.
@@ -96,47 +96,9 @@ export function UnionMembershipSection({ communityId }: { communityId: string })
     queryFn: () => communityApi.listUnionsForCommunity(communityId),
   });
 
-  async function respond(unionId: string, accept: boolean) {
-    setErrorByUnionId((prev) => ({ ...prev, [unionId]: "" }));
-    setRespondingUnionId(unionId);
-    try {
-      await withAuthDetect(() => communityApi.respondToUnionInvite(unionId, { communityId, accept }), signOut);
-      void queryClient.invalidateQueries({ queryKey: ["communityUnions", communityId] });
-    } catch (err) {
-      const message =
-        err instanceof communityApi.OwnershipError || err instanceof communityApi.AuthError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Failed to respond";
-      setErrorByUnionId((prev) => ({ ...prev, [unionId]: message }));
-    } finally {
-      setRespondingUnionId(null);
-    }
-  }
-
-  // No confirm modal — matches Decline's existing pattern (fire immediately, surface any error
-  // inline). Reversible: a re-invite after leaving resets straight back to pending.
-  async function leave(unionId: string) {
-    setErrorByUnionId((prev) => ({ ...prev, [unionId]: "" }));
-    setLeavingUnionId(unionId);
-    try {
-      await withAuthDetect(() => communityApi.leaveUnion(unionId, { communityId }), signOut);
-      void queryClient.invalidateQueries({ queryKey: ["communityUnions", communityId] });
-    } catch (err) {
-      const message =
-        err instanceof communityApi.OwnershipError ||
-        err instanceof communityApi.AuthError ||
-        err instanceof communityApi.ConflictError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Failed to leave union";
-      setErrorByUnionId((prev) => ({ ...prev, [unionId]: message }));
-    } finally {
-      setLeavingUnionId(null);
-    }
-  }
+  const { respond, leave, isResponding, isLeaving, errorFor } = useUnionMembershipActions(() =>
+    queryClient.invalidateQueries({ queryKey: ["communityUnions", communityId] }),
+  );
 
   if (isLoading || !unions?.length) return null;
 
@@ -159,17 +121,17 @@ export function UnionMembershipSection({ communityId }: { communityId: string })
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => void respond(union.id, true)}
-                    disabled={respondingUnionId === union.id}
+                    onClick={() => void respond(union.id, communityId, true)}
+                    disabled={isResponding(union.id, communityId)}
                     className="min-h-[44px] px-3 rounded-[6px] bg-accent text-white text-xs font-medium hover:bg-accent-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
-                    {respondingUnionId === union.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {isResponding(union.id, communityId) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                     Accept
                   </button>
                   <button
                     type="button"
-                    onClick={() => void respond(union.id, false)}
-                    disabled={respondingUnionId === union.id}
+                    onClick={() => void respond(union.id, communityId, false)}
+                    disabled={isResponding(union.id, communityId)}
                     className="min-h-[44px] px-3 rounded-[6px] border border-gray-600 text-gray-300 text-xs font-medium hover:bg-gray-800 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     Decline
@@ -180,17 +142,19 @@ export function UnionMembershipSection({ communityId }: { communityId: string })
                   <InviteToUnionForm unionId={union.id} actingCommunityId={communityId} />
                   <button
                     type="button"
-                    onClick={() => void leave(union.id)}
-                    disabled={leavingUnionId === union.id}
+                    onClick={() => void leave(union.id, communityId)}
+                    disabled={isLeaving(union.id, communityId)}
                     className="min-h-[44px] px-2 text-xs font-medium text-red-400 hover:text-red-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
-                    {leavingUnionId === union.id && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    {leavingUnionId === union.id ? "Leaving…" : "Leave union"}
+                    {isLeaving(union.id, communityId) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                    {isLeaving(union.id, communityId) ? "Leaving…" : "Leave union"}
                   </button>
                 </div>
               )}
             </div>
-            {errorByUnionId[union.id] && <p className="text-xs text-red-400 mt-1">{errorByUnionId[union.id]}</p>}
+            {errorFor(union.id, communityId) && (
+              <p className="text-xs text-red-400 mt-1">{errorFor(union.id, communityId)}</p>
+            )}
           </div>
         ))}
       </div>
