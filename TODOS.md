@@ -230,27 +230,17 @@
 
 ## ZuGov / Union communities follow-ups (from 2026-08-18 eng review)
 
-### Events (one-time/recurring) as a first-class concept — backend implementation
+### ~~Events (one-time/recurring) as a first-class concept — backend implementation~~ — RESOLVED (2026-08-25, Child I of formalize-communities epic)
 
-**What:** Full schema + API locked by the 2026-08-19 `/plan-eng-review` (18 decisions, including an outside-voice pass): `events`, `venues`, `eventRsvps` tables anchored to `communities.id`, a new `canCreateEvents` tier permission, RSVP-only in v1 (check-in deferred to the Contribution layer TODO below), recurring events as independent rows sharing an optional `seriesId` (no RRULE engine), venue as its own reusable entity gated on `canManageMembership`, event edit/cancel as creator-OR-`canManageMembership` (not creator-only — the outside voice caught that the original creator-only design broke ENGINEERING.md's own "authorization is one reusable pattern" rule), a transactional `duplicate()` endpoint (capped at 52) plus a series-scoped bulk-cancel endpoint, and a paginated list endpoint matching `communities.ts`'s existing convention.
+**Resolution:** Shipped exactly as designed by the 2026-08-19 `/plan-eng-review`: `events`, `venues`, `eventRsvps` tables anchored to `communities.id`, `canCreateEvents` tier permission, RSVP-only, recurring events as independent rows sharing `seriesId`, venue as its own `canManageMembership`-gated entity, creator-OR-`canManageMembership` edit/cancel, transactional `duplicate()` (capped at 52), series-scoped bulk-cancel, and a paginated list endpoint. All confirmed live and covered by `tests/events.test.ts` (62 cases as of the 2026-08-26 events-expansion work). Never struck through when it originally shipped — caught while checking TODOS.md for events-related items during that later work.
 
-**Why:** No longer "unscoped" — this review fully designed it, including a cross-model outside-voice pass that caught 9 real gaps the interactive review alone missed (admin override, venue-creation permission, read-visibility, series lifecycle, batch-size cap, pagination, others noted in the review's findings).
+**Depends on:** None
 
-**Context:** Backend-only. The outside voice flagged that Events is P3 while two P1/P2 items (wallet funding, MerkleProof factory deploy) directly block the live Sept 9 pilot, and this ships zero resident-facing value without a frontend pass — founder's explicit call was to proceed anyway as deliberate backend groundwork, with frontend tracked as its own separate TODO (below) rather than silently deferred.
+### ~~Events frontend (calendar/list/create UI)~~ — RESOLVED (2026-08-25, Child I of formalize-communities epic)
 
-**Effort:** L (3 new tables, ~11 routes, full test coverage per the review's test plan at `~/.gstack/projects/znurznurznur-maci/isasertkaya-main-eng-review-test-plan-20260819-081939.md`)
-**Priority:** P3
-**Depends on:** None — hard constraint (anchor to `communities.id`, never `maciGovernanceConfigs`) already satisfied by the identity/governance split, which has landed.
+**Resolution:** Shipped as designed by the 2026-08-19 `/plan-design-review`: `EventsSection.tsx` (date-grouped list, monochrome kind icon+label, no filters in v1), `CreateEventModal.tsx` (create/edit, inline cancel confirm, Escape-key close + `role="dialog"`), `eventApi.ts`, wired into the community detail page. Never struck through when it originally shipped — caught while checking TODOS.md for events-related items during the 2026-08-26 events-expansion work.
 
-### Events frontend (calendar/list/create UI)
-
-**What:** List view (grouped by date, not a calendar grid — see the follow-up item below), create/edit-event modal, RSVP toggle, venue picker — the UI layer for the Events backend above. Locked via a 2026-08-19 `/plan-design-review`: kind shows as a monochrome icon+label (not a colored badge — DESIGN.md's single-accent rule), no kind/date filters in v1 (deferred, small event counts don't need them yet), Edit reuses the create modal in a pre-filled/PATCH mode, Cancel/cancel-series use an inline "Are you sure? confirm" affordance rather than `window.confirm()` (matching this session's earlier wallet-sign-out fix), and the new modal gets Escape-key close + `role="dialog"`/`aria-modal` (no existing modal in this app has either — see the a11y follow-up item below).
-
-**Why:** The backend ships with zero resident-facing value until this lands — flagged by the outside-voice pass during the 2026-08-19 eng review as a real sequencing gap, tracked explicitly rather than left implicit.
-
-**Effort:** M (eventApi.ts, EventsSection.tsx, CreateEventModal.tsx, wired into the community detail page)
-**Priority:** P2 (higher than the backend's own P3 once the backend actually ships — dead API surface with no UI is worse than no API at all)
-**Depends on:** Events backend (above) landing first
+**Depends on:** None
 
 ### Events calendar grid view
 
@@ -262,15 +252,21 @@
 **Priority:** P3
 **Depends on:** Events frontend (above) landing first
 
-### `/unions/page.tsx` silently shows the empty state on a fetch failure
+### ~~`/unions/page.tsx` silently shows the empty state on a fetch failure~~ — RESOLVED (2026-08-27)
 
-**What:** Add a distinct `isError` branch to `/unions/page.tsx`'s query (Retry button, "Couldn't load unions right now." copy) instead of letting a failed fetch fall through to the same "No unions yet." copy the empty-state uses today.
+**Resolution:** Added a distinct `isError` branch ("Couldn't load unions right now." + Retry button), same shape as the fix that landed on the new `/events` page. Covered by a new test in `app/unions/page.test.tsx` ("shows a distinct error state (not the empty state) on fetch failure, with a working Retry").
 
-**Why:** Caught during the 2026-08-26 Events-expansion `/plan-design-review` (Pass 2, Interaction States) while building the new global `/events` page's error handling — `/unions/page.tsx` was the direct precedent for that page's card-grid + pagination layout, and it has the same gap: `data` stays `undefined` on a failed request, so a broken request and "genuinely zero unions" render identically. A Nielsen error-visibility violation, not cosmetic. The new `/events` page gets a real error state as new code; this item is the retrofit for the page it copied the pattern from.
-
-**Effort:** S (one more `isError` branch, same shape as `isLoading`, mirrors the fix already landing on `/events`)
-**Priority:** P3
 **Depends on:** None
+
+### Events creation-flow polish (Approach B: kind taxonomy, recurring UI, real date-range picker, nested schedule view)
+
+**What:** The richer creation-flow additions named as Approach B in the 2026-08-26 events-expansion design doc, deliberately deferred out of Approach A (side-events + global feed, shipped 2026-08-27): expand the `kind` enum to match Sola.day's taxonomy (talk/panel/workshop/activity/seminar/conference/meetup/networking/training/exhibition/hackathon/demo_day/social/open_mic/wellness/other, vs. today's 5 values), a "Repeat" option at creation time (wraps the existing `duplicate()` endpoint in real creation-flow UI instead of the current post-hoc `DuplicateForm` on an already-created event), an "All day" toggle + real multi-day date-range picker (today's create modal only has two raw `datetime-local` inputs), and a nested-schedule-by-day view on a parent event's page (today's side-events render as a flat indented list under the parent, not grouped by day).
+
+**Why:** Named explicitly in both the design doc ("Approach A now, Approach B's additions as an explicit named follow-up") and the eng review's "NOT in scope" section, but never actually written into `TODOS.md` as its own trackable item — it only existed as prose inside two planning docs, invisible to anyone scanning this file for open events work. Caught while auditing events-related TODOS.md entries after Approach A shipped.
+
+**Effort:** L (kind-enum migration touches the DB column + every kind-rendering call site; the date-range picker and nested-schedule view are both new, no existing precedent in this app)
+**Priority:** P3
+**Depends on:** Approach A (side-events + global feed) — shipped 2026-08-27
 
 ### Modal accessibility retrofit (Escape-key close + role="dialog")
 
