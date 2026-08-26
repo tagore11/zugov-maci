@@ -948,3 +948,296 @@ UI for category management" TODO above).
 **Effort:** S (one migration adding `index("communities_category_idx").on(table.category)`)
 **Priority:** P3
 **Depends on:** None
+
+## ZuGov / Formalize communities follow-ups (from 2026-08-25 `/plan-eng-review`, Child F)
+
+### Leave for governed communities (on-chain MACI or off-chain zupoll)
+
+**What:** Child F's Leave action (delete your own `memberships` row) is scoped to fully ungoverned
+communities only. Members of a governed community — MACI on-chain, or zupoll off-chain — have no
+way to leave.
+
+**Why:** MACI's case is blocked on the existing P1 member-count-divergence bug (TODOS.md, "Member
+count consistency" section above) — MACI's on-chain signup is permanent, and allowing Leave to
+delete the backend `memberships` row while the on-chain `totalSignups` count stays unchanged would
+widen a divergence that's already tracked as a live, visible bug. Zupoll's case is narrower (no
+on-chain permanence issue) but still needs its own decision: leaving would orphan the member's
+`zupollIdentityCommitments` row (no cascade — `memberships` has no FKs pointing at it, verified
+during Child F's `/plan-eng-review` outside-voice pass) and raises a question this session
+deliberately didn't answer — what happens to a proposal's already-cast-but-unrevealed zupoll vote
+if the voter leaves mid-poll?
+
+**Effort:** M (MACI case: depends on the member-count-divergence fix direction being chosen first;
+zupoll case: S once the identity-commitment/vote-handling question is answered)
+**Priority:** P2
+**Depends on:** Member-count-divergence fix direction (MACI case); a design decision on
+`zupollIdentityCommitments` cleanup and in-flight vote handling (zupoll case)
+
+## ZuGov / Formalize communities follow-ups (from 2026-08-25 `/plan-eng-review`, Child H)
+
+### Zupoll proposals and the generic proposal list disagree on visibility policy
+
+**What:** `zupollService.listProposals()` is deliberately public (FR-012: "Zupoll proposals'
+existence/question/options are visible to everyone, including non-members") with its own comment
+explicitly contrasting itself against `proposalService.listForViewer`, which is session-gated and
+tier-filtered. But Zupoll-created rows live in the SAME `proposals` table (via
+`createZupollProposal`) and `listForViewer`'s query has no filter on `decisionAdapterType` — a
+Zupoll proposal is pulled into `listForViewer`'s results too and subjected to `canView`'s
+creator/tier gating, contradicting its own "public to everyone" design intent. Two live,
+differently-gated "list this community's proposals" code paths can disagree about whether the
+same row is visible, depending purely on which endpoint the caller hits.
+
+**Why:** Found during Child H's `/plan-eng-review` outside-voice pass while verifying
+`listForViewer`'s current gating. Pre-existing (true before Child H, which doesn't touch
+`zupollService.ts` at all) — not introduced or worsened by Child H specifically, but real and
+worth fixing on its own.
+
+**Effort:** S–M (either filter `listForViewer`'s query to exclude zupoll-type proposals, since
+they have their own dedicated public listing endpoint, or make `canView` aware of
+`decisionAdapterType` and skip tier-gating for zupoll rows)
+**Priority:** P3
+**Depends on:** None
+
+## ZuGov / Formalize communities follow-ups (from 2026-08-26 `/ship` coverage audit, Child J)
+
+### DiscussionRow's delete action has no test for its non-401 error display or 401 sign-out branch
+
+**What:** `DiscussionsSection.tsx`'s `DiscussionRow` wraps its delete call in the same
+`withAuthDetect(...).catch` pattern `JoinSection.tsx` already has full test coverage for (error
+display on a generic failure, `signOut()` called on a 401), but `DiscussionsSection.test.tsx`
+only tests the success path. The identical pattern is proven correct elsewhere in the codebase,
+so this is a coverage gap, not a suspected bug.
+
+**Why:** Flagged by the coverage audit during `/ship` for the formalize-communities epic. Deferred
+rather than fixed inline to avoid further expanding an already-large ship diff.
+
+**Effort:** S (mirror `JoinSection.test.tsx`'s two equivalent tests)
+**Priority:** P3
+**Depends on:** None
+
+### AwaitingActions.test.tsx's list() mock doesn't assert call arguments
+
+**What:** Child E's `AwaitingActions.tsx` fix changed which positional argument carries the
+authorized-wallet filter (`communityApi.list(..., address)`), but the existing test file's
+`listMock` doesn't assert what arguments `list()` was actually called with — only that it
+resolves. A future regression reordering or dropping that argument would not be caught.
+
+**Why:** Flagged by the coverage audit during `/ship`. The underlying fix is correct and covered
+end-to-end elsewhere (`communities.test.ts`'s `authorizedFor` describe block exercises the real
+backend behavior), but this specific frontend call site's argument-passing isn't independently
+verified.
+
+**Effort:** S (add `expect(listMock).toHaveBeenCalledWith(...)` to the existing test)
+**Priority:** P3
+**Depends on:** None
+
+### Proposal "unrestricted" visibility silently regresses when a community gains a new voting tier
+
+**What:** `canView()`'s non-member branch treats a proposal as unrestricted only when its
+`eligibleTierIds` (a snapshot frozen at creation time) is a superset of the community's
+_currently_ voting-capable tiers (computed live). If an admin adds a new `canVote:true` tier
+after a proposal already exists, the live check gains an ID the frozen snapshot doesn't have —
+the superset check flips false, and a previously-public proposal silently becomes invisible to
+anonymous/non-member viewers and to holders of the new tier. Unlike `events`/`communityDiscussions`
+(this same epic gave both an explicit nullable `eligibleTierIds` column, where `NULL` means
+unrestricted and is immune to tier-set drift), proposals still _infer_ "unrestricted" heuristically.
+
+**Why:** Flagged by the `/ship` adversarial review. This bug predates this session (it already
+existed for signed-in non-members before Child H), but Child H's own `requireAuth` removal from
+the GET routes widened its reach from "signed-in non-members" to "fully anonymous traffic" —
+this is a fail-CLOSED bug (over-hides, doesn't leak anything), so not a security bypass, but a
+real, self-triggering visibility regression from an ordinary admin action.
+
+**Effort:** M–L (real architecture decision: likely means giving `proposals.eligibleTierIds` the
+same nullable/explicit-unrestricted treatment `events`/`communityDiscussions` already got, which
+touches every proposal-creation path currently populating it with `getVotingTierIds()` as an
+implicit default)
+**Priority:** P2 (elevated from a typical P3 given the now-anonymous-reachable blast radius)
+**Depends on:** None
+
+### deleteTier() doesn't check event/discussion eligibleTierIds references before allowing deletion
+
+**What:** `membershipService.ts`'s `deleteTier()` blocks deletion when a tier has members, is the
+default tier, or is targeted by an eligibility rule — but never checks the two new
+`events.eligibleTierIds`/`communityDiscussions.eligibleTierIds` JSON-string columns this same epic
+added. Deleting a tier currently used to restrict an event or discussion succeeds silently; that
+item's restriction becomes permanently unsatisfiable (no member can ever hold that tier ID again)
+— invisible to everyone except its creator/author and admins, forever, with no warning to the
+admin who deleted the tier.
+
+**Why:** Flagged by the `/ship` adversarial review. A real integrity gap introduced by this diff
+(the two referencing columns are brand new) — `deleteTier()` predates them and was never updated.
+Fail-CLOSED (narrows visibility further, doesn't expose anything), so not a security bypass.
+
+**Effort:** M (mirror the existing `eligibilityRules`-targeting check's shape: fetch the
+community's events/discussions, deserialize `eligibleTierIds` via the shared
+`membershipService.deserializeEligibleTierIds` helper, check `.includes(tierId)`, throw
+`TierInUseError` if any match — query the schema tables directly to avoid a circular import with
+`eventService.ts`/`discussionService.ts`)
+**Priority:** P2
+**Depends on:** None
+
+### No server-side validation that eligibleTierIds reference real tiers of the same community (events/discussions)
+
+**What:** Proposals validate `eligibleTierIds` against the community's real tiers at creation time
+(`validateTierAndAxis`, filtering `invalidTierIds`) — `eventService.create/update` and
+`discussionService.create/update` accept and store arbitrary tier-id strings unchecked.
+
+**Why:** Flagged by the `/ship` adversarial review. Low severity — a caller can only lock their
+own content out of view (self-inflicted), not gain access to anything — but it's an inconsistency
+with the validation pattern this same epic already established for proposals, and a stale client
+(tier deleted between fetch and submit) produces the same permanently-orphaned-restriction effect
+as the `deleteTier()` gap above.
+
+**Effort:** S (mirror `validateTierAndAxis`'s tier-existence check in both services)
+**Priority:** P3
+**Depends on:** None
+
+### Admin bypass missing from proposalService's canView() (present on events/discussions)
+
+**What:** `membershipService.canViewRestricted()` (events/discussions) explicitly grants a view
+bypass for `ctx.isAdmin` — documented as necessary because a community's on-chain-reconciled owner
+can hold real admin authority with no `memberships` row (the exact scenario this session's own
+`/ship` review fixed for `DiscussionsSection.tsx`). `proposalService.canView()` has no equivalent
+bypass: only proposal-creator-or-tier-membership. The same reconciled-owner actor the other two
+resources deliberately protect cannot view a tier-restricted proposal they didn't personally
+author.
+
+**Why:** Flagged by the `/ship` adversarial review. Under-permissions (fails closed), not a
+security bypass — a functional gap for an actor class this same epic carefully handled twice
+elsewhere, that looks like an oversight rather than an intentional asymmetry.
+
+**Effort:** S (add the same `isAuthorized()`-bypass branch `canViewRestricted` already has)
+**Priority:** P3
+**Depends on:** None
+
+### Leave-community button gates on the wrong signal for zupoll-only communities
+
+**What:** `JoinSection.tsx` only renders "Leave community" when `!contractAddress` (no MACI
+contract deployed). The backend's `leave()` guard actually checks `communityDecisionAdapters`
+attachment count, specifically because — per that code's own comment — zupoll attaches with zero
+dependency on `maciGovernanceConfigs`/`contractAddress`. Net effect: a community with zupoll
+attached but no MACI contract deployed still shows the Leave link, and clicking it always 409s
+with `CommunityHasGovernanceError` — a guaranteed-to-fail affordance for exactly the case the
+backend comment calls out as the reason the two checks diverge.
+
+**Why:** Flagged by the `/ship` adversarial review. UX bug, not a security issue — the backend
+correctly blocks the leave regardless, this only affects whether the button should have been
+shown at all.
+
+**Effort:** S (gate `JoinSection.tsx`'s Leave visibility on the same "any decision adapter
+attached" signal the backend uses, e.g. via a lightweight community-governance-status prop/query,
+instead of `contractAddress` alone)
+**Priority:** P3
+**Depends on:** None
+
+### proposalService.listForViewer() has an unhoisted N+1 pattern in canView()
+
+**What:** `listForViewer()` loops over every proposal row and calls `canView()` per row, which
+(for a non-member/anonymous caller) re-runs `getVotingTierIds(communityId)` — a query whose result
+is identical across every iteration for a fixed `communityId`. `eventService.list()` and
+`discussionService.listForViewer()` both hoist this exact kind of loop-invariant lookup via
+`resolveViewerContext()` (once per list() call, not once per row); `proposalService.ts`'s older
+`canView()` predates that pattern and was never retrofitted.
+
+**Why:** Flagged by the `/ship` review army's performance specialist. Pre-existing shape from
+Child H (not newly introduced or worsened by Child I/J's work), but real debt now that the
+pattern for fixing it exists twice elsewhere in the same codebase.
+
+**Effort:** S–M (hoist `getVotingTierIds`/`getMemberTier` once before the loop, mirroring
+`resolveViewerContext`'s shape; also replace the per-row `getSponsorCount()` query with one
+grouped query)
+**Priority:** P3
+**Depends on:** None
+
+### routes/discussions.ts's GET routes double-query membership status
+
+**What:** `GET /:id/discussions` and `GET /:id/discussions/:discussionId` each call
+`discussionService.isMemberOrAdmin()` (2 queries: `getMemberTier` + `isAuthorized`) immediately
+before the service's own `resolveViewerContext()` runs the same 2 queries again — 4 round trips
+doing overlapping work where 2 would do.
+
+**Why:** Flagged by the `/ship` review army's performance specialist. Correctness is fine (D5's
+gate and D1/D2's visibility filtering are both independently correct), this is a pure efficiency
+cleanup.
+
+**Effort:** S (resolve `resolveViewerContext()` once at the route layer, derive both the
+access-gate boolean and pass the resolved context into the service functions instead of two
+independent resolution paths)
+**Priority:** P4
+**Depends on:** None
+
+### `ilike()` on creatorAddress/authorizedFor filters accepts unescaped wildcard characters
+
+**What:** `communityService.ts`'s `list()` (creatorAddress, authorizedFor filters) passes raw
+user-supplied wallet-address strings directly into drizzle's `ilike()` with no `%`/`_` escaping —
+a crafted query param like `authorizedFor=%` would broaden the match beyond an exact address.
+
+**Why:** Flagged by the `/ship` review army's security specialist. Confirmed low real-world impact
+(community list data is already fully public via the unfiltered endpoint, and every actual
+authorization decision — settings edits, child-community creation — re-verifies server-side
+against the real session address independent of this filter) — this is a filter-correctness gap,
+not a privilege escalation. Deferred rather than fixed inline given confirmed low severity.
+
+**Effort:** S (validate the param matches a `0x`-prefixed hex address shape before passing to
+`ilike()`, or escape `%`/`_` before interpolating)
+**Priority:** P3
+**Depends on:** None
+
+### Tier-restriction toggle state/logic duplicated between CreateEventModal.tsx and CreateDiscussionModal.tsx
+
+**What:** Only the presentational JSX was extracted into `TierRestrictionPicker.tsx` (Child J);
+the surrounding state (`isRestricted`, `selectedTierIds`, `toggleTier`, the reset/prefill
+`useEffect`, `hasValidTierSelection`) is still hand-duplicated in both modals.
+
+**Why:** Flagged by the `/ship` review army's maintainability specialist. A real DRY gap, but
+extracting the state logic into a shared hook (e.g. `useTierRestriction(initialEligibleTierIds)`)
+is a larger, more judgment-heavy refactor than the mechanical JSX extraction already done —
+deferred to avoid expanding this ship's diff further.
+
+**Effort:** M (design and extract a shared hook, migrate both call sites, re-verify both test
+files still pass unchanged)
+**Priority:** P4
+**Depends on:** None
+
+### eligibleTierIdsSchema is copy-pasted between routes/events.ts and routes/discussions.ts
+
+**What:** The exact same `z.array(z.string()).min(1).nullable().optional()` Zod schema (with the
+same explanatory comment) appears verbatim in both route files.
+
+**Why:** Flagged by the `/ship` review army's maintainability specialist. Small, low-risk
+extraction candidate (e.g. into a shared `validators/tierRestriction.ts`) — deferred only because
+this ship's diff is already large.
+
+**Effort:** XS (move to a shared file, both routers import it)
+**Priority:** P4
+**Depends on:** None
+
+### DELETE /discussions/:id returns {success: true}, inconsistent with the rest of the API's {ok: true} convention
+
+**What:** Every other no-payload mutation response in this codebase (`auth.ts`, `membership.ts`'s
+Leave, `venues.ts`) returns `{ok: true}`; the new discussions DELETE route returns
+`{success: true}` instead.
+
+**Why:** Flagged by the `/ship` review army's api-contract specialist. Not breaking today
+(`discussionApi.ts`'s `deleteDiscussion()` was written to match `{success: true}`), but a
+footgun for whichever file the next endpoint's author copies from.
+
+**Effort:** XS (change the route's response body to `{ok: true}`; `deleteDiscussion()` in
+`discussionApi.ts` doesn't inspect the body at all, so no frontend change needed)
+**Priority:** P4
+**Depends on:** None
+
+### manage-communities/page.tsx has no test file at all
+
+**What:** Child E's `authorizedFor` fix touches `manage-communities/page.tsx` (passing `address`
+as the 5th argument to `communityApi.list()`), but this file has zero test coverage of any kind —
+not just for this specific fix, pre-existing.
+
+**Why:** Flagged by the coverage audit during `/ship`. Out of scope to backfill a full test file
+for a page this epic only touched with a one-line argument fix; tracked separately so it doesn't
+get lost.
+
+**Effort:** M (new test file, needs its own wagmi/router mocking scaffolding like `page.test.tsx`)
+**Priority:** P3
+**Depends on:** None
