@@ -112,17 +112,23 @@ proposalsRouter.post("/:id/proposals/direct/confirm", requireAuth, async (c) => 
   }
 });
 
-proposalsRouter.get("/:id/proposals", requireAuth, async (c) => {
+// formalize-communities epic, Child H (/plan-eng-review 2026-08-25, D1) — requireAuth dropped: a
+// signed-in (SIWE-authenticated) non-member can now read the unrestricted subset (canView's
+// non-member branch, proposalService.ts). A fully anonymous caller (no session at all) still
+// isn't newly exposed at the frontend — ProposalsList.tsx's own `enabled: connected` gate is
+// unchanged — but at the API layer this route is now reachable with no session, matching every
+// other resource in this app (public-ish reads, auth-gated writes).
+proposalsRouter.get("/:id/proposals", async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
-  const proposalsList = await proposalService.listForViewer(communityId, session.address!);
+  const proposalsList = await proposalService.listForViewer(communityId, session.address);
   return c.json({ proposals: proposalsList });
 });
 
-proposalsRouter.get("/:id/proposals/:actionId", requireAuth, async (c) => {
+proposalsRouter.get("/:id/proposals/:actionId", async (c) => {
   const communityId = c.req.param("id");
   const session = await getSession(c);
-  const result = await proposalService.getForViewer(communityId, c.req.param("actionId"), session.address!);
+  const result = await proposalService.getForViewer(communityId, c.req.param("actionId"), session.address);
   if (!result) return c.json({ error: "Not found" }, 404);
   return c.json(result);
 });

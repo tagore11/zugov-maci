@@ -19,6 +19,10 @@ const maxEventTimestamp = () => Math.floor(Date.now() / 1000) + MAX_EVENT_YEARS_
 // constraint. endAt must be after startAt (2026-08-19 review, T1 validation-edges finding).
 // startAt must be in the future (specs/010 US3, FR-009) — a past start date is confusing to
 // attendees and signals a broken product.
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — omit/undefined/null all
+// mean "unrestricted"; a non-empty array restricts to those tiers.
+const eligibleTierIdsSchema = z.array(z.string()).min(1).nullable().optional();
+
 const createEventSchema = z
   .object({
     title: z.string().min(1).max(120),
@@ -28,6 +32,7 @@ const createEventSchema = z
     startAt: z.number().int(),
     endAt: z.number().int(),
     kind: EVENT_KIND.optional(),
+    eligibleTierIds: eligibleTierIdsSchema,
   })
   .refine((data) => !!data.venueId !== !!data.locationText, {
     message: "Provide exactly one of venueId or locationText",
@@ -48,6 +53,7 @@ const updateEventSchema = z
     startAt: z.number().int().optional(),
     endAt: z.number().int().optional(),
     kind: EVENT_KIND.optional(),
+    eligibleTierIds: eligibleTierIdsSchema,
   })
   .refine((data) => !(data.venueId && data.locationText), {
     message: "Cannot set both venueId and locationText",
@@ -115,19 +121,30 @@ eventsRouter.get("/:id/events", async (c) => {
   const kindParam = c.req.query("kind");
   const kind = EVENT_KIND.safeParse(kindParam).success ? (kindParam as z.infer<typeof EVENT_KIND>) : undefined;
 
-  const result = await eventService.list(communityId, page, limit, {
-    startAt: startAtStr !== undefined ? Number(startAtStr) : undefined,
-    endAt: endAtStr !== undefined ? Number(endAtStr) : undefined,
-    kind,
-  });
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — this route stays
+  // unauthenticated (unchanged from before this child); session.address is optional viewer
+  // identity for tier-gated visibility, not an auth requirement.
+  const session = await getSession(c);
+  const result = await eventService.list(
+    communityId,
+    page,
+    limit,
+    {
+      startAt: startAtStr !== undefined ? Number(startAtStr) : undefined,
+      endAt: endAtStr !== undefined ? Number(endAtStr) : undefined,
+      kind,
+    },
+    session.address,
+  );
   return c.json(result);
 });
 
 eventsRouter.get("/:id/events/:eventId", async (c) => {
   const communityId = c.req.param("id");
   const eventId = c.req.param("eventId");
-  const event = await eventService.get(eventId);
-  if (!event || event.communityId !== communityId) {
+  const session = await getSession(c);
+  const event = await eventService.getForViewer(eventId, communityId, session.address);
+  if (!event) {
     return c.json({ error: "Event not found" }, 404);
   }
   return c.json({ event });

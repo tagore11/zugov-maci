@@ -40,12 +40,18 @@ communitiesRouter.get("/", async (c) => {
   const chainIdStr = c.req.query("chainId");
   const creatorAddress = c.req.query("creatorAddress");
   const search = c.req.query("search");
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on"
+  // (creator OR canManageMembership tier holder), distinct from creatorAddress's "created by"
+  // filter. Public route (no requireAuth), same as creatorAddress — the caller supplies whichever
+  // wallet they want the authorized-communities view for, matching this route's existing
+  // unauthenticated-filter convention.
+  const authorizedFor = c.req.query("authorizedFor");
 
   const page = Math.max(1, Number(pageStr));
   const limit = Math.min(50, Math.max(1, Number(limitStr)));
   const chainId = chainIdStr !== undefined ? Number(chainIdStr) : undefined;
 
-  const result = await communityService.list(page, limit, chainId, creatorAddress, search);
+  const result = await communityService.list(page, limit, chainId, creatorAddress, search, authorizedFor);
   return c.json(result);
 });
 
@@ -147,6 +153,9 @@ communitiesRouter.post("/", requireAuth, async (c) => {
       err instanceof communityService.CategoryNotFoundError
     ) {
       return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof communityService.ParentNotAuthorizedError) {
+      return c.json({ error: err.message }, 403);
     }
     if (err instanceof communityService.ContractAddressInUseError) {
       return c.json({ error: err.message }, 409);

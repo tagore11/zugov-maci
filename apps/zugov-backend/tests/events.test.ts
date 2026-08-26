@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
-import { clearCommunities } from "./helpers/testDb.js";
+import { clearCommunities, testDb } from "./helpers/testDb.js";
+import * as schema from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -17,6 +18,7 @@ const { app } = await import("../src/app.js");
 const CREATOR = privateKeyToAccount(`0x${"11".repeat(32)}`);
 const MEMBER = privateKeyToAccount(`0x${"22".repeat(32)}`);
 const OUTSIDER = privateKeyToAccount(`0x${"33".repeat(32)}`);
+const ADMIN = privateKeyToAccount(`0x${"66".repeat(32)}`);
 
 const MANAGE_TIER = {
   label: "Admin",
@@ -394,6 +396,64 @@ describe("PATCH /api/communities/:id/events/:eventId", () => {
     });
     expect(res.status).toBe(409);
   });
+
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — coverage gap closed
+  // during /ship's coverage audit: PATCH can restrict or unrestrict eligibleTierIds, not just
+  // covered indirectly through create().
+  it("can restrict an unrestricted event's eligibleTierIds via PATCH", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const { event } = await createEvent(cookie, communityId);
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ eligibleTierIds: [adminTierId] }),
+    });
+    expect(res.status).toBe(200);
+    const { event: updated } = (await res.json()) as { event: { eligibleTierIds: string[] | null } };
+    expect(updated.eligibleTierIds).toEqual([adminTierId]);
+  });
+
+  it('can unrestrict a restricted event\'s eligibleTierIds via PATCH (explicit null, not the string "null")', async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+    const { event } = await createEvent(cookie, communityId, { eligibleTierIds: [adminTierId] });
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ eligibleTierIds: null }),
+    });
+    expect(res.status).toBe(200);
+    const { event: updated } = (await res.json()) as { event: { eligibleTierIds: string[] | null } };
+    expect(updated.eligibleTierIds).toBeNull();
+
+    // Prove it's a real, unrestricted-to-everyone visibility change, not just a stored field —
+    // an anonymous caller must now see it in the list.
+    const listRes = await app.request(`/api/communities/${communityId}/events`);
+    const { events } = (await listRes.json()) as { events: { id: string }[] };
+    expect(events.map((e) => e.id)).toContain(event!.id);
+  });
+
+  it("returns 422 when eligibleTierIds is an empty array (min(1) — an empty restriction is nonsensical)", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event } = await createEvent(cookie, communityId);
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ eligibleTierIds: [] }),
+    });
+    expect(res.status).toBe(422);
+  });
 });
 
 describe("DELETE /api/communities/:id/events/:eventId (cancel)", () => {
@@ -448,6 +508,29 @@ describe("POST /api/communities/:id/events/:eventId/duplicate", () => {
     const { events: all } = (await listRes.json()) as { events: { seriesId: string | null }[] };
     // 1 original + 13 duplicates = 14 events in the series.
     expect(all.filter((e) => e.seriesId === created[0]!.seriesId).length).toBe(14);
+  });
+
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, outside-voice finding) —
+  // coverage gap closed during /ship's coverage audit: duplicate() copying source.eligibleTierIds
+  // was a specifically-called-out fix with zero prior test asserting it.
+  it("carries eligibleTierIds to every duplicated occurrence", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+    const { event } = await createEvent(cookie, communityId, { eligibleTierIds: [adminTierId] });
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ count: 3, intervalDays: 1 }),
+    });
+    expect(res.status).toBe(201);
+    const { events: created } = (await res.json()) as { events: { eligibleTierIds: string[] | null }[] };
+    for (const duplicate of created) {
+      expect(duplicate.eligibleTierIds).toEqual([adminTierId]);
+    }
   });
 
   it("returns 422 for a count above the cap", async () => {
@@ -603,5 +686,190 @@ describe("RSVP (POST/DELETE/GET /api/communities/:id/events/:eventId/rsvp)", () 
 
     const res = await app.request(`/api/communities/${communityId}/events/${event!.id}/rsvp`);
     expect(res.status).toBe(200);
+  });
+});
+
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25) — mirrors proposals.test.ts's
+// "GET /api/communities/:id/proposals — visibility (Child H)" describe block, but events' canView
+// also bypasses for admins (D2), which proposals' doesn't — tested separately below.
+describe("GET /api/communities/:id/events — visibility (Child I)", () => {
+  const CREATOR_TIER = {
+    label: "Creator",
+    canCreateProposals: true,
+    canVote: true,
+    canCreateEvents: true,
+    canManageMembership: false,
+  };
+  const ADMIN_TIER = {
+    label: "Admin",
+    canCreateProposals: true,
+    canVote: true,
+    canCreateEvents: true,
+    canManageMembership: true,
+  };
+  const MEMBER_TIER = {
+    label: "Member",
+    canCreateProposals: false,
+    canVote: true,
+    canCreateEvents: true,
+    canManageMembership: false,
+  };
+
+  async function registerCommunityWithTiers(
+    cookie: string,
+  ): Promise<{ communityId: string; tierIds: Record<string, string> }> {
+    const communityId = await registerCommunity(cookie, [CREATOR_TIER, ADMIN_TIER, MEMBER_TIER], "Creator");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    return { communityId, tierIds: Object.fromEntries(tiers.map((t) => [t.label, t.id])) };
+  }
+
+  async function setupEvents(creatorCookie: string) {
+    const { communityId, tierIds } = await registerCommunityWithTiers(creatorCookie);
+    const { event: unrestricted } = await createEvent(creatorCookie, communityId, { title: "Unrestricted event" });
+    const { event: restricted } = await createEvent(creatorCookie, communityId, {
+      title: "Restricted event",
+      eligibleTierIds: [tierIds["Member"]],
+    });
+    return { communityId, tierIds, unrestrictedId: unrestricted!.id, restrictedId: restricted!.id };
+  }
+
+  it("an anonymous caller (no session at all) sees only unrestricted events", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+
+    const res = await app.request(`/api/communities/${communityId}/events`);
+    expect(res.status).toBe(200);
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).not.toContain(restrictedId);
+  });
+
+  it("a signed-in non-member sees the same unrestricted-only set", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, { headers: { Cookie: outsiderCookie } });
+    expect(res.status).toBe(200);
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).not.toContain(restrictedId);
+  });
+
+  it("a member whose tier is eligible sees the restricted event too", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+    const memberCookie = await authCookieFor(MEMBER);
+    // Enroll on the "Member" tier directly — the public /join flow always lands new members on
+    // the community's default tier ("Creator" here), so there's no API surface to pick "Member"
+    // specifically (same pattern proposals.test.ts's Child H describe block uses).
+    await testDb.insert(schema.memberships).values({
+      walletAddress: MEMBER.address,
+      communityId,
+      tierId: tierIds["Member"]!,
+      joinedAt: Math.floor(Date.now() / 1000),
+    });
+
+    const res = await app.request(`/api/communities/${communityId}/events`, { headers: { Cookie: memberCookie } });
+    expect(res.status).toBe(200);
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).toContain(restrictedId);
+  });
+
+  it("a member whose tier is NOT eligible is excluded from the restricted event", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    await app.request(`/api/communities/${communityId}/join`, { method: "POST", headers: { Cookie: outsiderCookie } });
+
+    // /join lands OUTSIDER on the default "Creator" tier, which is not in the restricted event's
+    // eligibleTierIds (["Member"]) — so this member should NOT see it.
+    const res = await app.request(`/api/communities/${communityId}/events`, { headers: { Cookie: outsiderCookie } });
+    expect(res.status).toBe(200);
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).not.toContain(restrictedId);
+  });
+
+  it("the creator always sees both, including an event restricted away from their own tier", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, { headers: { Cookie: creatorCookie } });
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).toContain(restrictedId);
+  });
+
+  it("a community admin (canManageMembership, not the creator) sees both too (D2)", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds, unrestrictedId, restrictedId } = await setupEvents(creatorCookie);
+    const adminCookie = await authCookieFor(ADMIN);
+    await testDb.insert(schema.memberships).values({
+      walletAddress: ADMIN.address,
+      communityId,
+      tierId: tierIds["Admin"]!,
+      joinedAt: Math.floor(Date.now() / 1000),
+    });
+
+    const res = await app.request(`/api/communities/${communityId}/events`, { headers: { Cookie: adminCookie } });
+    const { events } = (await res.json()) as { events: { id: string }[] };
+    const ids = events.map((e) => e.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).toContain(restrictedId);
+  });
+
+  // Single-event access must match the list's gating exactly — both call canView() (getForViewer).
+  describe("GET /api/communities/:id/events/:eventId — matches list gating", () => {
+    it("anonymous caller can fetch an unrestricted event directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, unrestrictedId } = await setupEvents(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/events/${unrestrictedId}`);
+      expect(res.status).toBe(200);
+    });
+
+    it("anonymous caller gets 404 (not a content leak) fetching a restricted event directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, restrictedId } = await setupEvents(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/events/${restrictedId}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("a signed-in non-member gets 404 for the same restricted event", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, restrictedId } = await setupEvents(creatorCookie);
+      const outsiderCookie = await authCookieFor(OUTSIDER);
+
+      const res = await app.request(`/api/communities/${communityId}/events/${restrictedId}`, {
+        headers: { Cookie: outsiderCookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("an eligible member can fetch the restricted event directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds, restrictedId } = await setupEvents(creatorCookie);
+      const memberCookie = await authCookieFor(MEMBER);
+      await testDb.insert(schema.memberships).values({
+        walletAddress: MEMBER.address,
+        communityId,
+        tierId: tierIds["Member"]!,
+        joinedAt: Math.floor(Date.now() / 1000),
+      });
+
+      const res = await app.request(`/api/communities/${communityId}/events/${restrictedId}`, {
+        headers: { Cookie: memberCookie },
+      });
+      expect(res.status).toBe(200);
+    });
   });
 });

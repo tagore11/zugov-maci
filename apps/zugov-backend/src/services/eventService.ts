@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, lte, ne, count } from "drizzle-orm";
+import { and, eq, gte, lte, ne } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { events, venues, eventRsvps, type Event, type EventRsvp } from "../db/schema.js";
+import * as membershipService from "./membershipService.js";
 
 export class EventNotFoundError extends Error {
   constructor(id: string) {
@@ -29,6 +30,22 @@ export class RsvpNotFoundError extends Error {
 
 export type EventKind = "talk" | "workshop" | "social" | "meeting" | "other";
 
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — mirrors
+// proposalService.ts's ViewableProposal/deserialize: the DB stores eligibleTierIds as a
+// JSON-stringified string[] (or SQL NULL for "unrestricted"), callers get it back as string[] | null.
+export type ViewableEvent = Omit<Event, "eligibleTierIds"> & { eligibleTierIds: string[] | null };
+
+// formalize-communities epic, Child J (/plan-eng-review 2026-08-26, D6) — moved to
+// membershipService.ts (resolveViewerContext/canViewRestricted/serializeEligibleTierIds/
+// deserializeEligibleTierIds), which discussionService.ts also needs. Aliased here so every
+// existing call site below (list(), create(), update(), cancel(), duplicate(), cancelSeries(),
+// getForViewer()) stays byte-for-byte unchanged — zero behavior change, confirmed by the full
+// events.test.ts suite still passing.
+const deserialize = membershipService.deserializeEligibleTierIds<Event>;
+const serializeEligibleTierIds = membershipService.serializeEligibleTierIds;
+const resolveViewerContext = membershipService.resolveViewerContext;
+const canView = membershipService.canViewRestricted;
+
 async function assertVenueBelongsToCommunity(venueId: string, communityId: string): Promise<void> {
   const [venue] = await db
     .select({ communityId: venues.communityId })
@@ -49,9 +66,11 @@ export interface CreateEventData {
   kind?: EventKind;
   creatorAddress: string;
   seriesId?: string;
+  /** Omit/undefined/null = unrestricted (D1). */
+  eligibleTierIds?: string[] | null;
 }
 
-export async function create(data: CreateEventData): Promise<Event> {
+export async function create(data: CreateEventData): Promise<ViewableEvent> {
   if (data.venueId) await assertVenueBelongsToCommunity(data.venueId, data.communityId);
 
   const now = Math.floor(Date.now() / 1000);
@@ -72,14 +91,33 @@ export async function create(data: CreateEventData): Promise<Event> {
       status: "active",
       createdAt: now,
       cancelledAt: null,
+      eligibleTierIds: serializeEligibleTierIds(data.eligibleTierIds),
     })
     .returning();
-  return event!;
+  return deserialize(event!);
 }
 
+/** Raw row, no viewer/visibility awareness — for internal existence/ownership checks
+ * (assertCanManageEvent, update, cancel, duplicate) that need the real row regardless of who's
+ * asking. Use getForViewer for anything reached by an end user. */
 export async function get(id: string): Promise<Event | null> {
   const rows = await db.select().from(events).where(eq(events.id, id)).limit(1);
   return rows[0] ?? null;
+}
+
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1/D2) — mirrors
+// proposalService's getForViewer: returns null both for "doesn't exist" and "exists but this
+// viewer can't see it," same as a 404 either way from the route's perspective.
+export async function getForViewer(
+  id: string,
+  communityId: string,
+  viewerAddress: string | undefined,
+): Promise<ViewableEvent | null> {
+  const row = await get(id);
+  if (!row || row.communityId !== communityId) return null;
+  const ctx = await resolveViewerContext(communityId, viewerAddress);
+  if (!canView(row, row.creatorAddress, ctx)) return null;
+  return deserialize(row);
 }
 
 export interface ListEventsFilter {
@@ -89,14 +127,19 @@ export interface ListEventsFilter {
   includeCancelled?: boolean;
 }
 
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, pagination-vs-filtering
+// decision) — fetches every matching row (no LIMIT/OFFSET) and paginates the FILTERED array in
+// memory, rather than filtering after a DB-level LIMIT. A DB-paginated fetch would make
+// total/hasMore lie once any row is tier-restricted (a page of `limit` rows could shrink after
+// filtering, and total/hasMore would still reflect the unfiltered count). Community event lists
+// are realistically dozens-to-low-hundreds of rows, not a scale where the full fetch matters yet.
 export async function list(
   communityId: string,
   page: number,
   limit: number,
   filter: ListEventsFilter = {},
-): Promise<{ events: Event[]; total: number; hasMore: boolean }> {
-  const offset = (page - 1) * limit;
-
+  viewerAddress?: string,
+): Promise<{ events: ViewableEvent[]; total: number; hasMore: boolean }> {
   const conditions = [
     eq(events.communityId, communityId),
     filter.includeCancelled ? undefined : ne(events.status, "cancelled"),
@@ -106,13 +149,17 @@ export async function list(
   ].filter((condition) => condition !== undefined);
   const where = and(...conditions);
 
-  const [rows, totalRows] = await Promise.all([
-    db.select().from(events).where(where).limit(limit).offset(offset).orderBy(events.startAt),
-    db.select({ value: count() }).from(events).where(where),
-  ]);
+  const rows = await db.select().from(events).where(where).orderBy(events.startAt);
+  const ctx = await resolveViewerContext(communityId, viewerAddress);
+  const visible = rows.filter((row) => canView(row, row.creatorAddress, ctx));
 
-  const total = Number(totalRows[0]?.value ?? 0);
-  return { events: rows, total, hasMore: offset + rows.length < total };
+  const offset = (page - 1) * limit;
+  const pageRows = visible.slice(offset, offset + limit);
+  return {
+    events: pageRows.map(deserialize),
+    total: visible.length,
+    hasMore: offset + pageRows.length < visible.length,
+  };
 }
 
 export interface UpdateEventData {
@@ -123,19 +170,24 @@ export interface UpdateEventData {
   startAt?: number;
   endAt?: number;
   kind?: EventKind;
+  eligibleTierIds?: string[] | null;
 }
 
-export async function update(id: string, communityId: string, patch: UpdateEventData): Promise<Event> {
+export async function update(id: string, communityId: string, patch: UpdateEventData): Promise<ViewableEvent> {
   const existing = await get(id);
   if (!existing || existing.communityId !== communityId) throw new EventNotFoundError(id);
   if (existing.status === "cancelled") throw new EventCancelledError();
   if (patch.venueId) await assertVenueBelongsToCommunity(patch.venueId, communityId);
 
-  const [updated] = await db.update(events).set(patch).where(eq(events.id, id)).returning();
-  return updated!;
+  const { eligibleTierIds, ...rest } = patch;
+  const dbPatch =
+    "eligibleTierIds" in patch ? { ...rest, eligibleTierIds: serializeEligibleTierIds(eligibleTierIds) } : rest;
+
+  const [updated] = await db.update(events).set(dbPatch).where(eq(events.id, id)).returning();
+  return deserialize(updated!);
 }
 
-export async function cancel(id: string, communityId: string): Promise<Event> {
+export async function cancel(id: string, communityId: string): Promise<ViewableEvent> {
   const existing = await get(id);
   if (!existing || existing.communityId !== communityId) throw new EventNotFoundError(id);
   if (existing.status === "cancelled") throw new EventCancelledError();
@@ -146,7 +198,7 @@ export async function cancel(id: string, communityId: string): Promise<Event> {
     .set({ status: "cancelled", cancelledAt: now })
     .where(eq(events.id, id))
     .returning();
-  return updated!;
+  return deserialize(updated!);
 }
 
 const MAX_DUPLICATE_COUNT = 52;
@@ -160,7 +212,7 @@ export interface DuplicateEventData {
 // (2026-08-19 review, D4 — matches sola.day's own API, which has no recurrence params either).
 // Wrapped in one transaction so a mid-batch failure leaves zero rows persisted, not a partial
 // series (2026-08-19 review, outside-voice finding #6 — also where the count cap lives).
-export async function duplicate(id: string, communityId: string, data: DuplicateEventData): Promise<Event[]> {
+export async function duplicate(id: string, communityId: string, data: DuplicateEventData): Promise<ViewableEvent[]> {
   if (data.count < 1 || data.count > MAX_DUPLICATE_COUNT) {
     throw new RangeError(`count must be between 1 and ${MAX_DUPLICATE_COUNT}`);
   }
@@ -198,10 +250,15 @@ export async function duplicate(id: string, communityId: string, data: Duplicate
         status: "active" as const,
         createdAt: now,
         cancelledAt: null,
+        // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, outside-voice
+        // finding) — without this, a tier-restricted recurring event's duplicated occurrences
+        // would silently come back unrestricted.
+        eligibleTierIds: source.eligibleTierIds,
       };
     });
 
-    return tx.insert(events).values(newRows).returning();
+    const inserted = await tx.insert(events).values(newRows).returning();
+    return inserted.map(deserialize);
   });
 }
 
@@ -215,13 +272,14 @@ export async function listBySeriesId(seriesId: string, communityId: string): Pro
 // Bulk cancel every event sharing a seriesId in one query, not N individual cancel() calls
 // (2026-08-19 review, outside-voice finding #5 — duplicate() had no corresponding bulk
 // lifecycle operation).
-export async function cancelSeries(seriesId: string, communityId: string): Promise<Event[]> {
+export async function cancelSeries(seriesId: string, communityId: string): Promise<ViewableEvent[]> {
   const now = Math.floor(Date.now() / 1000);
-  return db
+  const updated = await db
     .update(events)
     .set({ status: "cancelled", cancelledAt: now })
     .where(and(eq(events.seriesId, seriesId), eq(events.communityId, communityId), ne(events.status, "cancelled")))
     .returning();
+  return updated.map(deserialize);
 }
 
 // RSVP is intent only — deliberately open to ANY signed-in wallet, no membership check

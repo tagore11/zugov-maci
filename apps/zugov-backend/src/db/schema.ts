@@ -229,6 +229,9 @@ export const membershipTiers = pgTable("membership_tiers", {
   // (matched to how pop-up-city events actually work — see review's sola.day research) is the
   // out-of-the-box behavior; a community can restrict it per-tier without a migration.
   canCreateEvents: boolean("can_create_events").notNull().default(true),
+  // formalize-communities epic, Child J (/plan-eng-review 2026-08-26, D2) — mirrors
+  // canCreateEvents's "on by default, tier can narrow it" posture exactly.
+  canPostDiscussions: boolean("can_post_discussions").notNull().default(true),
   // Eligibility-adapters review (2026-08-19): breaks ties when a wallet's holdings satisfy
   // multiple eligibilityRules groups at once (e.g. an ERC20 balance clearing both a "Resident"
   // and a higher "OG" threshold) — the group targeting the highest-rank tier wins, regardless
@@ -434,6 +437,12 @@ export const events = pgTable(
     status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
     createdAt: integer("created_at").notNull(),
     cancelledAt: integer("cancelled_at"),
+    // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — nullable, unlike
+    // proposals.eligibleTierIds (NOT NULL, always populated): null means "unrestricted, visible to
+    // everyone," checked directly by canView() with no tier-list inference needed. Every existing
+    // event gets null on migration, so nothing already-live changes visibility. JSON-stringified
+    // string[] when restricted.
+    eligibleTierIds: text("eligible_tier_ids"),
   },
   // Primary list query ("events for community X in date range A-B") is a range scan on exactly
   // these two columns — the first explicit secondary index in this schema file, added
@@ -469,6 +478,33 @@ export const eventRsvps = pgTable(
 
 export type EventRsvp = typeof eventRsvps.$inferSelect;
 export type NewEventRsvp = typeof eventRsvps.$inferInsert;
+
+// formalize-communities epic, Child J (/plan-eng-review 2026-08-26) — flat posts only, no
+// threading/replies (D1): no parentId/threadId column, every row is a top-level, standalone post.
+// Members-only categorically (D5), enforced at the route layer, not by this table's shape.
+export const communityDiscussions = pgTable(
+  "community_discussions",
+  {
+    id: text("id").primaryKey(),
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    authorAddress: text("author_address").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    // Same nullable shape as events.eligibleTierIds (Child I, D1) — null means unrestricted,
+    // visible to every member (not literally everyone, per this child's own D5 membership gate).
+    eligibleTierIds: text("eligible_tier_ids"),
+    createdAt: integer("created_at").notNull(),
+  },
+  // /ship review army (2026-08-26, performance specialist) — every list()/get() query filters on
+  // communityId; matches the events_community_start_idx precedent already established in this
+  // file for the identical "list this community's rows" access pattern.
+  (table) => [index("community_discussions_community_idx").on(table.communityId)],
+);
+
+export type CommunityDiscussion = typeof communityDiscussions.$inferSelect;
+export type NewCommunityDiscussion = typeof communityDiscussions.$inferInsert;
 
 // Eligibility adapters (2026-08-19 /plan-eng-review) — identity/structural layer, anchored to
 // communities.id, never governance-gated (same reasoning as venues/events: "who can join this

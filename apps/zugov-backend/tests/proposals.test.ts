@@ -690,6 +690,179 @@ describe("GET /api/communities/:id/proposals/:actionId/vote-eligibility (US3, FR
   });
 });
 
+// formalize-communities epic, Child H (/plan-eng-review 2026-08-25) — D1 (requireAuth dropped
+// from both GET routes), D2 (non-member visibility = eligibleTierIds is a superset of every
+// current voting tier, not defaultTierId). No test in this file exercised either plain GET route
+// at all before this pass — a genuine pre-existing gap, not something Child H introduced.
+describe("GET /api/communities/:id/proposals — visibility (Child H)", () => {
+  async function setupProposals(creatorCookie: string) {
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+    // Unrestricted: eligibleTierIds includes every voting tier this community has (Creator + Voter).
+    const unrestrictedRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        title: "Unrestricted proposal",
+        eligibleTierIds: [tierIds["Creator"], tierIds["Voter"]],
+      }),
+    });
+    const unrestricted = (await unrestrictedRes.json()) as { proposal: { id: string } };
+
+    // Restricted: narrowed to just the Voter tier — excludes Creator, the creator's own tier.
+    // canView's creator-bypass still makes it visible to CREATOR regardless.
+    const restrictedRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({
+        ...DRAFT_BODY,
+        title: "Restricted proposal",
+        eligibleTierIds: [tierIds["Voter"]],
+      }),
+    });
+    const restricted = (await restrictedRes.json()) as { proposal: { id: string } };
+
+    return { communityId, tierIds, unrestrictedId: unrestricted.proposal.id, restrictedId: restricted.proposal.id };
+  }
+
+  it("an anonymous caller (no session at all) sees only unrestricted proposals", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupProposals(creatorCookie);
+
+    const res = await app.request(`/api/communities/${communityId}/proposals`);
+    expect(res.status).toBe(200);
+    const { proposals } = (await res.json()) as { proposals: { id: string }[] };
+    const ids = proposals.map((p) => p.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).not.toContain(restrictedId);
+  });
+
+  it("a signed-in non-member sees the same unrestricted-only set as an anonymous caller", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupProposals(creatorCookie);
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+
+    const res = await app.request(`/api/communities/${communityId}/proposals`, {
+      headers: { Cookie: outsiderCookie },
+    });
+    expect(res.status).toBe(200);
+    const { proposals } = (await res.json()) as { proposals: { id: string }[] };
+    const ids = proposals.map((p) => p.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).not.toContain(restrictedId);
+  });
+
+  it("a member whose tier is eligible sees the restricted proposal too", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds, unrestrictedId, restrictedId } = await setupProposals(creatorCookie);
+    const voterCookie = await authCookieFor(SPONSOR);
+    // Enroll on the "Voter" tier directly — the public /join flow always lands new members on
+    // the community's default tier ("Creator" here), so there's no API surface to pick "Voter"
+    // specifically (same pattern this file already uses elsewhere).
+    await testDb.insert(schema.memberships).values({
+      walletAddress: SPONSOR.address,
+      communityId,
+      tierId: tierIds["Voter"]!,
+      joinedAt: Math.floor(Date.now() / 1000),
+    });
+
+    const res = await app.request(`/api/communities/${communityId}/proposals`, { headers: { Cookie: voterCookie } });
+    expect(res.status).toBe(200);
+    const { proposals } = (await res.json()) as { proposals: { id: string }[] };
+    const ids = proposals.map((p) => p.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).toContain(restrictedId);
+  });
+
+  it("the creator always sees both, including a proposal restricted away from their own tier", async () => {
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, unrestrictedId, restrictedId } = await setupProposals(creatorCookie);
+
+    const res = await app.request(`/api/communities/${communityId}/proposals`, { headers: { Cookie: creatorCookie } });
+    const { proposals } = (await res.json()) as { proposals: { id: string }[] };
+    const ids = proposals.map((p) => p.id);
+    expect(ids).toContain(unrestrictedId);
+    expect(ids).toContain(restrictedId);
+  });
+
+  // Single-proposal access must match the list's gating exactly — both call the same canView().
+  describe("GET /api/communities/:id/proposals/:actionId — matches list gating", () => {
+    it("anonymous caller can fetch an unrestricted proposal directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, unrestrictedId } = await setupProposals(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/${unrestrictedId}`);
+      expect(res.status).toBe(200);
+    });
+
+    it("anonymous caller gets 404 (not a content leak) fetching a restricted proposal directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, restrictedId } = await setupProposals(creatorCookie);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/${restrictedId}`);
+      expect(res.status).toBe(404);
+    });
+
+    it("a signed-in non-member gets 404 for the same restricted proposal", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, restrictedId } = await setupProposals(creatorCookie);
+      const outsiderCookie = await authCookieFor(OUTSIDER);
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/${restrictedId}`, {
+        headers: { Cookie: outsiderCookie },
+      });
+      expect(res.status).toBe(404);
+    });
+
+    it("an eligible member can fetch the restricted proposal directly by id", async () => {
+      const creatorCookie = await authCookieFor(CREATOR);
+      const { communityId, tierIds, restrictedId } = await setupProposals(creatorCookie);
+      const voterCookie = await authCookieFor(SPONSOR);
+      await testDb.insert(schema.memberships).values({
+        walletAddress: SPONSOR.address,
+        communityId,
+        tierId: tierIds["Voter"]!,
+        joinedAt: Math.floor(Date.now() / 1000),
+      });
+
+      const res = await app.request(`/api/communities/${communityId}/proposals/${restrictedId}`, {
+        headers: { Cookie: voterCookie },
+      });
+      expect(res.status).toBe(200);
+    });
+  });
+
+  // /ship review army (2026-08-26, security specialist) — Array.prototype.every() on an empty
+  // array is vacuously true: a community with zero voting-capable tiers must not make every
+  // proposal look "unrestricted" to an anonymous caller just because there's no voting tier left
+  // to be a superset of.
+  it("an anonymous caller sees nothing once every tier's canVote is later flipped off, even for a proposal that was validly restricted when created", async () => {
+    // eligibleTierIds must itself be a subset of voting tiers at creation time (IneligibleTiersError),
+    // so this precondition can't be reached via the create path directly — it's reached by a
+    // community later narrowing every tier's voting rights AFTER a proposal already exists,
+    // which the real PATCH /tiers/:tierId route allows unconditionally.
+    const creatorCookie = await authCookieFor(CREATOR);
+    const { communityId, tierIds } = await createCommunityWithTiers(creatorCookie);
+
+    const createRes = await app.request(`/api/communities/${communityId}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: creatorCookie },
+      body: JSON.stringify({ ...DRAFT_BODY, eligibleTierIds: [tierIds["Voter"]] }),
+    });
+    expect(createRes.status).toBe(201);
+
+    await testDb
+      .update(schema.membershipTiers)
+      .set({ canVote: false })
+      .where(eq(schema.membershipTiers.communityId, communityId));
+
+    const res = await app.request(`/api/communities/${communityId}/proposals`);
+    expect(res.status).toBe(200);
+    const { proposals } = (await res.json()) as { proposals: { id: string }[] };
+    expect(proposals).toEqual([]);
+  });
+});
+
 describe("POST /api/communities/:id/proposals/direct/authorize (specs/007 US2, FR-004/FR-005/FR-006)", () => {
   it("returns 200 authorized for an eligible member", async () => {
     const creatorCookie = await authCookieFor(CREATOR);
