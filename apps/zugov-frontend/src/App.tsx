@@ -16,6 +16,7 @@ import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
 import UnionsPage from "../app/unions/page";
 import UnionDetailPage from "../app/unions/[id]/page";
+import EventsPage from "../app/events/page";
 import { RequireAuth } from "../app/components/RequireAuth";
 
 // Permanent redirect, no removal date (formalize-communities epic, Child C1, /plan-eng-review
@@ -54,6 +55,7 @@ export default function App() {
             <Route path="/proposals" element={<ProposalsPage />} />
             <Route path="/unions" element={<UnionsPage />} />
             <Route path="/unions/:id" element={<UnionDetailPage />} />
+            <Route path="/events" element={<EventsPage />} />
           </Routes>
         </BrowserRouter>
       </MaciProvider>

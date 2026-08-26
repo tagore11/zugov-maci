@@ -33,6 +33,9 @@ const createEventSchema = z
     endAt: z.number().int(),
     kind: EVENT_KIND.optional(),
     eligibleTierIds: eligibleTierIdsSchema,
+    // Events expansion (2026-08-26, D2) — optional side-event parent. Immutable after creation:
+    // deliberately absent from updateEventSchema below, not just unchecked at runtime.
+    parentEventId: z.string().optional(),
   })
   .refine((data) => !!data.venueId !== !!data.locationText, {
     message: "Provide exactly one of venueId or locationText",
@@ -102,6 +105,12 @@ eventsRouter.post("/:id/events", requireAuth, async (c) => {
     if (err instanceof eventService.InvalidVenueError) {
       return c.json({ error: err.message }, 422);
     }
+    if (err instanceof eventService.EventNotFoundError) {
+      return c.json({ error: "parentEventId does not reference an event in this community" }, 422);
+    }
+    if (err instanceof eventService.NestedSideEventError) {
+      return c.json({ error: err.message }, 422);
+    }
     throw err;
   }
 });
@@ -120,6 +129,10 @@ eventsRouter.get("/:id/events", async (c) => {
   const endAtStr = c.req.query("endAt");
   const kindParam = c.req.query("kind");
   const kind = EVENT_KIND.safeParse(kindParam).success ? (kindParam as z.infer<typeof EVENT_KIND>) : undefined;
+  // Events expansion (2026-08-26, T6) — upcoming = endAt >= now, past = endAt < now. Independent
+  // of startAt/endAt range filtering above; omit for the existing unfiltered behavior.
+  const collectionParam = c.req.query("collection");
+  const collection = collectionParam === "upcoming" || collectionParam === "past" ? collectionParam : undefined;
 
   // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — this route stays
   // unauthenticated (unchanged from before this child); session.address is optional viewer
@@ -133,6 +146,7 @@ eventsRouter.get("/:id/events", async (c) => {
       startAt: startAtStr !== undefined ? Number(startAtStr) : undefined,
       endAt: endAtStr !== undefined ? Number(endAtStr) : undefined,
       kind,
+      collection,
     },
     session.address,
   );
@@ -195,8 +209,13 @@ eventsRouter.delete("/:id/events/:eventId", requireAuth, async (c) => {
 
   try {
     await assertCanManageEvent(communityId, eventId, session.address!);
-    const event = await eventService.cancel(eventId, communityId);
-    return c.json({ event });
+    // D5 (2026-08-26) — cancel() now returns the target event plus any cascaded side-events
+    // (D4's cascade-cancel). Response gains cascadedSideEvents additively; existing { event }
+    // consumers still get the field they expect.
+    const updated = await eventService.cancel(eventId, communityId);
+    const event = updated.find((e) => e.id === eventId)!;
+    const cascadedSideEvents = updated.filter((e) => e.id !== eventId);
+    return c.json({ event, cascadedSideEvents });
   } catch (err) {
     if (err instanceof eventService.EventNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof NotAuthorizedForEventError) {

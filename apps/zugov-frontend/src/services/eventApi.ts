@@ -32,6 +32,17 @@ export interface Event {
   cancelledAt: number | null;
   /** null = unrestricted, visible to everyone (formalize-communities epic, Child I, D1). */
   eligibleTierIds: string[] | null;
+  /** Events expansion (2026-08-26) — nullable, one level of nesting only, immutable after
+   * creation. Non-null means this event is a side-event of the referenced parent. */
+  parentEventId: string | null;
+}
+
+/** Global cross-community feed row (GET /api/events) — additive fields on top of Event, per the
+ * D6 eng-review amendment: the backend joins communities so the card can show which community
+ * each event belongs to without a second client-side fetch. */
+export interface GlobalEvent extends Event {
+  communityDisplayName: string;
+  communityLogo: string | null;
 }
 
 export interface EventRsvp {
@@ -63,6 +74,8 @@ export interface CreateEventInput {
   kind?: EventKind;
   /** Omit or null for unrestricted (default). */
   eligibleTierIds?: string[] | null;
+  /** Events expansion (2026-08-26, D2) — optional side-event parent. Immutable after creation. */
+  parentEventId?: string;
 }
 
 export async function createEvent(communityId: string, input: CreateEventInput): Promise<Event> {
@@ -82,6 +95,8 @@ export interface ListEventsFilter {
   startAt?: number;
   endAt?: number;
   kind?: EventKind;
+  /** Events expansion (2026-08-26, T6) — upcoming = endAt >= now, past = endAt < now. */
+  collection?: "upcoming" | "past";
 }
 
 export async function listEvents(
@@ -94,10 +109,33 @@ export async function listEvents(
   if (filter.startAt !== undefined) params.set("startAt", String(filter.startAt));
   if (filter.endAt !== undefined) params.set("endAt", String(filter.endAt));
   if (filter.kind !== undefined) params.set("kind", filter.kind);
+  if (filter.collection !== undefined) params.set("collection", filter.collection);
   const qs = params.toString();
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events${qs ? `?${qs}` : ""}`, {
     credentials: "include",
   });
+  return parseErrorOr(res, `Failed to fetch events: ${res.status}`);
+}
+
+export interface ListGlobalEventsFilter {
+  page?: number;
+  limit?: number;
+  kind?: EventKind;
+  collection?: "upcoming" | "past";
+}
+
+// Events expansion (2026-08-26) — the first cross-community events call in this codebase, mirrors
+// communityApi.listAllUnions()'s top-level discovery-page convention. Public, no auth required.
+export async function listGlobalEvents(
+  filter: ListGlobalEventsFilter = {},
+): Promise<{ events: GlobalEvent[]; total: number; hasMore: boolean }> {
+  const params = new URLSearchParams();
+  if (filter.page !== undefined) params.set("page", String(filter.page));
+  if (filter.limit !== undefined) params.set("limit", String(filter.limit));
+  if (filter.kind !== undefined) params.set("kind", filter.kind);
+  if (filter.collection !== undefined) params.set("collection", filter.collection);
+  const qs = params.toString();
+  const res = await fetch(`${BASE_URL}/api/events${qs ? `?${qs}` : ""}`, { credentials: "include" });
   return parseErrorOr(res, `Failed to fetch events: ${res.status}`);
 }
 
@@ -131,13 +169,17 @@ export async function updateEvent(communityId: string, eventId: string, patch: U
   return data.event;
 }
 
-export async function cancelEvent(communityId: string, eventId: string): Promise<Event> {
+// D5 (2026-08-26) — cancelling a parent auto-cancels its side-events; the response additively
+// carries cascadedSideEvents so the caller can update side-event UI state without a refetch.
+export async function cancelEvent(
+  communityId: string,
+  eventId: string,
+): Promise<{ event: Event; cascadedSideEvents: Event[] }> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/${eventId}`, {
     method: "DELETE",
     credentials: "include",
   });
-  const data = await parseErrorOr<{ event: Event }>(res, `Failed to cancel event: ${res.status}`);
-  return data.event;
+  return parseErrorOr(res, `Failed to cancel event: ${res.status}`);
 }
 
 export async function duplicateEvent(

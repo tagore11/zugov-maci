@@ -209,6 +209,61 @@ export function deserializeEligibleTierIds<T extends { eligibleTierIds: string |
 }
 
 /**
+ * Events expansion (/plan-eng-review 2026-08-26, D1a, outside-voice fix) — the global cross-
+ * community events feed needs viewer context (admin/tier) for every distinct communityId on a
+ * fetched page, but calling resolveViewerContext() once per community would fire up to ~2N
+ * queries in parallel for a diverse page (N = distinct communities, up to page size). This does
+ * exactly 2 queries total regardless of N: one `communities WHERE id IN (...)` for the
+ * creator-match path of isAuthorized(), one `memberships JOIN membershipTiers WHERE communityId
+ * IN (...) AND walletAddress = ?` for the tier-match path — both of isAuthorized()'s two
+ * independent admin paths, replicated here since this bypasses isAuthorized() itself for
+ * batching. Used only by the global events endpoint; resolveViewerContext() is untouched.
+ */
+export async function resolveViewerContextsForCommunities(
+  communityIds: string[],
+  viewerAddress: string | undefined,
+): Promise<Map<string, ViewerContext | null>> {
+  const result = new Map<string, ViewerContext | null>();
+  if (!viewerAddress || communityIds.length === 0) {
+    for (const communityId of communityIds) result.set(communityId, null);
+    return result;
+  }
+
+  const uniqueIds = [...new Set(communityIds)];
+  const [creatorRows, tierRows] = await Promise.all([
+    db
+      .select({ id: communities.id, creatorAddress: communities.creatorAddress })
+      .from(communities)
+      .where(inArray(communities.id, uniqueIds)),
+    db
+      .select({
+        communityId: memberships.communityId,
+        tierId: memberships.tierId,
+        canVote: membershipTiers.canVote,
+        canManageMembership: membershipTiers.canManageMembership,
+      })
+      .from(memberships)
+      .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+      .where(and(inArray(memberships.communityId, uniqueIds), eq(memberships.walletAddress, viewerAddress))),
+  ]);
+
+  const creatorByCommunity = new Map(creatorRows.map((row) => [row.id, row.creatorAddress]));
+  const tierByCommunity = new Map(tierRows.map((row) => [row.communityId, row]));
+
+  for (const communityId of uniqueIds) {
+    const creatorAddress = creatorByCommunity.get(communityId);
+    const tierRow = tierByCommunity.get(communityId);
+    const isCreator = creatorAddress !== undefined && creatorAddress.toLowerCase() === viewerAddress.toLowerCase();
+    result.set(communityId, {
+      viewerAddress,
+      isAdmin: isCreator || (tierRow?.canManageMembership ?? false),
+      tier: tierRow ? { tierId: tierRow.tierId, canVote: tierRow.canVote } : null,
+    });
+  }
+  return result;
+}
+
+/**
  * Batched membership check for a candidate list of addresses (governance restructure Phase 2,
  * 2026-08-20) — used to validate "person"-type (election) proposal options against real
  * community members without an N+1 loop. A single query, not one lookup per address.

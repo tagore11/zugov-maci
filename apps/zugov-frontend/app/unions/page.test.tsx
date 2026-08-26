@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import UnionsPage from "./page";
@@ -84,5 +84,26 @@ describe("UnionsPage pending-invite badge", () => {
     const coalitionCard = screen.getByText("Coalition").closest("a")!;
     expect(allianceCard.textContent).toContain("Pending invite");
     expect(coalitionCard.textContent).not.toContain("Pending invite");
+  });
+});
+
+// TODOS.md follow-up (2026-08-26, surfaced by the /events page's design review) — a broken
+// request previously rendered identically to "No unions yet."
+describe("UnionsPage error state", () => {
+  it("shows a distinct error state (not the empty state) on fetch failure, with a working Retry", async () => {
+    listAllUnionsMock.mockRejectedValue(new Error("network down"));
+
+    renderPage();
+
+    await screen.findByText("Couldn't load unions right now.");
+    expect(screen.queryByText("No unions yet.")).not.toBeInTheDocument();
+
+    listAllUnionsMock.mockResolvedValue({
+      unions: [{ id: "union-1", displayName: "Alliance", description: null, logo: null, memberCount: 2 }],
+      total: 1,
+      hasMore: false,
+    });
+    fireEvent.click(screen.getByText("Retry"));
+    await screen.findByText("Alliance");
   });
 });

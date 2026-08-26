@@ -262,6 +262,16 @@
 **Priority:** P3
 **Depends on:** Events frontend (above) landing first
 
+### `/unions/page.tsx` silently shows the empty state on a fetch failure
+
+**What:** Add a distinct `isError` branch to `/unions/page.tsx`'s query (Retry button, "Couldn't load unions right now." copy) instead of letting a failed fetch fall through to the same "No unions yet." copy the empty-state uses today.
+
+**Why:** Caught during the 2026-08-26 Events-expansion `/plan-design-review` (Pass 2, Interaction States) while building the new global `/events` page's error handling — `/unions/page.tsx` was the direct precedent for that page's card-grid + pagination layout, and it has the same gap: `data` stays `undefined` on a failed request, so a broken request and "genuinely zero unions" render identically. A Nielsen error-visibility violation, not cosmetic. The new `/events` page gets a real error state as new code; this item is the retrofit for the page it copied the pattern from.
+
+**Effort:** S (one more `isError` branch, same shape as `isLoading`, mirrors the fix already landing on `/events`)
+**Priority:** P3
+**Depends on:** None
+
 ### Modal accessibility retrofit (Escape-key close + role="dialog")
 
 **What:** Add Escape-key close and `role="dialog"`/`aria-modal="true"` to `CreateGovernanceActionModal` and `AuthModal` — the two existing modals in the app, neither of which has either today.

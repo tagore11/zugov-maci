@@ -7,6 +7,7 @@ export function Header() {
 
   const navItems = [
     { to: "/", label: "Explore" },
+    { to: "/events", label: "Events" },
     { to: "/proposals", label: "Proposals" },
     { to: "/delegates", label: "Delegates" },
     { to: "/analytics", label: "Analytics" },

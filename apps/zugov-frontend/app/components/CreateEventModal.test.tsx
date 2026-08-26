@@ -8,6 +8,7 @@ const listVenuesMock = vi.fn();
 const createEventMock = vi.fn();
 const updateEventMock = vi.fn();
 const getTiersMock = vi.fn();
+const listEventsMock = vi.fn();
 
 vi.mock("@/src/services/eventApi", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/eventApi")>("@/src/services/eventApi");
@@ -16,6 +17,7 @@ vi.mock("@/src/services/eventApi", async () => {
     listVenues: (...args: unknown[]) => listVenuesMock(...args),
     createEvent: (...args: unknown[]) => createEventMock(...args),
     updateEvent: (...args: unknown[]) => updateEventMock(...args),
+    listEvents: (...args: unknown[]) => listEventsMock(...args),
   };
 });
 
@@ -60,9 +62,11 @@ beforeEach(() => {
   createEventMock.mockReset();
   updateEventMock.mockReset();
   getTiersMock.mockReset();
+  listEventsMock.mockReset();
   mockSignOut.mockReset();
   listVenuesMock.mockResolvedValue([]);
   getTiersMock.mockResolvedValue(TIERS);
+  listEventsMock.mockResolvedValue({ events: [], total: 0, hasMore: false });
 });
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -147,6 +151,7 @@ describe("CreateEventModal", () => {
       createdAt: 0,
       cancelledAt: null,
       eligibleTierIds: null,
+      parentEventId: null,
     };
 
     renderWithProviders(
@@ -236,6 +241,7 @@ describe("CreateEventModal", () => {
         createdAt: 0,
         cancelledAt: null,
         eligibleTierIds: null,
+        parentEventId: null,
       };
 
       renderWithProviders(
@@ -269,6 +275,7 @@ describe("CreateEventModal", () => {
         createdAt: 0,
         cancelledAt: null,
         eligibleTierIds: ["tier-member"],
+        parentEventId: null,
       };
 
       renderWithProviders(
@@ -285,6 +292,123 @@ describe("CreateEventModal", () => {
       expect(screen.getByLabelText("Restrict to specific tiers")).toBeChecked();
       expect(screen.getByLabelText("Member")).toBeChecked();
       expect(screen.getByLabelText("Creator")).not.toBeChecked();
+    });
+  });
+
+  // Events expansion (2026-08-26, D2) — native <select> parent-event picker.
+  describe("parent-event picker", () => {
+    it("does not render the picker when the community has no other top-level events", async () => {
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      await waitFor(() => expect(listEventsMock).toHaveBeenCalled());
+      expect(screen.queryByLabelText("Parent event (optional)")).not.toBeInTheDocument();
+    });
+
+    it("lists only the community's other top-level events, excluding existing side-events", async () => {
+      listEventsMock.mockResolvedValue({
+        events: [
+          { id: "top-1", title: "Multi-day Gathering", parentEventId: null },
+          { id: "top-2", title: "Another Gathering", parentEventId: null },
+          { id: "side-1", title: "A Side Session", parentEventId: "top-1" },
+        ],
+        total: 3,
+        hasMore: false,
+      });
+
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const select = await screen.findByLabelText("Parent event (optional)");
+      expect(screen.getByText("Multi-day Gathering")).toBeInTheDocument();
+      expect(screen.getByText("Another Gathering")).toBeInTheDocument();
+      expect(screen.queryByText("A Side Session")).not.toBeInTheDocument();
+      expect((select as HTMLSelectElement).value).toBe("");
+    });
+
+    it("submitting with a selected parent includes parentEventId in the create payload", async () => {
+      listEventsMock.mockResolvedValue({
+        events: [{ id: "top-1", title: "Multi-day Gathering", parentEventId: null }],
+        total: 1,
+        hasMore: false,
+      });
+      createEventMock.mockResolvedValue({ id: "event-1" });
+
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const select = await screen.findByLabelText("Parent event (optional)");
+      fillRequiredFields();
+      fireEvent.change(select, { target: { value: "top-1" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() =>
+        expect(createEventMock).toHaveBeenCalledWith("0xabc", expect.objectContaining({ parentEventId: "top-1" })),
+      );
+    });
+
+    it("submitting without selecting a parent omits parentEventId from the create payload", async () => {
+      listEventsMock.mockResolvedValue({
+        events: [{ id: "top-1", title: "Multi-day Gathering", parentEventId: null }],
+        total: 1,
+        hasMore: false,
+      });
+      createEventMock.mockResolvedValue({ id: "event-1" });
+
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      await screen.findByLabelText("Parent event (optional)");
+      fillRequiredFields();
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+      const payload = createEventMock.mock.calls[0]![1] as Record<string, unknown>;
+      expect(payload.parentEventId).toBeUndefined();
+    });
+
+    it("does not render the picker in edit mode (parentEventId is immutable after creation)", async () => {
+      listEventsMock.mockResolvedValue({
+        events: [{ id: "top-1", title: "Multi-day Gathering", parentEventId: null }],
+        total: 1,
+        hasMore: false,
+      });
+      const editingEvent = {
+        id: "event-1",
+        communityId: "0xabc",
+        title: "Morning Yoga",
+        description: null,
+        venueId: null,
+        locationText: "The Hub",
+        startAt: Math.floor(FUTURE_START.getTime() / 1000),
+        endAt: Math.floor(FUTURE_END.getTime() / 1000),
+        seriesId: null,
+        kind: "social" as const,
+        creatorAddress: "0xcreator",
+        status: "active" as const,
+        createdAt: 0,
+        cancelledAt: null,
+        eligibleTierIds: null,
+        parentEventId: null,
+      };
+
+      renderWithProviders(
+        <CreateEventModal
+          isOpen={true}
+          onClose={() => {}}
+          onSuccess={() => {}}
+          communityId="0xabc"
+          editingEvent={editingEvent}
+        />,
+      );
+
+      await screen.findByText("Edit Event");
+      expect(listEventsMock).not.toHaveBeenCalled();
+      expect(screen.queryByLabelText("Parent event (optional)")).not.toBeInTheDocument();
     });
   });
 });

@@ -443,12 +443,29 @@ export const events = pgTable(
     // event gets null on migration, so nothing already-live changes visibility. JSON-stringified
     // string[] when restricted.
     eligibleTierIds: text("eligible_tier_ids"),
+    // Events expansion (/office-hours + /plan-eng-review 2026-08-26) — side-events, distinct from
+    // seriesId (recurrence). Self-referential, ON DELETE SET NULL (mirrors venueId's pattern): a
+    // deleted parent orphans its side-events rather than cascading their deletion. App-level-only
+    // invariants (validator, not DB constraints): a side-event's communityId must match its
+    // parent's; nesting is capped at one level (reject a parent that itself has a parentEventId);
+    // immutable after creation (no reparenting). eligibleTierIds is inherited as a snapshot copy
+    // of the parent's value at creation time when omitted on a side-event, not a live reference.
+    parentEventId: text("parent_event_id").references((): AnyPgColumn => events.id, { onDelete: "set null" }),
   },
   // Primary list query ("events for community X in date range A-B") is a range scan on exactly
   // these two columns — the first explicit secondary index in this schema file, added
   // deliberately for a known hot path rather than following the rest of the schema's
   // PK-implicit-index-only convention (2026-08-19 review, Performance section).
-  (table) => [index("events_community_start_idx").on(table.communityId, table.startAt)],
+  //
+  // events_start_idx (D1b, 2026-08-26): the composite index above is (communityId, startAt) —
+  // Postgres can't use its second column efficiently without constraining the first, so it does
+  // NOT serve the new global cross-community `ORDER BY startAt` scan in listGlobal(). A bare
+  // single-column index on startAt is added for that query pattern, which didn't exist before
+  // this PR (no prior "existing behavior" to protect by deferring it).
+  (table) => [
+    index("events_community_start_idx").on(table.communityId, table.startAt),
+    index("events_start_idx").on(table.startAt),
+  ],
 );
 
 export type Event = typeof events.$inferSelect;

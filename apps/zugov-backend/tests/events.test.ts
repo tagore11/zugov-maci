@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
+import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
 import * as schema from "../src/db/schema.js";
 
@@ -253,6 +254,83 @@ describe("POST /api/communities/:id/events", () => {
   });
 });
 
+// Events expansion (/office-hours + /plan-eng-review 2026-08-26) — side-events, a self-
+// referential parentEventId, distinct from seriesId. See globalEvents.test.ts for the new
+// cross-community feed's own coverage.
+describe("POST /api/communities/:id/events — parentEventId (side-events)", () => {
+  it("creates a side-event with a valid parentEventId in the same community", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, communityId, { title: "Multi-day Gathering" });
+
+    const { res, event: child } = await createEvent(cookie, communityId, {
+      title: "Morning Session",
+      parentEventId: parent!.id,
+    });
+    expect(res.status).toBe(201);
+    expect((child as unknown as { parentEventId: string | null }).parentEventId).toBe(parent!.id);
+  });
+
+  it("returns 422 when parentEventId references an event in a DIFFERENT community", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const otherCommunityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, otherCommunityId, { title: "Other Community's Event" });
+
+    const { res } = await createEvent(cookie, communityId, { title: "Side Event", parentEventId: parent!.id });
+    expect(res.status).toBe(422);
+  });
+
+  it("returns 422 when parentEventId points at an event that already has a parentEventId (no grandchildren)", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+    const { event: child } = await createEvent(cookie, communityId, { title: "Child", parentEventId: parent!.id });
+
+    const { res } = await createEvent(cookie, communityId, { title: "Grandchild", parentEventId: child!.id });
+    expect(res.status).toBe(422);
+  });
+
+  it("inherits the parent's current eligibleTierIds as a snapshot when omitted on the side-event", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+    const { event: parent } = await createEvent(cookie, communityId, {
+      title: "Restricted Parent",
+      eligibleTierIds: [adminTierId],
+    });
+
+    const { res, event: child } = await createEvent(cookie, communityId, {
+      title: "Inheriting Side Event",
+      parentEventId: parent!.id,
+    });
+    expect(res.status).toBe(201);
+    expect((child as unknown as { eligibleTierIds: string[] | null }).eligibleTierIds).toEqual([adminTierId]);
+  });
+
+  it("does NOT override an explicitly-provided eligibleTierIds on the side-event with the parent's value", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+    const { event: parent } = await createEvent(cookie, communityId, {
+      title: "Restricted Parent",
+      eligibleTierIds: [adminTierId],
+    });
+
+    const { res, event: child } = await createEvent(cookie, communityId, {
+      title: "Explicitly Unrestricted Side Event",
+      parentEventId: parent!.id,
+      eligibleTierIds: null,
+    });
+    expect(res.status).toBe(201);
+    expect((child as unknown as { eligibleTierIds: string[] | null }).eligibleTierIds).toBeNull();
+  });
+});
+
 describe("GET /api/communities/:id/events", () => {
   it("does not require authentication", async () => {
     const cookie = await authCookieFor(CREATOR);
@@ -299,6 +377,47 @@ describe("GET /api/communities/:id/events", () => {
     const res = await app.request(`/api/communities/${communityId}/events?startAt=${NOW}&endAt=${NOW + 2 * DAY}`);
     const { events } = (await res.json()) as { events: { id: string }[] };
     expect(events.map((e) => e.id)).toEqual([nearEvent!.id]);
+  });
+
+  // Events expansion (2026-08-26, T6) — upcoming = endAt >= now, past = endAt < now.
+  describe("collection=upcoming|past filter", () => {
+    it("an in-progress event (startAt < now < endAt) stays in upcoming, not past", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      // In-progress: started an hour ago (in the DB directly — createEventSchema rejects a past
+      // startAt at creation time), ends an hour from now.
+      const { event: future } = await createEvent(cookie, communityId, { startAt: NOW + DAY, endAt: NOW + DAY + 3600 });
+      await testDb
+        .update(schema.events)
+        .set({ startAt: NOW - 3600, endAt: NOW + 3600 })
+        .where(eq(schema.events.id, future!.id));
+
+      const upcomingRes = await app.request(`/api/communities/${communityId}/events?collection=upcoming`);
+      const { events: upcoming } = (await upcomingRes.json()) as { events: { id: string }[] };
+      expect(upcoming.map((e) => e.id)).toContain(future!.id);
+
+      const pastRes = await app.request(`/api/communities/${communityId}/events?collection=past`);
+      const { events: past } = (await pastRes.json()) as { events: { id: string }[] };
+      expect(past.map((e) => e.id)).not.toContain(future!.id);
+    });
+
+    it("a concluded event (endAt < now) is in past, not upcoming", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event } = await createEvent(cookie, communityId, { startAt: NOW + DAY, endAt: NOW + DAY + 3600 });
+      await testDb
+        .update(schema.events)
+        .set({ startAt: NOW - 2 * DAY, endAt: NOW - DAY })
+        .where(eq(schema.events.id, event!.id));
+
+      const pastRes = await app.request(`/api/communities/${communityId}/events?collection=past`);
+      const { events: past } = (await pastRes.json()) as { events: { id: string }[] };
+      expect(past.map((e) => e.id)).toContain(event!.id);
+
+      const upcomingRes = await app.request(`/api/communities/${communityId}/events?collection=upcoming`);
+      const { events: upcoming } = (await upcomingRes.json()) as { events: { id: string }[] };
+      expect(upcoming.map((e) => e.id)).not.toContain(event!.id);
+    });
   });
 });
 
@@ -486,6 +605,86 @@ describe("DELETE /api/communities/:id/events/:eventId (cancel)", () => {
     });
     expect(res.status).toBe(409);
   });
+
+  // Events expansion (2026-08-26, D4/D5) — cancelling a parent cascades to its side-events.
+  describe("cascade to side-events", () => {
+    it("cancelling a parent cancels all its side-events, and the response lists them", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+      const { event: sideA } = await createEvent(cookie, communityId, { title: "Side A", parentEventId: parent!.id });
+      const { event: sideB } = await createEvent(cookie, communityId, { title: "Side B", parentEventId: parent!.id });
+
+      const res = await app.request(`/api/communities/${communityId}/events/${parent!.id}`, {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        event: { id: string; status: string };
+        cascadedSideEvents: { id: string; status: string }[];
+      };
+      expect(body.event.id).toBe(parent!.id);
+      expect(body.event.status).toBe("cancelled");
+      const cascadedIds = body.cascadedSideEvents.map((e) => e.id);
+      expect(cascadedIds).toContain(sideA!.id);
+      expect(cascadedIds).toContain(sideB!.id);
+      expect(body.cascadedSideEvents.every((e) => e.status === "cancelled")).toBe(true);
+    });
+
+    it("cancelling a side-event does NOT cancel its parent", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+      const { event: side } = await createEvent(cookie, communityId, { title: "Side", parentEventId: parent!.id });
+
+      const res = await app.request(`/api/communities/${communityId}/events/${side!.id}`, {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { event: { id: string }; cascadedSideEvents: unknown[] };
+      expect(body.event.id).toBe(side!.id);
+      expect(body.cascadedSideEvents).toEqual([]);
+
+      const [parentRow] = await testDb.select().from(schema.events).where(eq(schema.events.id, parent!.id));
+      expect(parentRow!.status).toBe("active");
+    });
+
+    it("cancel() with no side-events still returns an empty cascadedSideEvents array, not undefined", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event } = await createEvent(cookie, communityId);
+
+      const res = await app.request(`/api/communities/${communityId}/events/${event!.id}`, {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      });
+      const body = (await res.json()) as { cascadedSideEvents: unknown[] };
+      expect(body.cascadedSideEvents).toEqual([]);
+    });
+
+    it("D4: an already-cancelled side-event's cancelledAt is not overwritten when its parent is later cancelled", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+      const { event: side } = await createEvent(cookie, communityId, { title: "Side", parentEventId: parent!.id });
+
+      const firstCancelRes = await app.request(`/api/communities/${communityId}/events/${side!.id}`, {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      });
+      const { event: firstCancelled } = (await firstCancelRes.json()) as { event: { cancelledAt: number } };
+
+      await app.request(`/api/communities/${communityId}/events/${parent!.id}`, {
+        method: "DELETE",
+        headers: { Cookie: cookie },
+      });
+
+      const [row] = await testDb.select().from(schema.events).where(eq(schema.events.id, side!.id));
+      expect(row!.cancelledAt).toBe(firstCancelled.cancelledAt);
+    });
+  });
 });
 
 describe("POST /api/communities/:id/events/:eventId/duplicate", () => {
@@ -559,6 +758,46 @@ describe("POST /api/communities/:id/events/:eventId/duplicate", () => {
     });
     expect(res.status).toBe(403);
   });
+
+  // Events expansion (2026-08-26) — duplicate() explicitly does not carry parentEventId in
+  // either direction.
+  describe("parentEventId non-interaction", () => {
+    it("duplicating a side-event produces a standalone clone with parentEventId: null", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+      const { event: side } = await createEvent(cookie, communityId, { title: "Side", parentEventId: parent!.id });
+
+      const res = await app.request(`/api/communities/${communityId}/events/${side!.id}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ count: 1, intervalDays: 1 }),
+      });
+      expect(res.status).toBe(201);
+      const { events: created } = (await res.json()) as { events: { parentEventId: string | null }[] };
+      expect(created[0]!.parentEventId).toBeNull();
+    });
+
+    it("duplicating a parent with side-events does NOT clone its side-events", async () => {
+      const cookie = await authCookieFor(CREATOR);
+      const communityId = await registerCommunity(cookie);
+      const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+      await createEvent(cookie, communityId, { title: "Side", parentEventId: parent!.id });
+
+      const res = await app.request(`/api/communities/${communityId}/events/${parent!.id}/duplicate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: cookie },
+        body: JSON.stringify({ count: 1, intervalDays: 1 }),
+      });
+      expect(res.status).toBe(201);
+
+      const listRes = await app.request(`/api/communities/${communityId}/events?limit=50`);
+      const { events: all } = (await listRes.json()) as { events: { title: string }[] };
+      // 1 original parent + 1 original side-event + 1 duplicate of the parent = 3, NOT 4.
+      expect(all.length).toBe(3);
+      expect(all.filter((e) => e.title === "Side").length).toBe(1);
+    });
+  });
 });
 
 describe("DELETE /api/communities/:id/events/series/:seriesId", () => {
@@ -593,6 +832,34 @@ describe("DELETE /api/communities/:id/events/series/:seriesId", () => {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(404);
+  });
+
+  // Events expansion (2026-08-26) — duplicate() stamps seriesId onto the SOURCE row too, so a
+  // parent event with side-events can be swept into this bulk path even though it wasn't
+  // originally "the series." The cascade must extend here too, not just single-event cancel().
+  it("cancelling a series cascades to side-events of any series member", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+    const { event: side } = await createEvent(cookie, communityId, { title: "Side", parentEventId: parent!.id });
+    const dupRes = await app.request(`/api/communities/${communityId}/events/${parent!.id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ count: 1, intervalDays: 1 }),
+    });
+    const { events: created } = (await dupRes.json()) as { events: { seriesId: string }[] };
+    const seriesId = created[0]!.seriesId;
+
+    const res = await app.request(`/api/communities/${communityId}/events/series/${seriesId}`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(200);
+    const { events: cancelled } = (await res.json()) as { events: { id: string; status: string }[] };
+    const cancelledIds = cancelled.map((e) => e.id);
+    expect(cancelledIds).toContain(parent!.id);
+    expect(cancelledIds).toContain(side!.id);
+    expect(cancelled.every((e) => e.status === "cancelled")).toBe(true);
   });
 });
 

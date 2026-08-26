@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Users2 } from "lucide-react";
 import { Header } from "../components/Header";
@@ -9,10 +9,12 @@ import * as communityApi from "@/src/services/communityApi";
 // UnionsSection.tsx on the community detail page, and UnionsPanel.tsx on manage-communities).
 // No wallet/auth required, mirrors the homepage's community browse pattern.
 export default function UnionsPage() {
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["allUnions", page],
+  const unionsQueryKey = ["allUnions", page];
+  const { data, isLoading, isError } = useQuery({
+    queryKey: unionsQueryKey,
     queryFn: () => communityApi.listAllUnions(page),
   });
 
@@ -41,6 +43,20 @@ export default function UnionsPage() {
         {isLoading ? (
           <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">
             <p className="text-gray-400">Loading unions...</p>
+          </div>
+        ) : isError ? (
+          // TODOS.md follow-up (2026-08-26, surfaced by the /events page's Pass 2 design review)
+          // — a broken request previously rendered identically to "no unions," a Nielsen
+          // error-visibility violation. Same isError + Retry shape as the new /events page.
+          <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">
+            <p className="text-gray-400">Couldn&apos;t load unions right now.</p>
+            <button
+              type="button"
+              onClick={() => queryClient.invalidateQueries({ queryKey: unionsQueryKey })}
+              className="mt-3 text-sm font-medium text-accent-hover hover:underline"
+            >
+              Retry
+            </button>
           </div>
         ) : !data?.unions.length ? (
           <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">

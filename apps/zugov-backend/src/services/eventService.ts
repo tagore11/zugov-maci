@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, gte, lte, ne } from "drizzle-orm";
+import { and, eq, gte, lte, lt, ne, or, inArray, isNull, count } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { events, venues, eventRsvps, type Event, type EventRsvp } from "../db/schema.js";
+import { events, venues, eventRsvps, communities, type Event, type EventRsvp } from "../db/schema.js";
 import * as membershipService from "./membershipService.js";
 
 export class EventNotFoundError extends Error {
@@ -25,6 +25,17 @@ export class EventCancelledError extends Error {
 export class RsvpNotFoundError extends Error {
   constructor() {
     super("No RSVP found for this event and wallet");
+  }
+}
+
+// Events expansion (/office-hours + /plan-eng-review 2026-08-26) — a side-event's parent must
+// itself be a top-level event. A missing/cross-community parentEventId reuses EventNotFoundError
+// (mirrors the existing "not found or wrong community" pattern used by update()/cancel()/
+// duplicate() below), since referencing a parent that doesn't exist in this community is
+// indistinguishable from referencing one that doesn't exist at all.
+export class NestedSideEventError extends Error {
+  constructor() {
+    super("A side-event's parent cannot itself be a side-event (one level of nesting only)");
   }
 }
 
@@ -68,10 +79,35 @@ export interface CreateEventData {
   seriesId?: string;
   /** Omit/undefined/null = unrestricted (D1). */
   eligibleTierIds?: string[] | null;
+  /** Events expansion (2026-08-26) — nullable, one level of nesting only, immutable after
+   * creation (not part of UpdateEventData below, enforced structurally rather than at runtime). */
+  parentEventId?: string | null;
 }
 
 export async function create(data: CreateEventData): Promise<ViewableEvent> {
   if (data.venueId) await assertVenueBelongsToCommunity(data.venueId, data.communityId);
+
+  // Events expansion (2026-08-26) — app-level invariants (not DB constraints): a side-event's
+  // communityId must match its parent's (reuses EventNotFoundError for "parent doesn't exist in
+  // this community", same pattern as update()/cancel()/duplicate() below); nesting is capped at
+  // one level (reject a parent that already has a parentEventId, no grandchildren).
+  let parent: Event | null = null;
+  if (data.parentEventId) {
+    parent = await get(data.parentEventId);
+    if (!parent || parent.communityId !== data.communityId) throw new EventNotFoundError(data.parentEventId);
+    if (parent.parentEventId) throw new NestedSideEventError();
+  }
+
+  // Tier-inheritance-as-snapshot (2026-08-26 design review + eng review): when eligibleTierIds is
+  // omitted on a side-event, copy the parent's CURRENT eligibleTierIds at creation time — a
+  // snapshot, not a live reference to the parent's row. Without this, a side-event of a
+  // tier-restricted parent would silently become fully public (omitted already means
+  // "unrestricted" by Child I convention). An explicitly-provided eligibleTierIds (including
+  // explicit null) is never overridden by inheritance.
+  const eligibleTierIds =
+    parent && data.eligibleTierIds === undefined
+      ? parent.eligibleTierIds
+      : serializeEligibleTierIds(data.eligibleTierIds);
 
   const now = Math.floor(Date.now() / 1000);
   const [event] = await db
@@ -91,7 +127,8 @@ export async function create(data: CreateEventData): Promise<ViewableEvent> {
       status: "active",
       createdAt: now,
       cancelledAt: null,
-      eligibleTierIds: serializeEligibleTierIds(data.eligibleTierIds),
+      eligibleTierIds,
+      parentEventId: data.parentEventId ?? null,
     })
     .returning();
   return deserialize(event!);
@@ -125,6 +162,27 @@ export interface ListEventsFilter {
   endAt?: number;
   kind?: EventKind;
   includeCancelled?: boolean;
+  /** Events expansion (2026-08-26) — upcoming = endAt >= now (an in-progress multi-day event
+   * stays "upcoming" until it actually ends, never silently disappearing from both views), past =
+   * endAt < now. Independent of startAt/endAt range filtering above (both can be combined). */
+  collection?: "upcoming" | "past";
+}
+
+// Events expansion (/plan-eng-review 2026-08-26, D3) — shared between the existing per-community
+// list() and the new global listGlobal(): both need kind/date-range/collection/includeCancelled
+// conditions; only the community-scope condition (and, for listGlobal, the parentEventId IS NULL
+// top-level-only condition) differs and is added by the caller. Extracted rather than
+// copy-pasted a second time (DRY).
+function buildEventFilterConditions(filter: ListEventsFilter) {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    filter.includeCancelled ? undefined : ne(events.status, "cancelled"),
+    filter.startAt !== undefined ? gte(events.endAt, filter.startAt) : undefined,
+    filter.endAt !== undefined ? lte(events.startAt, filter.endAt) : undefined,
+    filter.kind !== undefined ? eq(events.kind, filter.kind) : undefined,
+    filter.collection === "upcoming" ? gte(events.endAt, now) : undefined,
+    filter.collection === "past" ? lt(events.endAt, now) : undefined,
+  ].filter((condition) => condition !== undefined);
 }
 
 // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, pagination-vs-filtering
@@ -140,14 +198,7 @@ export async function list(
   filter: ListEventsFilter = {},
   viewerAddress?: string,
 ): Promise<{ events: ViewableEvent[]; total: number; hasMore: boolean }> {
-  const conditions = [
-    eq(events.communityId, communityId),
-    filter.includeCancelled ? undefined : ne(events.status, "cancelled"),
-    filter.startAt !== undefined ? gte(events.endAt, filter.startAt) : undefined,
-    filter.endAt !== undefined ? lte(events.startAt, filter.endAt) : undefined,
-    filter.kind !== undefined ? eq(events.kind, filter.kind) : undefined,
-  ].filter((condition) => condition !== undefined);
-  const where = and(...conditions);
+  const where = and(eq(events.communityId, communityId), ...buildEventFilterConditions(filter));
 
   const rows = await db.select().from(events).where(where).orderBy(events.startAt);
   const ctx = await resolveViewerContext(communityId, viewerAddress);
@@ -159,6 +210,83 @@ export async function list(
     events: pageRows.map(deserialize),
     total: visible.length,
     hasMore: offset + pageRows.length < visible.length,
+  };
+}
+
+export interface GlobalViewableEvent extends ViewableEvent {
+  communityDisplayName: string;
+  communityLogo: string | null;
+}
+
+// Events expansion (/plan-eng-review 2026-08-26, D1) — genuinely different pagination strategy
+// from the per-community list() above: real DB-level LIMIT/OFFSET, not fetch-all-then-slice.
+// That in-memory approach is fine for one community's dozens-to-hundreds of rows but breaks by
+// definition once scope is "every community." Tier-visibility filtering still happens in JS on
+// the bounded page AFTER the SQL fetch (same canView() used everywhere else) — total/hasMore
+// reflect the UNFILTERED SQL count, reusing (not inventing) the exact imprecision list()'s own
+// comment already accepts for the per-community case, just via a different mechanism.
+//
+// D6 (2026-08-26 amendment, post-design-review) — INNER JOINs communities for
+// communityDisplayName/communityLogo (global feed cards need to show which community an event
+// belongs to). PK join, 1:1, does not change pagination semantics. Explicit flat column-selection
+// object, NOT Drizzle's default multi-table select (which would return nested
+// { events: {...}, communities: {...} } results instead of the flat row shape canView()/
+// deserialize() expect).
+export async function listGlobal(
+  page: number,
+  limit: number,
+  filter: ListEventsFilter = {},
+  viewerAddress?: string,
+): Promise<{ events: GlobalViewableEvent[]; total: number; hasMore: boolean }> {
+  const where = and(isNull(events.parentEventId), ...buildEventFilterConditions(filter));
+  const offset = (page - 1) * limit;
+
+  const [rows, totalRows] = await Promise.all([
+    db
+      .select({
+        id: events.id,
+        communityId: events.communityId,
+        title: events.title,
+        description: events.description,
+        venueId: events.venueId,
+        locationText: events.locationText,
+        startAt: events.startAt,
+        endAt: events.endAt,
+        seriesId: events.seriesId,
+        kind: events.kind,
+        creatorAddress: events.creatorAddress,
+        status: events.status,
+        createdAt: events.createdAt,
+        cancelledAt: events.cancelledAt,
+        eligibleTierIds: events.eligibleTierIds,
+        parentEventId: events.parentEventId,
+        communityDisplayName: communities.displayName,
+        communityLogo: communities.logo,
+      })
+      .from(events)
+      .innerJoin(communities, eq(events.communityId, communities.id))
+      .where(where)
+      .orderBy(events.startAt)
+      .limit(limit)
+      .offset(offset),
+    db.select({ value: count() }).from(events).where(where),
+  ]);
+
+  const total = Number(totalRows[0]?.value ?? 0);
+
+  // D1a (outside-voice fix) — exactly 2 queries total regardless of how many distinct
+  // communities appear on this page, not a per-community fan-out.
+  const distinctCommunityIds = [...new Set(rows.map((row) => row.communityId))];
+  const contexts = await membershipService.resolveViewerContextsForCommunities(distinctCommunityIds, viewerAddress);
+  const visible = rows.filter((row) => canView(row, row.creatorAddress, contexts.get(row.communityId) ?? null));
+
+  return {
+    events: visible.map((row) => {
+      const { communityDisplayName, communityLogo, ...eventRow } = row;
+      return { ...deserialize(eventRow), communityDisplayName, communityLogo };
+    }),
+    total,
+    hasMore: offset + rows.length < total,
   };
 }
 
@@ -187,18 +315,27 @@ export async function update(id: string, communityId: string, patch: UpdateEvent
   return deserialize(updated!);
 }
 
-export async function cancel(id: string, communityId: string): Promise<ViewableEvent> {
+// Events expansion (2026-08-26, D4/D5) — cancelling a parent auto-cancels all its side-events,
+// mirroring cancelSeries()'s existing bulk-cancel precedent (a cancelled multi-day gathering
+// shouldn't leave its component sessions looking still-active). One atomic UPDATE, not a
+// multi-step transaction, so there's no partial-cascade failure mode. `status != 'cancelled'`
+// guard (D4, outside-voice fix, copied from cancelSeries()'s existing guard below) prevents an
+// already-independently-cancelled side-event's cancelledAt from being silently overwritten to
+// the parent's cancellation time. Return type changed from ViewableEvent to ViewableEvent[] (D5,
+// matching cancelSeries()'s shape) since the cascade can touch a parent plus N side-events —
+// callers must pick the target row out of the array themselves (see routes/events.ts).
+export async function cancel(id: string, communityId: string): Promise<ViewableEvent[]> {
   const existing = await get(id);
   if (!existing || existing.communityId !== communityId) throw new EventNotFoundError(id);
   if (existing.status === "cancelled") throw new EventCancelledError();
 
   const now = Math.floor(Date.now() / 1000);
-  const [updated] = await db
+  const updated = await db
     .update(events)
     .set({ status: "cancelled", cancelledAt: now })
-    .where(eq(events.id, id))
+    .where(and(or(eq(events.id, id), eq(events.parentEventId, id)), ne(events.status, "cancelled")))
     .returning();
-  return deserialize(updated!);
+  return updated.map(deserialize);
 }
 
 const MAX_DUPLICATE_COUNT = 52;
@@ -272,12 +409,34 @@ export async function listBySeriesId(seriesId: string, communityId: string): Pro
 // Bulk cancel every event sharing a seriesId in one query, not N individual cancel() calls
 // (2026-08-19 review, outside-voice finding #5 — duplicate() had no corresponding bulk
 // lifecycle operation).
+//
+// Events expansion (2026-08-26) — extended to cascade to side-events of every event in the
+// series, not just the series members themselves. duplicate() stamps seriesId onto the SOURCE
+// row too, so a parent event with side-events can be swept into this bulk path even though it
+// wasn't originally "the series" — without this extension, its side-events would silently
+// survive under a cancelled parent. Two queries: first resolves which event ids are in the
+// series (needed to know which parentEventId values to cascade to), then one atomic UPDATE
+// cancels the series members AND their side-events together, same `status != 'cancelled'` guard
+// this function already had (the precedent D4's guard on cancel() above copied from here).
 export async function cancelSeries(seriesId: string, communityId: string): Promise<ViewableEvent[]> {
+  const seriesMembers = await db
+    .select({ id: events.id })
+    .from(events)
+    .where(and(eq(events.seriesId, seriesId), eq(events.communityId, communityId)));
+  if (seriesMembers.length === 0) return [];
+  const seriesMemberIds = seriesMembers.map((row) => row.id);
+
   const now = Math.floor(Date.now() / 1000);
   const updated = await db
     .update(events)
     .set({ status: "cancelled", cancelledAt: now })
-    .where(and(eq(events.seriesId, seriesId), eq(events.communityId, communityId), ne(events.status, "cancelled")))
+    .where(
+      and(
+        eq(events.communityId, communityId),
+        or(eq(events.seriesId, seriesId), inArray(events.parentEventId, seriesMemberIds)),
+        ne(events.status, "cancelled"),
+      ),
+    )
     .returning();
   return updated.map(deserialize);
 }

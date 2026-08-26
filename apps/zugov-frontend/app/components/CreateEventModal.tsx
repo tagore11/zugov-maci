@@ -58,6 +58,19 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     enabled: isOpen,
   });
 
+  // Events expansion (2026-08-26, D2) — parent-event picker. Reuses the same list() response
+  // EventsSection already fetches (no new endpoint); a large limit keeps this a single request
+  // rather than paginating a community's own event list just to populate a picker.
+  const { data: communityEventsData } = useQuery({
+    queryKey: ["events", communityId, undefined],
+    queryFn: () => eventApi.listEvents(communityId, { limit: 50 }),
+    enabled: isOpen && !isEdit,
+  });
+  // Only the community's OTHER top-level events (excludes self — n/a in create mode since the
+  // event doesn't exist yet — and excludes existing side-events, matching the one-level-nesting
+  // cap enforced server-side).
+  const parentCandidates = (communityEventsData?.events ?? []).filter((e) => e.parentEventId === null);
+
   // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D5).
   const { data: tiers = [] } = useQuery({
     queryKey: ["tiers", communityId],
@@ -75,6 +88,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   const [endAt, setEndAt] = useState("");
   const [isRestricted, setIsRestricted] = useState(false);
   const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
+  const [parentEventId, setParentEventId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -110,6 +124,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
       setEndAt("");
       setIsRestricted(false);
       setSelectedTierIds([]);
+      setParentEventId("");
     }
     setError(null);
   }, [isOpen, editingEvent]);
@@ -179,6 +194,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             endAt: endAtSec,
             kind,
             eligibleTierIds,
+            parentEventId: parentEventId || undefined,
           });
         }
       }, signOut);
@@ -354,6 +370,30 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
               </select>
             )}
           </div>
+
+          {!isEdit && parentCandidates.length > 0 && (
+            <div>
+              <label htmlFor="event-parent" className="block text-sm font-semibold text-foreground mb-2">
+                Parent event (optional)
+              </label>
+              <select
+                id="event-parent"
+                value={parentEventId}
+                onChange={(e) => setParentEventId(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                <option value="">None — this is a top-level event</option>
+                {parentCandidates.map((candidate) => (
+                  <option key={candidate.id} value={candidate.id}>
+                    {candidate.title}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-gray-500">
+                Nest this as a session under a bigger multi-day gathering. Can&apos;t be changed after creation.
+              </p>
+            </div>
+          )}
 
           <TierRestrictionPicker
             tiers={tiers}
