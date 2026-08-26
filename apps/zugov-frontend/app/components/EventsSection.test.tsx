@@ -55,6 +55,7 @@ const EVENT = {
   status: "active" as const,
   createdAt: 0,
   cancelledAt: null,
+  eligibleTierIds: null,
 };
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -80,6 +81,32 @@ beforeEach(() => {
 });
 
 describe("EventsSection", () => {
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D4) — the events-list query
+  // key now includes walletAddress, mirroring ProposalsList.tsx's identical Child H fix, so an
+  // account switch always refetches under the new identity instead of briefly showing the
+  // previous wallet's (now stale) visibility-filtered list.
+  it("refetches the events list when walletAddress changes", async () => {
+    const OTHER_WALLET = "0x9999999999999999999999999999999999999999";
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Morning Yoga");
+    expect(listEventsMock).toHaveBeenCalledTimes(1);
+
+    // Same QueryClient (same cache), only walletAddress changes — proves the key itself, not just
+    // a fresh cache, is what forces the refetch.
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <EventsSection communityId="0xabc" connected={true} walletAddress={OTHER_WALLET} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(listEventsMock).toHaveBeenCalledTimes(2));
+  });
+
   it("RSVPs successfully", async () => {
     rsvpMock.mockResolvedValue({ walletAddress: WALLET_ADDRESS, status: "active", rsvpedAt: 0, cancelledAt: null });
 

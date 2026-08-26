@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAccount } from "wagmi";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import * as communityApi from "@/src/services/communityApi";
 import type { CommunityCategory } from "@/src/services/communityApi";
@@ -21,6 +22,7 @@ export function StepCommunityInfo({
   setCommunityInfo,
   goBack,
 }: Props) {
+  const { address } = useAccount();
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription);
   const [parentCommunityId, setParentCommunityId] = useState(initialParentCommunityId);
@@ -51,6 +53,13 @@ export function StepCommunityInfo({
   // finding). Deliberately no chainId filter passed to list(): chainId lives on
   // maciGovernanceConfigs, so filtering by it silently excludes every ungoverned community from
   // ever being selectable as a parent (governance-restructure Phase 1 review, confirmed bug).
+  //
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D2) — the list is filtered
+  // to communities the connected wallet is authorized on (authorizedFor). Fails CLOSED, not open:
+  // while `address` is still resolving (wallet connecting on page load), the search effect below
+  // doesn't fire at all rather than falling back to the full public list — the naive
+  // `authorizedFor: address ?? undefined` would silently widen the list back open at exactly the
+  // moment it's most likely to matter.
   const [parentQuery, setParentQuery] = useState("");
   const [parentResults, setParentResults] = useState<communityApi.Community[]>([]);
   const [parentDropdownOpen, setParentDropdownOpen] = useState(false);
@@ -75,11 +84,15 @@ export function StepCommunityInfo({
 
   useEffect(() => {
     if (!parentDropdownOpen) return;
+    if (!address) {
+      setParentResults([]);
+      return;
+    }
     let cancelled = false;
     setParentSearchLoading(true);
     const timer = setTimeout(() => {
       communityApi
-        .list(1, undefined, undefined, parentQuery)
+        .list(1, undefined, undefined, parentQuery, address)
         .then(({ communities }) => {
           if (!cancelled) setParentResults(communities);
         })
@@ -94,7 +107,7 @@ export function StepCommunityInfo({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [parentQuery, parentDropdownOpen]);
+  }, [parentQuery, parentDropdownOpen, address]);
 
   function handleSelectParent(parent: communityApi.Community | null) {
     if (parent) {

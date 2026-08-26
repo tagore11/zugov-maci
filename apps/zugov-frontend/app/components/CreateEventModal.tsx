@@ -3,8 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { X } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
 import type { Event, EventKind } from "@/src/services/eventApi";
+import * as membershipApi from "@/src/services/membershipApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
+import { TierRestrictionPicker } from "./TierRestrictionPicker";
 
 const KIND_OPTIONS: { value: EventKind; label: string }[] = [
   { value: "talk", label: "Talk" },
@@ -56,6 +58,13 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     enabled: isOpen,
   });
 
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D5).
+  const { data: tiers = [] } = useQuery({
+    queryKey: ["tiers", communityId],
+    queryFn: () => membershipApi.getTiers(communityId),
+    enabled: isOpen,
+  });
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [kind, setKind] = useState<EventKind>("other");
@@ -64,8 +73,14 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   const [locationText, setLocationText] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
+  const [isRestricted, setIsRestricted] = useState(false);
+  const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const toggleTier = (tierId: string) => {
+    setSelectedTierIds((prev) => (prev.includes(tierId) ? prev.filter((id) => id !== tierId) : [...prev, tierId]));
+  };
 
   // Reset/prefill whenever the modal opens (this instance is reused across opens) — matches
   // CreateProposalModal's own reset-on-close convention.
@@ -80,6 +95,10 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
       setLocationText(editingEvent.locationText ?? "");
       setStartAt(toLocalInputValue(editingEvent.startAt));
       setEndAt(toLocalInputValue(editingEvent.endAt));
+      // D5 — null round-trips to toggle-off unambiguously; a non-null list round-trips to
+      // toggle-on with the right boxes checked.
+      setIsRestricted(editingEvent.eligibleTierIds !== null);
+      setSelectedTierIds(editingEvent.eligibleTierIds ?? []);
     } else {
       setTitle("");
       setDescription("");
@@ -89,6 +108,8 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
       setLocationText("");
       setStartAt("");
       setEndAt("");
+      setIsRestricted(false);
+      setSelectedTierIds([]);
     }
     setError(null);
   }, [isOpen, editingEvent]);
@@ -115,6 +136,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   const hasSaneStart = !startAt || new Date(startAt).getTime() < maxTimestamp;
   const hasSaneEnd = !endAt || new Date(endAt).getTime() < maxTimestamp;
   const hasLocation = locationMode === "venue" ? !!venueId : locationText.trim().length > 0;
+  const hasValidTierSelection = !isRestricted || selectedTierIds.length > 0;
   const canSubmit =
     title.trim().length > 0 &&
     !!startAt &&
@@ -123,7 +145,8 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     hasFutureStart &&
     hasSaneStart &&
     hasSaneEnd &&
-    hasLocation;
+    hasLocation &&
+    hasValidTierSelection;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -133,6 +156,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     try {
       const startAtSec = Math.floor(new Date(startAt).getTime() / 1000);
       const endAtSec = Math.floor(new Date(endAt).getTime() / 1000);
+      const eligibleTierIds = isRestricted ? selectedTierIds : null;
       await withAuthDetect(async () => {
         if (isEdit && editingEvent) {
           await eventApi.updateEvent(communityId, editingEvent.id, {
@@ -143,6 +167,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             startAt: startAtSec,
             endAt: endAtSec,
             kind,
+            eligibleTierIds,
           });
         } else {
           await eventApi.createEvent(communityId, {
@@ -153,6 +178,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             startAt: startAtSec,
             endAt: endAtSec,
             kind,
+            eligibleTierIds,
           });
         }
       }, signOut);
@@ -328,6 +354,14 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
               </select>
             )}
           </div>
+
+          <TierRestrictionPicker
+            tiers={tiers}
+            isRestricted={isRestricted}
+            onIsRestrictedChange={setIsRestricted}
+            selectedTierIds={selectedTierIds}
+            onToggleTier={toggleTier}
+          />
 
           {error && (
             <div className="p-3 bg-error/10 border border-error/40 rounded-lg">

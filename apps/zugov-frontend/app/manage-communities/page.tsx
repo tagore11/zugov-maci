@@ -48,7 +48,11 @@ export default function ManageCommunitiesPage() {
       return;
     }
     try {
-      const { communities: items } = await communityApi.list(1, undefined, address);
+      // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — was
+      // creatorAddress-only (list(1, undefined, address)), so a non-creator canManageMembership
+      // admin saw zero communities on their own management dashboard. authorizedFor matches
+      // isAuthorized()'s real definition (creator OR admin-tier), fixing a live, shipped gap.
+      const { communities: items } = await communityApi.list(1, undefined, undefined, undefined, address);
       setUserCommunities(items.map(apiToItem));
     } catch {
       // keep previous list on error

@@ -135,11 +135,16 @@ export async function list(
   chainId?: number,
   creatorAddress?: string,
   search?: string,
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on"
+  // (creator OR canManageMembership tier holder), distinct from creatorAddress's "created by"
+  // filter. Appended last (not inserted) since every existing caller passes these positionally.
+  authorizedFor?: string,
 ): Promise<ListResponse> {
   const params = new URLSearchParams({ page: String(page) });
   if (chainId !== undefined) params.set("chainId", String(chainId));
   if (creatorAddress !== undefined) params.set("creatorAddress", creatorAddress);
   if (search !== undefined && search.trim() !== "") params.set("search", search.trim());
+  if (authorizedFor !== undefined) params.set("authorizedFor", authorizedFor);
   const res = await fetch(`${BASE_URL}/api/communities?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch communities: ${res.status}`);
   return res.json() as Promise<ListResponse>;

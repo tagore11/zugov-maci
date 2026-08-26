@@ -22,8 +22,13 @@ vi.mock("@/src/services/proposalApi", () => ({
 }));
 
 const getTiersMock = vi.fn();
+// formalize-communities epic, Child H (/plan-eng-review 2026-08-25) — getMembershipStatus added
+// for the new "join to create/sponsor" hint (ProposalsList/DraftRow). Defaults to "member" so
+// existing tests (which assume a fully-permissioned viewer) don't need to change.
+const getMembershipStatusMock = vi.fn();
 vi.mock("@/src/services/membershipApi", () => ({
   getTiers: (...args: unknown[]) => getTiersMock(...args),
+  getMembershipStatus: (...args: unknown[]) => getMembershipStatusMock(...args),
 }));
 
 // Merged in from the zupoll decision-adapter feature (main) — DraftRow's Sponsor button and the
@@ -31,9 +36,15 @@ vi.mock("@/src/services/membershipApi", () => ({
 // membershipApi's getMembershipStatus/getTiers) since these tests are about the sponsor/authorize/
 // formalize flow, not permission computation; every test here assumes a fully-permissioned viewer
 // unless it says otherwise.
+//
+// formalize-communities epic, Child H (/plan-eng-review 2026-08-25) — promoted to tracked,
+// per-test-overridable vi.fn()s (defaulting to true) so the new "join to participate" hint tests
+// can flip them to false without affecting every other test in this file.
+const hasTierPermissionMock = vi.fn((..._args: unknown[]) => true);
+const isCommunityAdminMock = vi.fn((..._args: unknown[]) => true);
 vi.mock("@/src/hooks/useMembershipPermission", () => ({
-  useHasTierPermission: () => true,
-  useIsCommunityAdmin: () => true,
+  useHasTierPermission: (...args: unknown[]) => hasTierPermissionMock(...args),
+  useIsCommunityAdmin: (...args: unknown[]) => isCommunityAdminMock(...args),
 }));
 
 const communityGetMock = vi.fn();
@@ -134,6 +145,12 @@ beforeEach(() => {
   deployPollMock.mockReset();
   getTiersMock.mockReset();
   getTiersMock.mockResolvedValue([]);
+  getMembershipStatusMock.mockReset();
+  getMembershipStatusMock.mockResolvedValue({ status: "member" });
+  hasTierPermissionMock.mockReset();
+  hasTierPermissionMock.mockReturnValue(true);
+  isCommunityAdminMock.mockReset();
+  isCommunityAdminMock.mockReturnValue(true);
   communityGetMock.mockReset();
   communityGetMock.mockResolvedValue(null);
   voteOptionsMock.mockReset();
@@ -506,6 +523,56 @@ describe("ProposalsList", () => {
         expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
       );
       expect(mockSignOut).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // formalize-communities epic, Child H (/plan-eng-review 2026-08-25, AC2/D3)
+  describe("non-member hints and viewer-scoped fetching (Child H)", () => {
+    it("includes walletAddress in the proposals query key (D3)", async () => {
+      listMock.mockResolvedValue({ proposals: [] });
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} walletAddress="0xWallet" />);
+      await waitFor(() => expect(listMock).toHaveBeenCalledWith("0xabc"));
+      // The query key itself isn't observable through proposalApi.list's own call args (list()
+      // only takes communityId) — re-rendering with a different walletAddress must trigger a
+      // fresh call, proving React Query treated it as a different query, not a cache hit.
+      listMock.mockClear();
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} walletAddress="0xOtherWallet" />);
+      await waitFor(() => expect(listMock).toHaveBeenCalledWith("0xabc"));
+    });
+
+    it("shows a join-to-create hint for a signed-in non-member instead of silently hiding the create button", async () => {
+      listMock.mockResolvedValue({ proposals: [] });
+      hasTierPermissionMock.mockReturnValue(false);
+      getMembershipStatusMock.mockResolvedValue({ status: "none" });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      expect(await screen.findByText("Join this community to create proposals.")).toBeInTheDocument();
+      expect(screen.queryByText("New Draft")).not.toBeInTheDocument();
+    });
+
+    it("does not show the join-to-create hint for an existing member who simply lacks the tier permission", async () => {
+      listMock.mockResolvedValue({ proposals: [] });
+      hasTierPermissionMock.mockReturnValue(false);
+      getMembershipStatusMock.mockResolvedValue({ status: "member", tierLabel: "Regular" });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      await waitFor(() => expect(getMembershipStatusMock).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(screen.queryByText("Join this community to create proposals.")).not.toBeInTheDocument(),
+      );
+    });
+
+    it("shows a join-to-sponsor hint on a draft for a signed-in non-member", async () => {
+      listMock.mockResolvedValue({ proposals: [DRAFT_ACTION] });
+      hasTierPermissionMock.mockReturnValue(false);
+      getMembershipStatusMock.mockResolvedValue({ status: "none" });
+
+      renderWithProviders(<ProposalsList communityId="0xabc" connected={true} />);
+
+      expect(await screen.findByText("Join this community to sponsor proposals.")).toBeInTheDocument();
+      expect(screen.queryByText("Sponsor")).not.toBeInTheDocument();
     });
   });
 });

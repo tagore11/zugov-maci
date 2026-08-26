@@ -3,6 +3,20 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StepCommunityInfo } from "./StepCommunityInfo";
 
+const CONNECTED_ADDRESS = "0x1111111111111111111111111111111111111111";
+// formalize-communities epic, Child E (/plan-eng-review 2026-08-25) — StepCommunityInfo now calls
+// useAccount() to filter the parent-picker to authorized communities (D2). Defaults to connected
+// so the existing search-flow tests below don't need to click through a wallet-loading state; the
+// dedicated "wallet not yet connected" tests further down override this.
+let mockAddress: string | undefined = CONNECTED_ADDRESS;
+vi.mock("wagmi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("wagmi")>();
+  return {
+    ...actual,
+    useAccount: () => ({ address: mockAddress, status: mockAddress ? "connected" : "disconnected" }),
+  };
+});
+
 const listMock = vi.fn();
 const getMock = vi.fn();
 const listCategoriesMock = vi.fn();
@@ -21,6 +35,7 @@ function renderWithProviders(ui: React.ReactElement) {
 }
 
 beforeEach(() => {
+  mockAddress = CONNECTED_ADDRESS;
   listMock.mockReset();
   getMock.mockReset();
   listCategoriesMock.mockReset();
@@ -62,7 +77,7 @@ describe("StepCommunityInfo — parent combobox", () => {
     fireEvent.change(input, { target: { value: "zukas" } });
 
     vi.advanceTimersByTime(350);
-    await waitFor(() => expect(listMock).toHaveBeenCalledWith(1, undefined, undefined, "zukas"));
+    await waitFor(() => expect(listMock).toHaveBeenCalledWith(1, undefined, undefined, "zukas", CONNECTED_ADDRESS));
 
     vi.useRealTimers();
   });
@@ -122,5 +137,30 @@ describe("StepCommunityInfo — parent combobox", () => {
     await waitFor(() => expect(getMock).toHaveBeenCalledWith("community-a"));
     const input = screen.getByPlaceholderText("Search communities…") as HTMLInputElement;
     await waitFor(() => expect(input.value).toBe("Zukas Residency"));
+  });
+
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D2) — fails CLOSED while
+  // the wallet is still resolving: no search fires and the dropdown stays empty, rather than
+  // falling back to the full public list.
+  describe("authorized-only filtering (D2 — fail closed on unresolved wallet)", () => {
+    it("does not call list() and shows no results while the wallet address is unresolved", async () => {
+      mockAddress = undefined;
+      renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+
+      const input = screen.getByPlaceholderText("Search communities…");
+      fireEvent.focus(input);
+
+      await waitFor(() => expect(screen.getByText(/No matching communities/)).toBeInTheDocument());
+      expect(listMock).not.toHaveBeenCalled();
+    });
+
+    it("passes the connected address as authorizedFor once resolved", async () => {
+      renderWithProviders(<StepCommunityInfo setCommunityInfo={vi.fn()} goBack={vi.fn()} />);
+
+      const input = screen.getByPlaceholderText("Search communities…");
+      fireEvent.focus(input);
+
+      await waitFor(() => expect(listMock).toHaveBeenCalledWith(1, undefined, undefined, "", CONNECTED_ADDRESS));
+    });
   });
 });

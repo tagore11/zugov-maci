@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useConnect } from "wagmi";
 import { JsonRpcProvider } from "ethers";
 import * as membershipApi from "@/src/services/membershipApi";
 import { useSignup } from "@/src/hooks/useSignup";
@@ -14,7 +15,9 @@ export function JoinSection({
   communityId,
   contractAddress,
   connected,
+  status,
   rpcUrl,
+  isCreator,
 }: {
   communityId: string;
   // The deployed MACI contract's address — distinct from communityId (Architecture 1C).
@@ -23,10 +26,23 @@ export function JoinSection({
   // and signupToMaci must use. Null when governance isn't configured yet.
   contractAddress: string | null;
   connected: boolean;
+  // formalize-communities epic, Child G (/plan-eng-review 2026-08-25, D3) — wagmi's own
+  // useAccount().status, threaded down from page.tsx (which already calls useAccount() once)
+  // rather than JoinSection calling it a second time independently. Needed to distinguish "truly
+  // disconnected" from "still resolving a reconnect on mount" — without it, a returning user with
+  // an already-connected wallet would see a false "Connect wallet" flash before status settles,
+  // the exact bug RequireAuth.tsx's own connecting/reconnecting guard exists to prevent.
+  status: "connecting" | "reconnecting" | "connected" | "disconnected";
   rpcUrl: string;
+  // formalize-communities epic, Child F (/plan-eng-review 2026-08-25, D1) — the creator can never
+  // Leave their own community (isAuthorized() grants them settings authority independent of any
+  // memberships row, so leaving would silently strip their tier permissions while they keep
+  // admin access — a confusing half-state, not a real "left" state).
+  isCreator: boolean;
 }) {
   const queryClient = useQueryClient();
   const { signOut } = useSiwe();
+  const { connectors, connect, isPending: isConnecting } = useConnect();
   // Investigation fix (2026-08-21) — this page never previously established a SIWE session at
   // all, so clicking Join here could hit a bare "Authentication required" from the backend with
   // no way to recover: the SIWE session only ever existed if the user happened to pass through
@@ -40,6 +56,10 @@ export function JoinSection({
   // identity/membership is real before governance is ever configured (Architecture 1A/1B), so
   // joining must not require a deployed contract — only the on-chain MACI signup below does.
   const [isJoiningBackendOnly, setIsJoiningBackendOnly] = useState(false);
+  // formalize-communities epic, Child F (/plan-eng-review 2026-08-25) — inline confirm-to-leave,
+  // matching EventsSection.tsx's existing cancel-event pattern (not a bare window.confirm()).
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
 
   const { data: membership } = useQuery({
     queryKey: ["membershipStatus", communityId],
@@ -109,7 +129,47 @@ export function JoinSection({
     }
   }
 
-  if (!connected) return null;
+  async function handleLeave() {
+    setError(null);
+    setIsLeaving(true);
+    try {
+      await withAuthDetect(() => membershipApi.leave(communityId), signOut);
+      setJustJoined(false);
+      queryClient.invalidateQueries({ queryKey: ["membershipStatus", communityId] });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to leave");
+    } finally {
+      setIsLeaving(false);
+      setConfirmingLeave(false);
+    }
+  }
+
+  // formalize-communities epic, Child G (/plan-eng-review 2026-08-25, D1/D3) — a fully
+  // disconnected visitor used to see nothing at all here (return null). Now shows a connect
+  // prompt, reusing RequireAuth.tsx's exact connect({connector: connectors[0]!}) pattern — once
+  // connected, useSiwe's existing auto-sign-in effect fires and SiweGate below takes over with no
+  // further navigation. The connecting/reconnecting check must come first: without it, a
+  // returning user with an already-connected wallet would see a false prompt before wagmi's
+  // reconnect-on-mount resolves (RequireAuth.tsx's own guard for the identical race).
+  if (status === "connecting" || status === "reconnecting") {
+    return <p className="text-sm text-gray-500">Loading…</p>;
+  }
+
+  if (!connected) {
+    return (
+      <div className="space-y-2 text-center">
+        <p className="text-sm text-gray-400">Connect your wallet to join this community.</p>
+        <button
+          type="button"
+          onClick={() => connect({ connector: connectors[0]! })}
+          disabled={isConnecting}
+          className="px-6 py-3 bg-accent text-white rounded-[6px] font-semibold hover:bg-accent-hover transition-colors disabled:opacity-60"
+        >
+          {isConnecting ? "Connecting…" : "Connect Wallet"}
+        </button>
+      </div>
+    );
+  }
 
   if (!contractAddress) {
     return (
@@ -118,16 +178,43 @@ export function JoinSection({
           Governance not yet configured for this community — voting isn&apos;t available yet, but you can still join.
         </div>
         {justJoined || membership?.status === "member" ? (
-          <p className="text-xs text-gray-500">
-            You&apos;re a member
-            {membership?.tierLabel && (
-              <>
-                {" "}
-                (<span className="font-semibold">{membership.tierLabel}</span>)
-              </>
-            )}
-            .
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-gray-500">
+              You&apos;re a member
+              {membership?.tierLabel && (
+                <>
+                  {" "}
+                  (<span className="font-semibold">{membership.tierLabel}</span>)
+                </>
+              )}
+              .
+            </p>
+            {/* Child F (/plan-eng-review 2026-08-25, D1) — the creator can never use Leave; the
+                backend enforces this too, this is just the matching client-side hide. */}
+            {!isCreator &&
+              (confirmingLeave ? (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-400">Leave this community?</span>
+                  <button
+                    onClick={() => void handleLeave()}
+                    disabled={isLeaving}
+                    className="text-error hover:text-error-hover font-medium disabled:opacity-60"
+                  >
+                    {isLeaving ? "Leaving…" : "Confirm"}
+                  </button>
+                  <button onClick={() => setConfirmingLeave(false)} className="text-gray-400 hover:text-foreground">
+                    Never mind
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmingLeave(true)}
+                  className="text-xs text-gray-400 hover:text-foreground transition-colors"
+                >
+                  Leave community
+                </button>
+              ))}
+          </div>
         ) : membership?.status === "pending" ? (
           <p className="text-xs text-gray-500">Membership request pending admin review.</p>
         ) : (

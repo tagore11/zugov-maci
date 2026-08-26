@@ -2,13 +2,15 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useChainId } from "wagmi";
 import { Header } from "../../components/Header";
-import { Users, FileText, ArrowLeft } from "lucide-react";
+import { Users, FileText, ArrowLeft, Settings } from "lucide-react";
 import { computePollStatus, pollStatusLabel, pollStatusClass } from "@/src/lib/pollStatus";
 import { useNow } from "@/src/hooks/useNow";
 import { ALLOWED_POLICIES, VOTING_MODES } from "@/app/lib/placeholder-data";
 import { appConstants, type GovernanceType } from "@/src/config";
 import * as communityApi from "@/src/services/communityApi";
+import { useIsCommunityAdmin } from "@/src/hooks/useMembershipPermission";
 import { JoinSection } from "./JoinSection";
+import { DiscussionsSection } from "./DiscussionsSection";
 import { UnionsSection } from "./UnionsSection";
 import { ProposalsList } from "../../components/ProposalsList";
 import { EventsSection } from "../../components/EventsSection";
@@ -37,7 +39,7 @@ function formatRelativeTime(unixSec: number): string {
 
 export default function CommunityPage() {
   const params = useParams();
-  const { address } = useAccount();
+  const { address, status } = useAccount();
   const chainId = useChainId();
 
   const { data: backendCommunity, isLoading: isCommunityLoading } = useQuery({
@@ -46,6 +48,17 @@ export default function CommunityPage() {
     enabled: !!params.id,
   });
   const rpcUrl = appConstants[chainId as keyof typeof appConstants]?.rpcUrl ?? Object.values(appConstants)[0].rpcUrl;
+
+  // formalize-communities epic, Child G (/plan-eng-review 2026-08-25, D2), CORRECTED during
+  // Child H's review — gates the Settings link below. Originally hand-rolled the same
+  // membershipStatus/tiers queries useIsCommunityAdmin (src/hooks/useMembershipPermission.ts)
+  // already provides — that hook already existed (built during the zupoll merge, already used by
+  // ProposalsList.tsx) and Child G's own review should have found it. Reusing it now; the creator
+  // check stays composed separately, matching ProposalsList.tsx's/EventsSection.tsx's own
+  // established convention (useIsCommunityAdmin deliberately doesn't include a creator bypass).
+  const isCreator =
+    !!address && !!backendCommunity && address.toLowerCase() === backendCommunity.creatorAddress.toLowerCase();
+  const isCommunityAdmin = useIsCommunityAdmin(params.id ?? "", !!address);
 
   // Backend-registered communities go through the backend's transparent proxy once their
   // subgraph has finished indexing (subgraphStatus "ready") — the frontend never talks to
@@ -158,10 +171,23 @@ export default function CommunityPage() {
       <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-8 space-y-6">
-          <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground text-sm">
-            <ArrowLeft className="w-4 h-4" />
-            Back to Communities
-          </Link>
+          <div className="flex items-center justify-between">
+            <Link to="/" className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground text-sm">
+              <ArrowLeft className="w-4 h-4" />
+              Back to Communities
+            </Link>
+            {/* formalize-communities epic, Child G (/plan-eng-review 2026-08-25, AC4) — owner/
+                admin only, reuses the isCreator/isCommunityAdmin computation above. */}
+            {(isCreator || isCommunityAdmin) && (
+              <Link
+                to={`/community/${dc.id}/settings`}
+                className="inline-flex items-center gap-2 text-gray-400 hover:text-foreground text-sm"
+              >
+                <Settings className="w-4 h-4" />
+                Settings
+              </Link>
+            )}
+          </div>
 
           {/* Info: identity fields only — who/what this community is, independent of whether
               its governance tooling is configured (Design Issue 1's card order). */}
@@ -262,7 +288,9 @@ export default function CommunityPage() {
               communityId={dc.id}
               contractAddress={dc.contractAddress}
               connected={!!address}
+              status={status}
               rpcUrl={rpcUrl}
+              isCreator={isCreator}
             />
           </div>
 
@@ -297,6 +325,11 @@ export default function CommunityPage() {
           <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
             <ProposalsList communityId={dc.id} connected={!!address} walletAddress={address} />
           </div>
+
+          {/* formalize-communities epic, Child J (/plan-eng-review 2026-08-26, D5) — the section
+              renders nothing at all for a non-member, so no card wrapper is shown unconditionally
+              here (unlike Events/Proposals above) — the component itself owns that decision. */}
+          <DiscussionsSection communityId={dc.id} connected={!!address} walletAddress={address} isCreator={isCreator} />
 
           <ZupollSection communityId={dc.id} connected={!!address} />
         </main>

@@ -30,6 +30,8 @@ export interface Event {
   status: EventStatus;
   createdAt: number;
   cancelledAt: number | null;
+  /** null = unrestricted, visible to everyone (formalize-communities epic, Child I, D1). */
+  eligibleTierIds: string[] | null;
 }
 
 export interface EventRsvp {
@@ -41,7 +43,12 @@ export interface EventRsvp {
 }
 
 export async function listVenues(communityId: string): Promise<Venue[]> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/venues`);
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, outside-voice finding) —
+  // credentials: "include" was missing on every GET in this file, unlike proposalApi.ts's
+  // equivalents. FE/BE are different origins in production, so without it the session cookie
+  // never reaches the backend and viewer-aware tier filtering (D2/D6) would silently never
+  // activate for signed-in users. Applied to all 4 GETs below, not just the new events one.
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/venues`, { credentials: "include" });
   const data = await parseErrorOr<{ venues: Venue[] }>(res, `Failed to fetch venues: ${res.status}`);
   return data.venues;
 }
@@ -54,6 +61,8 @@ export interface CreateEventInput {
   startAt: number;
   endAt: number;
   kind?: EventKind;
+  /** Omit or null for unrestricted (default). */
+  eligibleTierIds?: string[] | null;
 }
 
 export async function createEvent(communityId: string, input: CreateEventInput): Promise<Event> {
@@ -86,12 +95,16 @@ export async function listEvents(
   if (filter.endAt !== undefined) params.set("endAt", String(filter.endAt));
   if (filter.kind !== undefined) params.set("kind", filter.kind);
   const qs = params.toString();
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events${qs ? `?${qs}` : ""}`);
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+  });
   return parseErrorOr(res, `Failed to fetch events: ${res.status}`);
 }
 
 export async function getEvent(communityId: string, eventId: string): Promise<Event> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/${eventId}`);
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/${eventId}`, {
+    credentials: "include",
+  });
   const data = await parseErrorOr<{ event: Event }>(res, `Failed to fetch event: ${res.status}`);
   return data.event;
 }
@@ -104,6 +117,7 @@ export interface UpdateEventInput {
   startAt?: number;
   endAt?: number;
   kind?: EventKind;
+  eligibleTierIds?: string[] | null;
 }
 
 export async function updateEvent(communityId: string, eventId: string, patch: UpdateEventInput): Promise<Event> {
@@ -160,7 +174,9 @@ export async function cancelRsvp(communityId: string, eventId: string): Promise<
 }
 
 export async function listRsvps(communityId: string, eventId: string): Promise<EventRsvp[]> {
-  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/${eventId}/rsvp`);
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events/${eventId}/rsvp`, {
+    credentials: "include",
+  });
   const data = await parseErrorOr<{ rsvps: EventRsvp[] }>(res, `Failed to fetch RSVPs: ${res.status}`);
   return data.rsvps;
 }

@@ -28,7 +28,7 @@ export function useIsCommunityAdmin(communityId: string, connected: boolean): bo
 export function useHasTierPermission(
   communityId: string,
   connected: boolean,
-  permission: "canCreateProposals" | "canVote" | "canCreateEvents",
+  permission: "canCreateProposals" | "canVote" | "canCreateEvents" | "canPostDiscussions",
 ): boolean {
   const { data: status } = useQuery({
     queryKey: ["membershipStatus", communityId],

@@ -288,8 +288,12 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
   const isCommunityAdmin = useIsCommunityAdmin(communityId, connected);
   const canCreateEvents = useHasTierPermission(communityId, connected, "canCreateEvents");
 
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D4) — walletAddress in the
+  // key: visibility is now viewer-dependent, so an account-switch without it could briefly render
+  // the previous wallet's filtered list under the new wallet's identity (mirrors Child H's D3 fix
+  // on ProposalsList.tsx). invalidateQueries elsewhere in this file still matches by prefix.
   const { data, isLoading } = useQuery({
-    queryKey: ["events", communityId],
+    queryKey: ["events", communityId, walletAddress],
     queryFn: () => eventApi.listEvents(communityId, { limit: 50 }),
   });
 

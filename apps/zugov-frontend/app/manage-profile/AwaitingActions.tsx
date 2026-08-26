@@ -18,8 +18,12 @@ type AwaitingActionItem =
 async function fetchAwaitingActions(address: string): Promise<AwaitingActionItem[]> {
   const items: AwaitingActionItem[] = [];
 
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — was creatorAddress-
+  // only, so a non-creator canManageMembership admin (this function's own "admin authority"
+  // comment above already claims to cover them) saw none of their awaiting actions. authorizedFor
+  // matches isAuthorized()'s real definition, same fix as manage-communities/page.tsx.
   const [{ communities: owned }, memberCommunityIds] = await Promise.all([
-    communityApi.list(1, undefined, address),
+    communityApi.list(1, undefined, undefined, undefined, address),
     membershipApi.listMyMemberships().catch(() => [] as string[]),
   ]);
 
