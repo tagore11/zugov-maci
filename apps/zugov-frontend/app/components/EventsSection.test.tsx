@@ -57,6 +57,7 @@ const EVENT = {
   cancelledAt: null,
   eligibleTierIds: null,
   parentEventId: null,
+  isAllDay: false,
 };
 
 function renderWithProviders(ui: React.ReactElement) {
@@ -233,6 +234,81 @@ describe("EventsSection", () => {
 
       fireEvent.click(screen.getByLabelText("Expand side-events"));
       await screen.findByText("Morning Session");
+    });
+  });
+
+  // Events expansion Approach B (2026-08-27) — D3 (isAllDay display), D4 (fetch limit), D4/D5/D6
+  // (nested-by-day grouping).
+  describe("Approach B", () => {
+    it("fetches with limit: 200, not 50", async () => {
+      renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+      await waitFor(() =>
+        expect(listEventsMock).toHaveBeenCalledWith("0xabc", expect.objectContaining({ limit: 200 })),
+      );
+    });
+
+    it('renders "All day" for a single-day all-day event, not a time range', async () => {
+      listEventsMock.mockResolvedValue({
+        events: [{ ...EVENT, isAllDay: true, endAt: EVENT.startAt + 3600 * 23 + 3599 }],
+        total: 1,
+        hasMore: false,
+      });
+      renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+
+      await screen.findByText("All day");
+    });
+
+    it("isAllDay=false keeps the existing time-range rendering unchanged", async () => {
+      listEventsMock.mockResolvedValue({ events: [EVENT], total: 1, hasMore: false });
+      renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+
+      await screen.findByText("Morning Yoga");
+      expect(screen.queryByText("All day")).not.toBeInTheDocument();
+    });
+
+    it("skips day-headers in the expand panel when all side-events fall on the same day", async () => {
+      const parent = { ...EVENT, id: "parent-1", title: "One Day Gathering", parentEventId: null };
+      const sideA = { ...EVENT, id: "side-a", title: "Session A", parentEventId: "parent-1" };
+      const sideB = {
+        ...EVENT,
+        id: "side-b",
+        title: "Session B",
+        parentEventId: "parent-1",
+        startAt: EVENT.startAt + 3600,
+        endAt: EVENT.endAt + 3600,
+      };
+      listEventsMock.mockResolvedValue({ events: [parent, sideA, sideB], total: 3, hasMore: false });
+      renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+
+      await screen.findByText("One Day Gathering");
+      fireEvent.click(screen.getByLabelText("Expand side-events"));
+      await screen.findByText("Session A");
+      expect(screen.getByText("Session B")).toBeInTheDocument();
+      // Only the outer top-level date-group <h3> header should exist — no day-sub-header inside
+      // the expand panel, since both side-events fall on the same single day.
+      expect(document.querySelectorAll("h4").length).toBe(0);
+    });
+
+    it("shows day-headers when side-events span 2+ distinct days", async () => {
+      const DAY_SECONDS = 24 * 60 * 60;
+      const parent = { ...EVENT, id: "parent-1", title: "Multi-day Gathering", parentEventId: null };
+      const day1 = { ...EVENT, id: "day1-session", title: "Day One Session", parentEventId: "parent-1" };
+      const day2 = {
+        ...EVENT,
+        id: "day2-session",
+        title: "Day Two Session",
+        parentEventId: "parent-1",
+        startAt: EVENT.startAt + DAY_SECONDS,
+        endAt: EVENT.endAt + DAY_SECONDS,
+      };
+      listEventsMock.mockResolvedValue({ events: [parent, day1, day2], total: 3, hasMore: false });
+      renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+
+      await screen.findByText("Multi-day Gathering");
+      fireEvent.click(screen.getByLabelText("Expand side-events"));
+      await screen.findByText("Day One Session");
+      expect(screen.getByText("Day Two Session")).toBeInTheDocument();
+      expect(document.querySelectorAll("h4").length).toBe(2);
     });
   });
 });

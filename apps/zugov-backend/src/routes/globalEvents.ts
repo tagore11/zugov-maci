@@ -1,9 +1,8 @@
 import { Hono } from "hono";
-import { z } from "zod";
+import type { z } from "zod";
 import * as eventService from "../services/eventService.js";
 import { getSession } from "../middleware/session.js";
-
-const EVENT_KIND = z.enum(["talk", "workshop", "social", "meeting", "other"]);
+import { EVENT_KIND } from "../validators/eventSchema.js";
 
 // Events expansion (/office-hours + /plan-eng-review 2026-08-26) — the first cross-community
 // events route in this codebase; every existing event route lives under

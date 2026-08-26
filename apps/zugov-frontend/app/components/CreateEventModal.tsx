@@ -7,14 +7,16 @@ import * as membershipApi from "@/src/services/membershipApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
 import { TierRestrictionPicker } from "./TierRestrictionPicker";
+import { RepeatFields } from "./RepeatFields";
+import { KIND_META } from "./eventDisplay";
 
-const KIND_OPTIONS: { value: EventKind; label: string }[] = [
-  { value: "talk", label: "Talk" },
-  { value: "workshop", label: "Workshop" },
-  { value: "social", label: "Social" },
-  { value: "meeting", label: "Meeting" },
-  { value: "other", label: "Other" },
-];
+// Events expansion Approach B (2026-08-27, D5 design review) — derived from KIND_META
+// (EventsSection.tsx) instead of a second hand-maintained list, so there's exactly one
+// 17-entry taxonomy on the frontend.
+const KIND_OPTIONS: { value: EventKind; label: string }[] = Object.entries(KIND_META).map(([value, meta]) => ({
+  value: value as EventKind,
+  label: meta.label,
+}));
 
 type LocationMode = "venue" | "custom";
 
@@ -22,6 +24,30 @@ function toLocalInputValue(unixSec: number): string {
   const d = new Date(unixSec * 1000);
   const offsetMs = d.getTimezoneOffset() * 60000;
   return new Date(d.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+// Events expansion Approach B (2026-08-27, D3) — all-day date-range picker. Two native
+// <input type="date">, no picker library, matching this app's established native-control
+// convention. Dates are parsed/formatted in the viewer's local timezone (same mechanism
+// toLocalInputValue already uses for regular datetime-local inputs).
+function toDateInputValue(unixSec: number): string {
+  const d = new Date(unixSec * 1000);
+  const offsetMs = d.getTimezoneOffset() * 60000;
+  return new Date(d.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function dateInputToStartOfDaySec(dateStr: string): number {
+  const d = new Date(`${dateStr}T00:00:00`);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function dateInputToEndOfDaySec(dateStr: string): number {
+  const d = new Date(`${dateStr}T23:59:59`);
+  return Math.floor(d.getTime() / 1000);
+}
+
+function startOfTodayDateInputValue(): string {
+  return toDateInputValue(Math.floor(Date.now() / 1000));
 }
 
 // A datetime-local input's year segment has no format constraint on its own — typing a stray
@@ -86,9 +112,22 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
   const [locationText, setLocationText] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
+  // Events expansion Approach B (2026-08-27, D3) — All-day OFF keeps startAt/endAt (the two
+  // datetime-local inputs above) exactly as before. All-day ON swaps to startDate/endDate (two
+  // native date inputs) instead — both pairs of state coexist so toggling back and forth doesn't
+  // lose what was typed in either mode.
+  const [isAllDay, setIsAllDay] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [isRestricted, setIsRestricted] = useState(false);
   const [selectedTierIds, setSelectedTierIds] = useState<string[]>([]);
   const [parentEventId, setParentEventId] = useState("");
+  // Events expansion Approach B (2026-08-27, D2) — "Repeat" surfaced directly in the creation
+  // flow, not just post-creation via DuplicateForm. Create-only: absent from edit mode's submit
+  // payload (matches the backend's create()-only repeat param).
+  const [isRepeating, setIsRepeating] = useState(false);
+  const [repeatCount, setRepeatCount] = useState(1);
+  const [repeatIntervalDays, setRepeatIntervalDays] = useState(7);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -107,8 +146,14 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
       setLocationMode(editingEvent.venueId ? "venue" : "custom");
       setVenueId(editingEvent.venueId ?? "");
       setLocationText(editingEvent.locationText ?? "");
-      setStartAt(toLocalInputValue(editingEvent.startAt));
-      setEndAt(toLocalInputValue(editingEvent.endAt));
+      setIsAllDay(editingEvent.isAllDay);
+      if (editingEvent.isAllDay) {
+        setStartDate(toDateInputValue(editingEvent.startAt));
+        setEndDate(toDateInputValue(editingEvent.endAt));
+      } else {
+        setStartAt(toLocalInputValue(editingEvent.startAt));
+        setEndAt(toLocalInputValue(editingEvent.endAt));
+      }
       // D5 — null round-trips to toggle-off unambiguously; a non-null list round-trips to
       // toggle-on with the right boxes checked.
       setIsRestricted(editingEvent.eligibleTierIds !== null);
@@ -122,9 +167,15 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
       setLocationText("");
       setStartAt("");
       setEndAt("");
+      setIsAllDay(false);
+      setStartDate("");
+      setEndDate("");
       setIsRestricted(false);
       setSelectedTierIds([]);
       setParentEventId("");
+      setIsRepeating(false);
+      setRepeatCount(1);
+      setRepeatIntervalDays(7);
     }
     setError(null);
   }, [isOpen, editingEvent]);
@@ -143,19 +194,36 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
 
   if (!isOpen) return null;
 
-  const hasEndAfterStart = !startAt || !endAt || new Date(endAt).getTime() > new Date(startAt).getTime();
+  // Events expansion Approach B (2026-08-27, D3) — when All-day is on, startAt/endAt are derived
+  // from startDate/endDate (start of Start-date / end of End-date) instead of the datetime-local
+  // inputs. hasDateFields/hasEndAfterStart/hasFutureStart all branch on isAllDay so the same
+  // validation shape applies to whichever pair of inputs is actually active.
+  const hasDateFields = isAllDay ? !!startDate && !!endDate : !!startAt && !!endAt;
+  const hasEndAfterStart = isAllDay
+    ? !startDate || !endDate || endDate >= startDate
+    : !startAt || !endAt || new Date(endAt).getTime() > new Date(startAt).getTime();
   // Only enforced on create — editing an already-past event (e.g. fixing a typo in a concluded
   // event's title) must stay possible, matching updateEventSchema's own scope on the backend.
-  const hasFutureStart = isEdit || !startAt || new Date(startAt).getTime() > Date.now();
+  // All-day events are exempted from the strict future-instant check (outside-voice fix, D3): a
+  // same-day all-day event's start is already in the past the moment it's submitted, so all-day
+  // only requires the date to be today or later, not strictly in the future.
+  const hasFutureStart = isEdit
+    ? true
+    : isAllDay
+      ? !startDate || startDate >= startOfTodayDateInputValue()
+      : !startAt || new Date(startAt).getTime() > Date.now();
   const maxTimestamp = new Date(maxEventInputValue()).getTime();
-  const hasSaneStart = !startAt || new Date(startAt).getTime() < maxTimestamp;
-  const hasSaneEnd = !endAt || new Date(endAt).getTime() < maxTimestamp;
+  const hasSaneStart = isAllDay
+    ? !startDate || dateInputToStartOfDaySec(startDate) * 1000 < maxTimestamp
+    : !startAt || new Date(startAt).getTime() < maxTimestamp;
+  const hasSaneEnd = isAllDay
+    ? !endDate || dateInputToEndOfDaySec(endDate) * 1000 < maxTimestamp
+    : !endAt || new Date(endAt).getTime() < maxTimestamp;
   const hasLocation = locationMode === "venue" ? !!venueId : locationText.trim().length > 0;
   const hasValidTierSelection = !isRestricted || selectedTierIds.length > 0;
   const canSubmit =
     title.trim().length > 0 &&
-    !!startAt &&
-    !!endAt &&
+    hasDateFields &&
     hasEndAfterStart &&
     hasFutureStart &&
     hasSaneStart &&
@@ -169,8 +237,10 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
     setIsSubmitting(true);
     setError(null);
     try {
-      const startAtSec = Math.floor(new Date(startAt).getTime() / 1000);
-      const endAtSec = Math.floor(new Date(endAt).getTime() / 1000);
+      const startAtSec = isAllDay
+        ? dateInputToStartOfDaySec(startDate)
+        : Math.floor(new Date(startAt).getTime() / 1000);
+      const endAtSec = isAllDay ? dateInputToEndOfDaySec(endDate) : Math.floor(new Date(endAt).getTime() / 1000);
       const eligibleTierIds = isRestricted ? selectedTierIds : null;
       await withAuthDetect(async () => {
         if (isEdit && editingEvent) {
@@ -183,6 +253,7 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             endAt: endAtSec,
             kind,
             eligibleTierIds,
+            isAllDay,
           });
         } else {
           await eventApi.createEvent(communityId, {
@@ -195,6 +266,8 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             kind,
             eligibleTierIds,
             parentEventId: parentEventId || undefined,
+            isAllDay,
+            repeat: isRepeating ? { count: repeatCount, intervalDays: repeatIntervalDays } : undefined,
           });
         }
       }, signOut);
@@ -277,40 +350,125 @@ export function CreateEventModal({ isOpen, onClose, onSuccess, communityId, edit
             </select>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label htmlFor="event-start" className="block text-sm font-semibold text-foreground mb-2">
-                Starts *
-              </label>
+          <div>
+            <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <input
-                id="event-start"
-                type="datetime-local"
-                required
-                max={maxEventInputValue()}
-                value={startAt}
-                onChange={(e) => setStartAt(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                type="checkbox"
+                checked={isAllDay}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsAllDay(checked);
+                  if (checked && !endDate) setEndDate(startDate);
+                }}
+                className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
               />
-            </div>
-            <div>
-              <label htmlFor="event-end" className="block text-sm font-semibold text-foreground mb-2">
-                Ends *
-              </label>
-              <input
-                id="event-end"
-                type="datetime-local"
-                required
-                max={maxEventInputValue()}
-                value={endAt}
-                onChange={(e) => setEndAt(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
-              />
-            </div>
+              All day
+            </label>
           </div>
-          {!hasEndAfterStart && <p className="text-xs text-error">End time must be after the start time.</p>}
-          {!hasFutureStart && <p className="text-xs text-error">Start time must be in the future.</p>}
+
+          {isAllDay ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="event-start-date" className="block text-sm font-semibold text-foreground mb-2">
+                  Start date *
+                </label>
+                <input
+                  id="event-start-date"
+                  type="date"
+                  required
+                  min={startOfTodayDateInputValue()}
+                  value={startDate}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setStartDate(value);
+                    if (!endDate || endDate < value) setEndDate(value);
+                  }}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+              <div>
+                <label htmlFor="event-end-date" className="block text-sm font-semibold text-foreground mb-2">
+                  End date *
+                </label>
+                <input
+                  id="event-end-date"
+                  type="date"
+                  required
+                  min={startDate || startOfTodayDateInputValue()}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="event-start" className="block text-sm font-semibold text-foreground mb-2">
+                  Starts *
+                </label>
+                <input
+                  id="event-start"
+                  type="datetime-local"
+                  required
+                  max={maxEventInputValue()}
+                  value={startAt}
+                  onChange={(e) => setStartAt(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+              <div>
+                <label htmlFor="event-end" className="block text-sm font-semibold text-foreground mb-2">
+                  Ends *
+                </label>
+                <input
+                  id="event-end"
+                  type="datetime-local"
+                  required
+                  max={maxEventInputValue()}
+                  value={endAt}
+                  onChange={(e) => setEndAt(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent"
+                />
+              </div>
+            </div>
+          )}
+          {!hasEndAfterStart && (
+            <p className="text-xs text-error">
+              {isAllDay ? "End date must be on or after the start date." : "End time must be after the start time."}
+            </p>
+          )}
+          {!hasFutureStart && (
+            <p className="text-xs text-error">
+              {isAllDay ? "Start date can't be before today." : "Start time must be in the future."}
+            </p>
+          )}
           {(!hasSaneStart || !hasSaneEnd) && (
             <p className="text-xs text-error">Event dates must be within {MAX_EVENT_YEARS_OUT} years from now.</p>
+          )}
+
+          {!isEdit && (
+            <div>
+              <label className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <input
+                  type="checkbox"
+                  checked={isRepeating}
+                  onChange={(e) => setIsRepeating(e.target.checked)}
+                  className="rounded border-gray-600 bg-gray-800 text-accent focus:ring-accent"
+                />
+                Repeat
+              </label>
+              {isRepeating && (
+                <div className="mt-2 pl-1">
+                  <RepeatFields
+                    count={repeatCount}
+                    onCountChange={setRepeatCount}
+                    intervalDays={repeatIntervalDays}
+                    onIntervalDaysChange={setRepeatIntervalDays}
+                  />
+                </div>
+              )}
+            </div>
           )}
 
           <div>

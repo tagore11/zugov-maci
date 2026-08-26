@@ -331,6 +331,261 @@ describe("POST /api/communities/:id/events — parentEventId (side-events)", () 
   });
 });
 
+// Events expansion Approach B (/plan-eng-review 2026-08-27) — "Repeat" at creation time, an
+// atomic new path inside create(), deliberately not a reuse of duplicate().
+describe("POST /api/communities/:id/events — repeat at creation", () => {
+  it("repeat creates count+1 total rows sharing one seriesId", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Morning Yoga",
+        locationText: "The Hub",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        repeat: { count: 3, intervalDays: 1 },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      event: { id: string; seriesId: string };
+      repeatedEvents: { id: string; seriesId: string }[];
+    };
+    expect(body.repeatedEvents.length).toBe(3);
+    const allIds = new Set([body.event.seriesId, ...body.repeatedEvents.map((e) => e.seriesId)]);
+    expect(allIds.size).toBe(1);
+    expect(body.event.seriesId).not.toBeNull();
+  });
+
+  it("repeat on a side-event carries the SAME parentEventId onto every repeat", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Side Session",
+        locationText: "Room A",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        parentEventId: parent!.id,
+        repeat: { count: 2, intervalDays: 1 },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as {
+      event: { parentEventId: string | null };
+      repeatedEvents: { parentEventId: string | null }[];
+    };
+    expect(body.event.parentEventId).toBe(parent!.id);
+    expect(body.repeatedEvents.every((e) => e.parentEventId === parent!.id)).toBe(true);
+  });
+
+  it("repeat on a top-level event gives every repeat parentEventId: null", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Top Level",
+        locationText: "Main Hall",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        repeat: { count: 2, intervalDays: 1 },
+      }),
+    });
+    const body = (await res.json()) as { repeatedEvents: { parentEventId: string | null }[] };
+    expect(body.repeatedEvents.every((e) => e.parentEventId === null)).toBe(true);
+  });
+
+  it("repeat count above the cap is rejected", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Too Many",
+        locationText: "Main Hall",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        repeat: { count: 53, intervalDays: 1 },
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("repeat on a side-event: each repeat inherits the parent's eligibleTierIds snapshot", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie, [MANAGE_TIER, REGULAR_TIER], "Regular");
+    const tiersRes = await app.request(`/api/communities/${communityId}/tiers`);
+    const { tiers } = (await tiersRes.json()) as { tiers: { id: string; label: string }[] };
+    const adminTierId = tiers.find((t) => t.label === "Admin")!.id;
+    const { event: parent } = await createEvent(cookie, communityId, {
+      title: "Restricted Parent",
+      eligibleTierIds: [adminTierId],
+    });
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Side Session",
+        locationText: "Room A",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        parentEventId: parent!.id,
+        repeat: { count: 2, intervalDays: 1 },
+      }),
+    });
+    const body = (await res.json()) as {
+      event: { eligibleTierIds: string[] | null };
+      repeatedEvents: { eligibleTierIds: string[] | null }[];
+    };
+    expect(body.event.eligibleTierIds).toEqual([adminTierId]);
+    expect(body.repeatedEvents.every((e) => JSON.stringify(e.eligibleTierIds) === JSON.stringify([adminTierId]))).toBe(
+      true,
+    );
+  });
+
+  it("create() without repeat is unaffected — single event, empty repeatedEvents", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Morning Yoga",
+        locationText: "The Hub",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+      }),
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { event: { id: string }; repeatedEvents: unknown[] };
+    expect(body.repeatedEvents).toEqual([]);
+  });
+});
+
+// Events expansion Approach B (2026-08-27, D2 outside-voice fix) — mixed-series guard.
+describe("POST /api/communities/:id/events/:eventId/duplicate — mixed-series guard", () => {
+  it("rejects extending a series that already has a parented member", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event: parent } = await createEvent(cookie, communityId, { title: "Parent" });
+
+    const createRes = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Side Session",
+        locationText: "Room A",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+        parentEventId: parent!.id,
+        repeat: { count: 1, intervalDays: 1 },
+      }),
+    });
+    const { event: sideEvent } = (await createRes.json()) as { event: { id: string } };
+
+    const dupRes = await app.request(`/api/communities/${communityId}/events/${sideEvent.id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ count: 1, intervalDays: 1 }),
+    });
+    expect(dupRes.status).toBe(409);
+  });
+
+  it("an all-unparented series can still be extended via duplicate() as before", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const { event } = await createEvent(cookie, communityId, { title: "Plain Event" });
+
+    const res = await app.request(`/api/communities/${communityId}/events/${event!.id}/duplicate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({ count: 1, intervalDays: 1 }),
+    });
+    expect(res.status).toBe(201);
+  });
+});
+
+// Events expansion Approach B (2026-08-27, D3 outside-voice fix).
+describe("POST /api/communities/:id/events — isAllDay validation", () => {
+  it("a same-day all-day event (startAt = start of today) is accepted, not rejected as past", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodaySec = Math.floor(startOfToday.getTime() / 1000);
+    const endOfTodaySec = startOfTodaySec + 23 * 3600 + 59 * 60 + 59;
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Rest Day",
+        locationText: "Anywhere",
+        startAt: startOfTodaySec,
+        endAt: endOfTodaySec,
+        isAllDay: true,
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("a genuinely past all-day event (before today) is still rejected", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const yesterdaySec = Math.floor(yesterday.getTime() / 1000);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Already Past",
+        locationText: "Anywhere",
+        startAt: yesterdaySec,
+        endAt: yesterdaySec + 3600,
+        isAllDay: true,
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("isAllDay=false keeps the existing strict future-start check unchanged", async () => {
+    const cookie = await authCookieFor(CREATOR);
+    const communityId = await registerCommunity(cookie);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTodaySec = Math.floor(startOfToday.getTime() / 1000);
+
+    const res = await app.request(`/api/communities/${communityId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: cookie },
+      body: JSON.stringify({
+        title: "Not All Day",
+        locationText: "Anywhere",
+        startAt: startOfTodaySec,
+        endAt: startOfTodaySec + 3600,
+        isAllDay: false,
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+});
+
 describe("GET /api/communities/:id/events", () => {
   it("does not require authentication", async () => {
     const cookie = await authCookieFor(CREATOR);

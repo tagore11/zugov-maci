@@ -3,6 +3,7 @@ import { and, eq, gte, lte, lt, ne, or, inArray, isNull, count } from "drizzle-o
 import { db } from "../db/client.js";
 import { events, venues, eventRsvps, communities, type Event, type EventRsvp } from "../db/schema.js";
 import * as membershipService from "./membershipService.js";
+import type { EventKind } from "../validators/eventSchema.js";
 
 export class EventNotFoundError extends Error {
   constructor(id: string) {
@@ -39,7 +40,13 @@ export class NestedSideEventError extends Error {
   }
 }
 
-export type EventKind = "talk" | "workshop" | "social" | "meeting" | "other";
+export class MixedSeriesError extends Error {
+  constructor() {
+    super("Can't extend this series via duplicate — use the parent event's Repeat option instead");
+  }
+}
+
+export type { EventKind };
 
 // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — mirrors
 // proposalService.ts's ViewableProposal/deserialize: the DB stores eligibleTierIds as a
@@ -66,6 +73,13 @@ async function assertVenueBelongsToCommunity(venueId: string, communityId: strin
   if (!venue || venue.communityId !== communityId) throw new InvalidVenueError();
 }
 
+const MAX_DUPLICATE_COUNT = 52;
+
+export interface RepeatData {
+  count: number;
+  intervalDays: number;
+}
+
 export interface CreateEventData {
   communityId: string;
   title: string;
@@ -82,9 +96,67 @@ export interface CreateEventData {
   /** Events expansion (2026-08-26) — nullable, one level of nesting only, immutable after
    * creation (not part of UpdateEventData below, enforced structurally rather than at runtime). */
   parentEventId?: string | null;
+  /** Events expansion Approach B (2026-08-27, D3) — see schema.ts's events.isAllDay comment for
+   * boundary semantics. */
+  isAllDay?: boolean;
+  /** Events expansion Approach B (2026-08-27, D2) — creates `count` additional occurrences in the
+   * same transaction as the source event, all sharing one new seriesId. A NEW code path,
+   * deliberately not a reuse of duplicate() below: if this event has parentEventId set, every
+   * repeat inherits the SAME parentEventId (sibling sessions under the same gathering) — the
+   * opposite of duplicate()'s existing, untouched "always drop parentEventId" contract. */
+  repeat?: RepeatData;
 }
 
-export async function create(data: CreateEventData): Promise<ViewableEvent> {
+/** Events expansion Approach B (2026-08-27, D2, outside-voice fix) — shared row-generation logic
+ * between create()'s repeat path and duplicate() below. Both need "N rows offset by
+ * intervalDays * i, sharing one seriesId" — differ only in whether parentEventId is carried onto
+ * the clones, which each caller passes explicitly (never hidden inside this helper) so the two
+ * contracts stay visible at the call site. */
+function buildRecurringRows(
+  source: {
+    communityId: string;
+    title: string;
+    description: string | null;
+    venueId: string | null;
+    locationText: string | null;
+    startAt: number;
+    endAt: number;
+    kind: EventKind;
+    creatorAddress: string;
+    eligibleTierIds: string | null;
+    isAllDay: boolean;
+  },
+  options: { count: number; intervalDays: number; seriesId: string; parentEventId: string | null; now: number },
+) {
+  const intervalSeconds = options.intervalDays * 24 * 60 * 60;
+  return Array.from({ length: options.count }, (_, i) => {
+    const offset = intervalSeconds * (i + 1);
+    return {
+      id: randomUUID(),
+      communityId: source.communityId,
+      title: source.title,
+      description: source.description,
+      venueId: source.venueId,
+      locationText: source.locationText,
+      startAt: source.startAt + offset,
+      endAt: source.endAt + offset,
+      seriesId: options.seriesId,
+      kind: source.kind,
+      creatorAddress: source.creatorAddress,
+      status: "active" as const,
+      createdAt: options.now,
+      cancelledAt: null,
+      // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, outside-voice
+      // finding) — without this, a tier-restricted recurring event's duplicated occurrences
+      // would silently come back unrestricted.
+      eligibleTierIds: source.eligibleTierIds,
+      isAllDay: source.isAllDay,
+      parentEventId: options.parentEventId,
+    };
+  });
+}
+
+export async function create(data: CreateEventData): Promise<ViewableEvent[]> {
   if (data.venueId) await assertVenueBelongsToCommunity(data.venueId, data.communityId);
 
   // Events expansion (2026-08-26) — app-level invariants (not DB constraints): a side-event's
@@ -96,6 +168,12 @@ export async function create(data: CreateEventData): Promise<ViewableEvent> {
     parent = await get(data.parentEventId);
     if (!parent || parent.communityId !== data.communityId) throw new EventNotFoundError(data.parentEventId);
     if (parent.parentEventId) throw new NestedSideEventError();
+  }
+
+  // Events expansion Approach B (2026-08-27, D2, outside-voice fix) — reuses duplicate()'s exact
+  // cap, one source of truth for "how many events can be created in one call."
+  if (data.repeat && (data.repeat.count < 1 || data.repeat.count > MAX_DUPLICATE_COUNT)) {
+    throw new RangeError(`repeat.count must be between 1 and ${MAX_DUPLICATE_COUNT}`);
   }
 
   // Tier-inheritance-as-snapshot (2026-08-26 design review + eng review): when eligibleTierIds is
@@ -110,28 +188,51 @@ export async function create(data: CreateEventData): Promise<ViewableEvent> {
       : serializeEligibleTierIds(data.eligibleTierIds);
 
   const now = Math.floor(Date.now() / 1000);
-  const [event] = await db
-    .insert(events)
-    .values({
-      id: randomUUID(),
-      communityId: data.communityId,
-      title: data.title,
-      description: data.description ?? null,
-      venueId: data.venueId ?? null,
-      locationText: data.locationText ?? null,
-      startAt: data.startAt,
-      endAt: data.endAt,
-      seriesId: data.seriesId ?? null,
-      kind: data.kind ?? "other",
-      creatorAddress: data.creatorAddress,
-      status: "active",
-      createdAt: now,
-      cancelledAt: null,
-      eligibleTierIds,
-      parentEventId: data.parentEventId ?? null,
-    })
-    .returning();
-  return deserialize(event!);
+  const sourceValues = {
+    id: randomUUID(),
+    communityId: data.communityId,
+    title: data.title,
+    description: data.description ?? null,
+    venueId: data.venueId ?? null,
+    locationText: data.locationText ?? null,
+    startAt: data.startAt,
+    endAt: data.endAt,
+    seriesId: data.seriesId ?? null,
+    kind: data.kind ?? ("other" as EventKind),
+    creatorAddress: data.creatorAddress,
+    status: "active" as const,
+    createdAt: now,
+    cancelledAt: null,
+    eligibleTierIds,
+    isAllDay: data.isAllDay ?? false,
+    parentEventId: data.parentEventId ?? null,
+  };
+
+  if (!data.repeat) {
+    const [event] = await db.insert(events).values(sourceValues).returning();
+    return [deserialize(event!)];
+  }
+
+  // Atomic: source + every repeat insert together, or none of them.
+  return db.transaction(async (tx) => {
+    const seriesId = randomUUID();
+    const [source] = await tx
+      .insert(events)
+      .values({ ...sourceValues, seriesId })
+      .returning();
+    const repeatRows = buildRecurringRows(source!, {
+      count: data.repeat!.count,
+      intervalDays: data.repeat!.intervalDays,
+      seriesId,
+      // Side-event repeats stay side-events of the same parent (sibling sessions under the same
+      // gathering) — deliberately diverges from duplicate()'s "always drop parentEventId"
+      // contract, which is untouched and lives entirely in this NEW code path instead.
+      parentEventId: source!.parentEventId,
+      now,
+    });
+    const inserted = await tx.insert(events).values(repeatRows).returning();
+    return [deserialize(source!), ...inserted.map(deserialize)];
+  });
 }
 
 /** Raw row, no viewer/visibility awareness — for internal existence/ownership checks
@@ -260,6 +361,7 @@ export async function listGlobal(
         cancelledAt: events.cancelledAt,
         eligibleTierIds: events.eligibleTierIds,
         parentEventId: events.parentEventId,
+        isAllDay: events.isAllDay,
         communityDisplayName: communities.displayName,
         communityLogo: communities.logo,
       })
@@ -299,6 +401,8 @@ export interface UpdateEventData {
   endAt?: number;
   kind?: EventKind;
   eligibleTierIds?: string[] | null;
+  /** Events expansion Approach B (2026-08-27, D3) — editable, unlike parentEventId. */
+  isAllDay?: boolean;
 }
 
 export async function update(id: string, communityId: string, patch: UpdateEventData): Promise<ViewableEvent> {
@@ -338,8 +442,6 @@ export async function cancel(id: string, communityId: string): Promise<ViewableE
   return updated.map(deserialize);
 }
 
-const MAX_DUPLICATE_COUNT = 52;
-
 export interface DuplicateEventData {
   count: number;
   intervalDays: number;
@@ -349,6 +451,14 @@ export interface DuplicateEventData {
 // (2026-08-19 review, D4 — matches sola.day's own API, which has no recurrence params either).
 // Wrapped in one transaction so a mid-batch failure leaves zero rows persisted, not a partial
 // series (2026-08-19 review, outside-voice finding #6 — also where the count cap lives).
+//
+// Events expansion Approach B (2026-08-27, D2 outside-voice fixes):
+// - Clones ALWAYS get parentEventId: null (untouched contract — buildRecurringRows() is called
+//   with parentEventId explicitly hardcoded to null here, never source.parentEventId).
+// - Mixed-series guard: rejects extending a series that already has a parented member. Without
+//   this, create()'s repeat path (which DOES carry parentEventId) and this function (which
+//   doesn't) could add rows to the same seriesId with inconsistent parentEventId — silently
+//   breaking the nested-schedule-by-day view's grouping for whichever member lacks a parent.
 export async function duplicate(id: string, communityId: string, data: DuplicateEventData): Promise<ViewableEvent[]> {
   if (data.count < 1 || data.count > MAX_DUPLICATE_COUNT) {
     throw new RangeError(`count must be between 1 and ${MAX_DUPLICATE_COUNT}`);
@@ -358,11 +468,18 @@ export async function duplicate(id: string, communityId: string, data: Duplicate
   if (!source || source.communityId !== communityId) throw new EventNotFoundError(id);
   if (source.status === "cancelled") throw new EventCancelledError();
 
+  if (source.seriesId) {
+    const seriesMembers = await db
+      .select({ parentEventId: events.parentEventId })
+      .from(events)
+      .where(eq(events.seriesId, source.seriesId));
+    if (seriesMembers.some((row) => row.parentEventId !== null)) throw new MixedSeriesError();
+  }
+
   // The source event itself already exists — duplicate() generates the ADDITIONAL occurrences
   // and stamps seriesId onto the source row too, so a single WHERE seriesId = ? finds every
   // event in the series including the original.
   const seriesId = source.seriesId ?? randomUUID();
-  const intervalSeconds = data.intervalDays * 24 * 60 * 60;
   const now = Math.floor(Date.now() / 1000);
 
   return db.transaction(async (tx) => {
@@ -370,28 +487,12 @@ export async function duplicate(id: string, communityId: string, data: Duplicate
       await tx.update(events).set({ seriesId }).where(eq(events.id, id));
     }
 
-    const newRows = Array.from({ length: data.count }, (_, i) => {
-      const offset = intervalSeconds * (i + 1);
-      return {
-        id: randomUUID(),
-        communityId: source.communityId,
-        title: source.title,
-        description: source.description,
-        venueId: source.venueId,
-        locationText: source.locationText,
-        startAt: source.startAt + offset,
-        endAt: source.endAt + offset,
-        seriesId,
-        kind: source.kind,
-        creatorAddress: source.creatorAddress,
-        status: "active" as const,
-        createdAt: now,
-        cancelledAt: null,
-        // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, outside-voice
-        // finding) — without this, a tier-restricted recurring event's duplicated occurrences
-        // would silently come back unrestricted.
-        eligibleTierIds: source.eligibleTierIds,
-      };
+    const newRows = buildRecurringRows(source, {
+      count: data.count,
+      intervalDays: data.intervalDays,
+      seriesId,
+      parentEventId: null,
+      now,
     });
 
     const inserted = await tx.insert(events).values(newRows).returning();

@@ -1,64 +1,24 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Plus,
-  MapPin,
-  MoreVertical,
-  Pencil,
-  Ban,
-  Copy,
-  Mic,
-  Wrench,
-  PartyPopper,
-  Users,
-  Calendar,
-  ChevronDown,
-  ChevronRight,
-} from "lucide-react";
+import { Plus, MapPin, MoreVertical, Pencil, Ban, Copy, ChevronDown, ChevronRight } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
-import type { Event, EventKind } from "@/src/services/eventApi";
+import type { Event } from "@/src/services/eventApi";
 import { useIsCommunityAdmin, useHasTierPermission } from "@/src/hooks/useMembershipPermission";
 import { CreateEventModal } from "./CreateEventModal";
+import { RepeatFields } from "./RepeatFields";
+import { KIND_META, formatTimeRange, groupEventsByDate } from "./eventDisplay";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
+
+// Re-exported for reuse on the global /events page (2026-08-26 design review, "What already
+// exists") — same convention, not a second copy. Actual definitions live in eventDisplay.ts
+// (2026-08-27) to break a circular import with CreateEventModal.tsx, which also needs KIND_META.
+export { KIND_META, formatTimeRange };
 
 interface EventsSectionProps {
   communityId: string;
   connected: boolean;
   walletAddress?: string;
-}
-
-// Monochrome icon + label, not a colored badge — DESIGN.md's single-accent rule means kind
-// isn't a place to spend color (2026-08-19 /plan-design-review, D2). Exported for reuse on the
-// new global /events page (2026-08-26 design review, "What already exists" — same convention,
-// not a second copy).
-export const KIND_META: Record<EventKind, { label: string; Icon: typeof Mic }> = {
-  talk: { label: "Talk", Icon: Mic },
-  workshop: { label: "Workshop", Icon: Wrench },
-  social: { label: "Social", Icon: PartyPopper },
-  meeting: { label: "Meeting", Icon: Users },
-  other: { label: "Other", Icon: Calendar },
-};
-
-const DAY_SECONDS = 24 * 60 * 60;
-
-function formatDateHeader(unixSec: number): string {
-  return new Date(unixSec * 1000).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-function formatTime(unixSec: number): string {
-  return new Date(unixSec * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
-export function formatTimeRange(startAt: number, endAt: number): string {
-  if (endAt - startAt > DAY_SECONDS) {
-    return `${formatDateHeader(startAt)} – ${formatDateHeader(endAt)}`;
-  }
-  return `${formatTime(startAt)} – ${formatTime(endAt)}`;
-}
-
-function dateGroupKey(unixSec: number): string {
-  return new Date(unixSec * 1000).toDateString();
 }
 
 function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; eventId: string; onDone: () => void }) {
@@ -85,33 +45,12 @@ function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; 
 
   return (
     <div className="mt-2 p-3 border border-gray-700 rounded-lg bg-gray-800/60 space-y-2 text-sm">
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5 text-gray-400">
-          Repeat
-          <input
-            type="number"
-            min={1}
-            max={52}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-            className="w-14 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-foreground"
-            aria-label="Number of additional occurrences"
-          />
-          times
-        </label>
-        <label className="flex items-center gap-1.5 text-gray-400">
-          every
-          <input
-            type="number"
-            min={1}
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="w-14 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-foreground"
-            aria-label="Interval in days"
-          />
-          days
-        </label>
-      </div>
+      <RepeatFields
+        count={count}
+        onCountChange={setCount}
+        intervalDays={intervalDays}
+        onIntervalDaysChange={setIntervalDays}
+      />
       <div className="flex items-center gap-2">
         <button
           onClick={handleSubmit}
@@ -227,7 +166,7 @@ function EventRow({
             <KindIcon className="w-3.5 h-3.5" aria-hidden="true" />
             {kindLabel}
           </span>
-          <span className="font-mono tabular-nums">{formatTimeRange(event.startAt, event.endAt)}</span>
+          <span className="font-mono tabular-nums">{formatTimeRange(event.startAt, event.endAt, event.isAllDay)}</span>
           {(event.locationText ?? event.venueId) && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
@@ -369,7 +308,12 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
   // render the other tab's cached data under the new tab's identity.
   const { data, isLoading, isError } = useQuery({
     queryKey: ["events", communityId, walletAddress, collection],
-    queryFn: () => eventApi.listEvents(communityId, { limit: 50, collection }),
+    // Events expansion Approach B (2026-08-27, D4 outside-voice fix) — raised from 50: this page
+    // never paginates further, so a community with 50+ active events could have some side-events
+    // of a shown parent land on a page never fetched, silently vanishing from the parentEventId
+    // grouping below. 200 matches eventService.ts's own list() comment, which already assumes
+    // "dozens-to-low-hundreds of rows" per community.
+    queryFn: () => eventApi.listEvents(communityId, { limit: 200, collection }),
   });
 
   const allEvents = data?.events ?? [];
@@ -387,16 +331,7 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
     sideEventsByParent.set(event.parentEventId, siblings);
   }
 
-  const groups: { key: string; header: string; events: Event[] }[] = [];
-  for (const event of topLevelEvents) {
-    const key = dateGroupKey(event.startAt);
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup?.key === key) {
-      lastGroup.events.push(event);
-    } else {
-      groups.push({ key, header: formatDateHeader(event.startAt), events: [event] });
-    }
-  }
+  const groups = groupEventsByDate(topLevelEvents);
 
   const toggleExpanded = (eventId: string) => {
     setExpandedParentIds((prev) => {
@@ -490,21 +425,42 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
                     isExpanded={isExpanded}
                     onToggleExpand={() => toggleExpanded(event.id)}
                   />
-                  {isExpanded && sideEvents && (
-                    <div className="ml-6 pl-3 border-l border-gray-800">
-                      {sideEvents.map((sideEvent) => (
-                        <EventRow
-                          key={sideEvent.id}
-                          communityId={communityId}
-                          event={sideEvent}
-                          connected={connected}
-                          walletAddress={walletAddress}
-                          isCommunityAdmin={isCommunityAdmin}
-                          onEdit={() => setEditingEvent(sideEvent)}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  {isExpanded &&
+                    sideEvents &&
+                    (() => {
+                      // Events expansion Approach B (2026-08-27, D4/D5/D6 design review) — group
+                      // side-events by day; skip day-headers entirely when they all fall on one
+                      // distinct day (a redundant "Day 1" label above an obviously-single-day list
+                      // adds noise with zero information value). Day-header labels reuse the same
+                      // formatDateHeader() the outer <h3> date-groups already use, wrapped in <h4>
+                      // so screen readers see a correctly-nested heading outline.
+                      const dayGroups = groupEventsByDate(sideEvents);
+                      const showDayHeaders = dayGroups.length > 1;
+                      return (
+                        <div className="ml-6 pl-3 border-l border-gray-800">
+                          {dayGroups.map((dayGroup) => (
+                            <div key={dayGroup.key}>
+                              {showDayHeaders && (
+                                <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 mt-2 first:mt-0">
+                                  {dayGroup.header}
+                                </h4>
+                              )}
+                              {dayGroup.events.map((sideEvent) => (
+                                <EventRow
+                                  key={sideEvent.id}
+                                  communityId={communityId}
+                                  event={sideEvent}
+                                  connected={connected}
+                                  walletAddress={walletAddress}
+                                  isCommunityAdmin={isCommunityAdmin}
+                                  onEdit={() => setEditingEvent(sideEvent)}
+                                />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                 </div>
               );
             })}

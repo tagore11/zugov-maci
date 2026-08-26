@@ -268,6 +268,16 @@
 **Priority:** P3
 **Depends on:** Approach A (side-events + global feed) — shipped 2026-08-27
 
+### Community-level timezone field for all-day event boundaries
+
+**What:** Add a real `timezone` column to `communities`, and use it (not the event creator's browser offset) whenever an all-day event's local-midnight boundary is computed, or in any future calendar display.
+
+**Why:** Caught during the 2026-08-27 `/plan-eng-review` for Approach B's all-day toggle (outside-voice finding) — there is zero timezone concept anywhere in this schema today. The locked fallback ("creator's browser timezone at creation time") is fine for a single-location pop-up-city event, but a real gap for a multi-timezone case: an organizer creating from one timezone and an attendee viewing from another could see the same all-day event span different calendar days.
+
+**Effort:** M (new column + backfill for existing communities + a settings UI to set/edit it — a real, separate piece of scope from the all-day toggle itself)
+**Priority:** P3
+**Depends on:** None
+
 ### Modal accessibility retrofit (Escape-key close + role="dialog")
 
 **What:** Add Escape-key close and `role="dialog"`/`aria-modal="true"` to `CreateGovernanceActionModal` and `AuthModal` — the two existing modals in the app, neither of which has either today.

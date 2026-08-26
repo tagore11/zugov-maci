@@ -152,6 +152,7 @@ describe("CreateEventModal", () => {
       cancelledAt: null,
       eligibleTierIds: null,
       parentEventId: null,
+      isAllDay: false,
     };
 
     renderWithProviders(
@@ -242,6 +243,7 @@ describe("CreateEventModal", () => {
         cancelledAt: null,
         eligibleTierIds: null,
         parentEventId: null,
+        isAllDay: false,
       };
 
       renderWithProviders(
@@ -276,6 +278,7 @@ describe("CreateEventModal", () => {
         cancelledAt: null,
         eligibleTierIds: ["tier-member"],
         parentEventId: null,
+        isAllDay: false,
       };
 
       renderWithProviders(
@@ -394,6 +397,7 @@ describe("CreateEventModal", () => {
         cancelledAt: null,
         eligibleTierIds: null,
         parentEventId: null,
+        isAllDay: false,
       };
 
       renderWithProviders(
@@ -409,6 +413,184 @@ describe("CreateEventModal", () => {
       await screen.findByText("Edit Event");
       expect(listEventsMock).not.toHaveBeenCalled();
       expect(screen.queryByLabelText("Parent event (optional)")).not.toBeInTheDocument();
+    });
+  });
+
+  // Events expansion Approach B (2026-08-27).
+  describe("Approach B", () => {
+    it("Kind dropdown lists all 17 values, derived from KIND_META", async () => {
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const select = screen.getByLabelText("Kind") as HTMLSelectElement;
+      expect(select.options.length).toBe(17);
+      expect(screen.getByRole("option", { name: "Meetup" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Meeting" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "Open Mic" })).toBeInTheDocument();
+    });
+
+    it("toggling All day swaps the datetime-local inputs for date inputs", async () => {
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      expect(screen.getByLabelText("Starts *")).toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText("All day"));
+      expect(screen.queryByLabelText("Starts *")).not.toBeInTheDocument();
+      expect(screen.getByLabelText("Start date *")).toBeInTheDocument();
+      expect(screen.getByLabelText("End date *")).toBeInTheDocument();
+    });
+
+    it("End date defaults to Start date when All day is toggled on", async () => {
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      fireEvent.click(screen.getByLabelText("All day"));
+      fireEvent.change(screen.getByLabelText("Start date *"), { target: { value: futureDate } });
+
+      expect((screen.getByLabelText("End date *") as HTMLInputElement).value).toBe(futureDate);
+    });
+
+    it("submitting an all-day event includes isAllDay: true and start-of-day/end-of-day timestamps", async () => {
+      createEventMock.mockResolvedValue({ event: { id: "event-1" }, repeatedEvents: [] });
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      fireEvent.change(screen.getByLabelText("Title *"), { target: { value: "Rest Day" } });
+      fireEvent.click(screen.getByLabelText("All day"));
+      fireEvent.change(screen.getByLabelText("Start date *"), { target: { value: futureDate } });
+      fireEvent.change(screen.getByLabelText("Custom location"), { target: { value: "Anywhere" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+      const payload = createEventMock.mock.calls[0]![1] as { isAllDay: boolean; startAt: number; endAt: number };
+      expect(payload.isAllDay).toBe(true);
+      expect(payload.endAt - payload.startAt).toBeLessThan(24 * 60 * 60);
+      expect(payload.endAt).toBeGreaterThan(payload.startAt);
+    });
+
+    it("shows an error when End date is before Start date in all-day mode", async () => {
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      const later = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const earlier = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      fireEvent.click(screen.getByLabelText("All day"));
+      fireEvent.change(screen.getByLabelText("Start date *"), { target: { value: later } });
+      fireEvent.change(screen.getByLabelText("End date *"), { target: { value: earlier } });
+
+      expect(screen.getByText("End date must be on or after the start date.")).toBeInTheDocument();
+    });
+
+    it("checking Repeat reveals RepeatFields, and submitting includes the repeat payload", async () => {
+      createEventMock.mockResolvedValue({ event: { id: "event-1" }, repeatedEvents: [] });
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      fillRequiredFields();
+      expect(screen.queryByLabelText("Number of additional occurrences")).not.toBeInTheDocument();
+      fireEvent.click(screen.getByLabelText("Repeat"));
+      fireEvent.change(screen.getByLabelText("Number of additional occurrences"), { target: { value: "4" } });
+      fireEvent.change(screen.getByLabelText("Interval in days"), { target: { value: "2" } });
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+      expect(createEventMock).toHaveBeenCalledWith(
+        "0xabc",
+        expect.objectContaining({ repeat: { count: 4, intervalDays: 2 } }),
+      );
+    });
+
+    it("submitting without checking Repeat omits the repeat field", async () => {
+      createEventMock.mockResolvedValue({ event: { id: "event-1" }, repeatedEvents: [] });
+      renderWithProviders(
+        <CreateEventModal isOpen={true} onClose={() => {}} onSuccess={() => {}} communityId="0xabc" />,
+      );
+
+      fillRequiredFields();
+      fireEvent.click(screen.getByRole("button", { name: "Create Event" }));
+
+      await waitFor(() => expect(createEventMock).toHaveBeenCalledTimes(1));
+      const payload = createEventMock.mock.calls[0]![1] as Record<string, unknown>;
+      expect(payload.repeat).toBeUndefined();
+    });
+
+    it("does not show the Repeat option in edit mode", async () => {
+      const editingEvent = {
+        id: "event-1",
+        communityId: "0xabc",
+        title: "Morning Yoga",
+        description: null,
+        venueId: null,
+        locationText: "The Hub",
+        startAt: Math.floor(FUTURE_START.getTime() / 1000),
+        endAt: Math.floor(FUTURE_END.getTime() / 1000),
+        seriesId: null,
+        kind: "social" as const,
+        creatorAddress: "0xcreator",
+        status: "active" as const,
+        createdAt: 0,
+        cancelledAt: null,
+        eligibleTierIds: null,
+        parentEventId: null,
+        isAllDay: false,
+      };
+
+      renderWithProviders(
+        <CreateEventModal
+          isOpen={true}
+          onClose={() => {}}
+          onSuccess={() => {}}
+          communityId="0xabc"
+          editingEvent={editingEvent}
+        />,
+      );
+
+      await screen.findByText("Edit Event");
+      expect(screen.queryByLabelText("Repeat")).not.toBeInTheDocument();
+    });
+
+    it("edit mode pre-fills All day and the date inputs for an existing all-day event", async () => {
+      const editingEvent = {
+        id: "event-1",
+        communityId: "0xabc",
+        title: "Rest Day",
+        description: null,
+        venueId: null,
+        locationText: "Anywhere",
+        startAt: Math.floor(FUTURE_START.getTime() / 1000),
+        endAt: Math.floor(FUTURE_START.getTime() / 1000) + 23 * 3600 + 3599,
+        seriesId: null,
+        kind: "other" as const,
+        creatorAddress: "0xcreator",
+        status: "active" as const,
+        createdAt: 0,
+        cancelledAt: null,
+        eligibleTierIds: null,
+        parentEventId: null,
+        isAllDay: true,
+      };
+
+      renderWithProviders(
+        <CreateEventModal
+          isOpen={true}
+          onClose={() => {}}
+          onSuccess={() => {}}
+          communityId="0xabc"
+          editingEvent={editingEvent}
+        />,
+      );
+
+      await screen.findByText("Edit Event");
+      expect(screen.getByLabelText("All day")).toBeChecked();
+      expect(screen.getByLabelText("Start date *")).toBeInTheDocument();
     });
   });
 });

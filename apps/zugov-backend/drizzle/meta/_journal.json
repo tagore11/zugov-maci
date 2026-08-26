@@ -211,6 +211,13 @@
       "when": 1787768169472,
       "tag": "0029_events_parent_event_id",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1787782953561,
+      "tag": "0030_events_is_all_day",
+      "breakpoints": true
     }
   ]
 }

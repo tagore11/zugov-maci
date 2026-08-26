@@ -432,7 +432,41 @@ export const events = pgTable(
     startAt: integer("start_at").notNull(),
     endAt: integer("end_at").notNull(),
     seriesId: text("series_id"),
-    kind: text("kind").$type<"talk" | "workshop" | "social" | "meeting" | "other">().notNull().default("other"),
+    // Events expansion Approach B (/plan-eng-review + /plan-design-review 2026-08-27) —
+    // widened from 5 to 17 values (Sola.day's fuller taxonomy). "meeting" is deliberately
+    // KEPT alongside the new "meetup" rather than migrated away — dropping it would break
+    // any existing row's kind-based icon lookup (KIND_META[event.kind]) with no data
+    // migration benefit. Still a plain text column, no DB CHECK constraint — this widening
+    // is pure TS/Zod, zero migration for the taxonomy itself (only isAllDay below needs one).
+    kind: text("kind")
+      .$type<
+        | "talk"
+        | "panel"
+        | "workshop"
+        | "activity"
+        | "seminar"
+        | "conference"
+        | "meetup"
+        | "networking"
+        | "training"
+        | "exhibition"
+        | "hackathon"
+        | "demo_day"
+        | "social"
+        | "open_mic"
+        | "wellness"
+        | "meeting"
+        | "other"
+      >()
+      .notNull()
+      .default("other"),
+    // Events expansion Approach B (2026-08-27, D3) — lets the display layer distinguish "a
+    // real 23h59m event" from "an all-day event" without reverse-engineering timestamps.
+    // Locked boundary: startAt = local midnight (creator's browser timezone at creation
+    // time), endAt = 23:59:59 on the last day. Exempted from the startAt-must-be-future
+    // check in createEventSchema — a same-day all-day event's startAt is already in the
+    // past the moment it's submitted, which is the single most common real case.
+    isAllDay: boolean("is_all_day").notNull().default(false),
     creatorAddress: text("creator_address").notNull(),
     status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
     createdAt: integer("created_at").notNull(),

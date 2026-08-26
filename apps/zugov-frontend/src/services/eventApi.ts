@@ -2,7 +2,27 @@ import { parseErrorOr } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-export type EventKind = "talk" | "workshop" | "social" | "meeting" | "other";
+// Events expansion Approach B (2026-08-27, D1) — widened from 5 to 17 values (Sola.day's fuller
+// taxonomy). "meeting" is kept alongside the newer "meetup" (see the backend schema comment) —
+// dropping it would break KIND_META[event.kind] lookups for any existing event with that kind.
+export type EventKind =
+  | "talk"
+  | "panel"
+  | "workshop"
+  | "activity"
+  | "seminar"
+  | "conference"
+  | "meetup"
+  | "networking"
+  | "training"
+  | "exhibition"
+  | "hackathon"
+  | "demo_day"
+  | "social"
+  | "open_mic"
+  | "wellness"
+  | "meeting"
+  | "other";
 export type EventStatus = "active" | "cancelled";
 export type RsvpStatus = "active" | "cancelled";
 
@@ -35,6 +55,9 @@ export interface Event {
   /** Events expansion (2026-08-26) — nullable, one level of nesting only, immutable after
    * creation. Non-null means this event is a side-event of the referenced parent. */
   parentEventId: string | null;
+  /** Events expansion Approach B (2026-08-27, D3). See formatTimeRange() in EventsSection.tsx
+   * for how this changes display. */
+  isAllDay: boolean;
 }
 
 /** Global cross-community feed row (GET /api/events) — additive fields on top of Event, per the
@@ -76,17 +99,27 @@ export interface CreateEventInput {
   eligibleTierIds?: string[] | null;
   /** Events expansion (2026-08-26, D2) — optional side-event parent. Immutable after creation. */
   parentEventId?: string;
+  /** Events expansion Approach B (2026-08-27, D3). */
+  isAllDay?: boolean;
+  /** Events expansion Approach B (2026-08-27, D2) — creates `count` additional occurrences
+   * atomically alongside this event, all sharing one seriesId. If parentEventId is also set,
+   * every repeat inherits it too (sibling sessions under the same gathering). */
+  repeat?: { count: number; intervalDays: number };
 }
 
-export async function createEvent(communityId: string, input: CreateEventInput): Promise<Event> {
+// D2 (2026-08-27) — response is additive: { event, repeatedEvents } where repeatedEvents is
+// empty unless `repeat` was set on the request.
+export async function createEvent(
+  communityId: string,
+  input: CreateEventInput,
+): Promise<{ event: Event; repeatedEvents: Event[] }> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/events`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
     body: JSON.stringify(input),
   });
-  const data = await parseErrorOr<{ event: Event }>(res, `Failed to create event: ${res.status}`);
-  return data.event;
+  return parseErrorOr(res, `Failed to create event: ${res.status}`);
 }
 
 export interface ListEventsFilter {
@@ -156,6 +189,8 @@ export interface UpdateEventInput {
   endAt?: number;
   kind?: EventKind;
   eligibleTierIds?: string[] | null;
+  /** Events expansion Approach B (2026-08-27, D3) — editable, unlike parentEventId. */
+  isAllDay?: boolean;
 }
 
 export async function updateEvent(communityId: string, eventId: string, patch: UpdateEventInput): Promise<Event> {
