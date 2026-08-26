@@ -4,7 +4,8 @@ import { MaciProvider } from "./context/MaciContext";
 import HomePage from "../app/page";
 import AboutPage from "../app/about/page";
 import AnalyticsPage from "../app/analytics/page";
-import CommunityPage from "../app/community/[id]/page";
+import CommunityLayout from "../app/community/[id]/CommunityLayout";
+import { OverviewTab, EventsTab, ProposalsTab, DiscussionsTab } from "../app/community/[id]/CommunityTabRoutes";
 import CommunitySettingsPage from "../app/community/[id]/settings/page";
 import DelegatesPage from "../app/delegates/page";
 import KnowledgeBasePage from "../app/knowledge-base/page";
@@ -34,8 +35,13 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/community/:id" element={<CommunityPage />} />
-            <Route path="/community/:id/settings" element={<CommunitySettingsPage />} />
+            <Route path="/community/:id" element={<CommunityLayout />}>
+              <Route index element={<OverviewTab />} />
+              <Route path="events" element={<EventsTab />} />
+              <Route path="proposals" element={<ProposalsTab />} />
+              <Route path="discussions" element={<DiscussionsTab />} />
+              <Route path="settings" element={<CommunitySettingsPage />} />
+            </Route>
             <Route path="/delegates" element={<DelegatesPage />} />
             <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
             <Route element={<RequireAuth />}>

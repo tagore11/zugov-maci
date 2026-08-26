@@ -1241,3 +1241,25 @@ get lost.
 **Effort:** M (new test file, needs its own wagmi/router mocking scaffolding like `page.test.tsx`)
 **Priority:** P3
 **Depends on:** None
+
+### Per-poll message-count/eligibility fetch is an N+1-shaped RPC pattern
+
+**What:** `page.tsx:108-128`'s two `useQuery` hooks each fire one on-chain read per poll
+(`fetchNumMessages`, `fetchIsEligible`), parallelized via `Promise.all` but still scaling
+linearly with poll count — a community with 50 polls fires 100 RPC calls on page load. The
+community-page redesign (`/plan-eng-review`, 2026-08-26) relocates this code unchanged into the
+new `OverviewTab` component; it was flagged during that review's Performance section but
+explicitly not fixed there, since it's orthogonal to the routing/tabs work.
+
+**Why:** Real, verified performance pattern — not speculative. Parallelized so it's not as bad as
+a sequential N+1, but still an unbounded-with-poll-count RPC fan-out on every single Overview-tab
+load. Fixing it properly means either a batched multicall (single RPC call reading all polls'
+message counts/eligibility in one round trip) or a backend-side aggregation endpoint — either is
+a real architecture decision on its own, not a one-line patch, so it was deliberately kept out of
+the redesign's diff rather than conflating two unrelated changes.
+
+**Effort:** M (multicall batching requires picking a multicall pattern/library and reworking
+`readContract.ts`'s call sites; a backend aggregation endpoint requires a new route plus a
+subgraph or RPC-batching implementation server-side — either way, needs its own scoping pass)
+**Priority:** P3
+**Depends on:** None
