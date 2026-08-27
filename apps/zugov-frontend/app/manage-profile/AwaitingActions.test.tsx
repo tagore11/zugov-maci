@@ -5,11 +5,11 @@ import { MemoryRouter } from "react-router-dom";
 import { AwaitingActions } from "./AwaitingActions";
 
 const listMock = vi.fn();
-const listUnionsForCommunityMock = vi.fn();
+const getMyPendingUnionInvitesMock = vi.fn();
 const getMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   list: (...args: unknown[]) => listMock(...args),
-  listUnionsForCommunity: (...args: unknown[]) => listUnionsForCommunityMock(...args),
+  getMyPendingUnionInvites: (...args: unknown[]) => getMyPendingUnionInvitesMock(...args),
   get: (...args: unknown[]) => getMock(...args),
 }));
 
@@ -40,7 +40,7 @@ function renderWithProviders(ui: React.ReactElement) {
 
 beforeEach(() => {
   listMock.mockReset().mockResolvedValue({ communities: [], total: 0, hasMore: false });
-  listUnionsForCommunityMock.mockReset().mockResolvedValue([]);
+  getMyPendingUnionInvitesMock.mockReset().mockResolvedValue([]);
   getMock.mockReset();
   listMyMembershipsMock.mockReset().mockResolvedValue([]);
   listPendingRequestsMock.mockReset().mockResolvedValue([]);
@@ -61,8 +61,13 @@ describe("AwaitingActions", () => {
 
   it("shows a pending union invite for an owned community, linking to manage-communities", async () => {
     listMock.mockResolvedValue({ communities: [OWNED], total: 1, hasMore: false });
-    listUnionsForCommunityMock.mockResolvedValue([
-      { id: "union-1", displayName: "Pop-up Alliance", logo: null, status: "pending" },
+    getMyPendingUnionInvitesMock.mockResolvedValue([
+      {
+        unionId: "union-1",
+        unionDisplayName: "Pop-up Alliance",
+        communityId: "community-1",
+        communityDisplayName: "ZuKas Residency",
+      },
     ]);
 
     renderWithProviders(<AwaitingActions address="0xabc" />);
@@ -111,7 +116,7 @@ describe("AwaitingActions", () => {
 
   it("stays usable when one data source fails (best-effort, not all-or-nothing)", async () => {
     listMock.mockResolvedValue({ communities: [OWNED], total: 1, hasMore: false });
-    listUnionsForCommunityMock.mockRejectedValue(new Error("network error"));
+    getMyPendingUnionInvitesMock.mockRejectedValue(new Error("network error"));
     listPendingRequestsMock.mockResolvedValue([{ id: "req-1", walletAddress: "0x1", createdAt: 1 }]);
 
     renderWithProviders(<AwaitingActions address="0xabc" />);

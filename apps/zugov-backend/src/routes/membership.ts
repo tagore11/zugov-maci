@@ -10,6 +10,9 @@ import {
   RequestNotFoundError,
   NotEligibleError,
   JoinNotAllowedError,
+  CreatorCannotLeaveError,
+  CommunityHasGovernanceError,
+  NotAMemberError,
 } from "../services/membershipService.js";
 
 export const membershipRouter = new Hono();
@@ -97,6 +100,28 @@ membershipRouter.get("/:id/membership", async (c) => {
   if (!session.address) return c.json({ status: "none" });
   const result = await membershipService.getMembershipStatus(c.req.param("id"), session.address);
   return c.json(result);
+});
+
+// formalize-communities epic, Child F (/plan-eng-review 2026-08-25) — deletes the caller's own
+// membership. Scoped to fully ungoverned communities only (D3); the creator can never use this
+// (D1); a second call after already leaving returns 404, not a silent no-op (D2).
+membershipRouter.delete("/:id/membership", requireAuth, async (c) => {
+  const session = await getSession(c);
+  try {
+    await membershipService.leave(c.req.param("id"), session.address!);
+    return c.json({ ok: true });
+  } catch (err) {
+    if (err instanceof CreatorCannotLeaveError) {
+      return c.json({ error: err.message }, 403);
+    }
+    if (err instanceof CommunityHasGovernanceError) {
+      return c.json({ error: err.message }, 409);
+    }
+    if (err instanceof NotAMemberError) {
+      return c.json({ error: err.message }, 404);
+    }
+    throw err;
+  }
 });
 
 // Governance restructure Phase 2 (2026-08-20) — feeds the person-type (election) proposal

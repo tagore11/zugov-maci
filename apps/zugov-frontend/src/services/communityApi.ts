@@ -135,11 +135,16 @@ export async function list(
   chainId?: number,
   creatorAddress?: string,
   search?: string,
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on"
+  // (creator OR canManageMembership tier holder), distinct from creatorAddress's "created by"
+  // filter. Appended last (not inserted) since every existing caller passes these positionally.
+  authorizedFor?: string,
 ): Promise<ListResponse> {
   const params = new URLSearchParams({ page: String(page) });
   if (chainId !== undefined) params.set("chainId", String(chainId));
   if (creatorAddress !== undefined) params.set("creatorAddress", creatorAddress);
   if (search !== undefined && search.trim() !== "") params.set("search", search.trim());
+  if (authorizedFor !== undefined) params.set("authorizedFor", authorizedFor);
   const res = await fetch(`${BASE_URL}/api/communities?${params}`);
   if (!res.ok) throw new Error(`Failed to fetch communities: ${res.status}`);
   return res.json() as Promise<ListResponse>;
@@ -304,11 +309,37 @@ export async function createUnion(payload: {
   return data.union;
 }
 
-export async function getUnion(id: string): Promise<{ union: Union; members: UnionMember[] } | null> {
+export type GetUnionResponse = {
+  union: Union;
+  members: UnionMember[];
+  // community page redesign (/plan-eng-review 2026-08-26, D1) — which of the connected wallet's
+  // communities are active/pending here, for the union page's "Your Actions" panel. Empty for
+  // anonymous or non-participating callers.
+  myActiveCommunityIds: string[];
+  myPendingCommunityIds: string[];
+};
+
+export async function getUnion(id: string): Promise<GetUnionResponse | null> {
   const res = await fetch(`${BASE_URL}/api/unions/${id}`, { credentials: "include" });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Failed to fetch union: ${res.status}`);
-  return res.json() as Promise<{ union: Union; members: UnionMember[] }>;
+  return res.json() as Promise<GetUnionResponse>;
+}
+
+export type MyPendingUnionInvite = {
+  unionId: string;
+  unionDisplayName: string;
+  communityId: string;
+  communityDisplayName: string;
+};
+
+// Session-derived only, powers the /unions listing badge and manage-profile's "Awaiting Your
+// Action" card (community page redesign, /plan-eng-review 2026-08-26, D2/D3).
+export async function getMyPendingUnionInvites(): Promise<MyPendingUnionInvite[]> {
+  const res = await fetch(`${BASE_URL}/api/unions/my-pending-invites`, { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to fetch pending union invites: ${res.status}`);
+  const data = (await res.json()) as { invites: MyPendingUnionInvite[] };
+  return data.invites;
 }
 
 export async function inviteToUnion(

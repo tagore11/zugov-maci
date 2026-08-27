@@ -6,7 +6,12 @@ const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http:/
 // canCreateEvents isn't part of TierDraft (no create/edit UI exists for it — TierEditor.tsx has no
 // toggle), but the backend's GET /tiers response includes it (a full `select()` over membershipTiers),
 // so the read type declares it separately rather than widening TierDraft's create/update shape.
-export type Tier = TierDraft & { id: string; isDefault: boolean; canCreateEvents: boolean };
+export type Tier = TierDraft & {
+  id: string;
+  isDefault: boolean;
+  canCreateEvents: boolean;
+  canPostDiscussions: boolean;
+};
 
 export async function getTiers(communityId: string): Promise<Tier[]> {
   const res = await fetch(`${BASE_URL}/api/communities/${communityId}/tiers`);
@@ -63,6 +68,18 @@ export async function join(communityId: string): Promise<{ status: "approved" | 
     throw new DuplicateJoinError(data.error);
   }
   return parseErrorOr(res, `Failed to join: ${res.status}`);
+}
+
+// formalize-communities epic, Child F (/plan-eng-review 2026-08-25) — deletes the caller's own
+// membership. Throws HttpError(403) if the caller is the community's creator, HttpError(409) if
+// the community has any decision adapter attached, HttpError(404) if the caller isn't a member
+// (including on a repeat call — Leave is deliberately not idempotent, D2).
+export async function leave(communityId: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/api/communities/${communityId}/membership`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  await parseErrorOr<{ ok: true }>(res, `Failed to leave: ${res.status}`);
 }
 
 export type PendingRequest = { id: string; walletAddress: string; createdAt: number };

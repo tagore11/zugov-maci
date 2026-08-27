@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, count, ilike } from "drizzle-orm";
+import { eq, and, count, ilike, inArray } from "drizzle-orm";
 import { createPublicClient, getAddress, http, type Address } from "viem";
 import { db } from "../db/client.js";
 import {
   communities,
   memberships,
+  membershipTiers,
   maciGovernanceConfigs,
   categories,
   type Community,
@@ -13,7 +14,7 @@ import {
 } from "../db/schema.js";
 import type { IdentityBody, GovernanceBody, PollDeployConfigBody } from "../validators/communitySchema.js";
 import { getRpcUrl } from "./chainRpc.js";
-import { createTiersForCommunity, listTiers } from "./membershipService.js";
+import { createTiersForCommunity, listTiers, isAuthorized } from "./membershipService.js";
 import { deployCommunitySubgraph, subgraphQueryUrlFor } from "./subgraphDeployService.js";
 import { attach as attachDecisionAdapter } from "./decisionAdapterService.js";
 
@@ -127,23 +128,56 @@ function parseRecord(identity: Community, governance: MaciGovernanceConfig | nul
   };
 }
 
+// formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — "authorized on", not
+// just "created" (isAuthorized()'s own definition: creator OR a canManageMembership tier
+// holder). Implemented as two simple queries unioned in application code rather than a
+// correlated SQL subquery, matching this codebase's preference for composed simple queries.
+// Duplicate ids between the two sets are harmless (communities.id is the PK; inArray dedupes
+// by row identity) — every creator is always also a canManageMembership tier holder on their
+// own community (createIdentity enrolls them at that tier), so the union is redundant-but-
+// harmless for that case specifically, not a correctness concern.
+//
+// Extracted (union page redesign, /plan-eng-review 2026-08-26, D2) out of list() below so
+// unionService's "which of my communities have a pending invite" query can reuse the same
+// authorization resolution instead of a third copy.
+export async function getAuthorizedCommunityIds(address: string): Promise<string[]> {
+  const [creatorRows, adminTierRows] = await Promise.all([
+    db.select({ id: communities.id }).from(communities).where(ilike(communities.creatorAddress, address)),
+    db
+      .select({ id: memberships.communityId })
+      .from(memberships)
+      .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+      .where(and(ilike(memberships.walletAddress, address), eq(membershipTiers.canManageMembership, true))),
+  ]);
+  return [...new Set([...creatorRows.map((r) => r.id), ...adminTierRows.map((r) => r.id)])];
+}
+
 export async function list(
   page: number,
   limit: number,
   chainId?: number,
   creatorAddress?: string,
   search?: string,
+  authorizedFor?: string,
 ): Promise<{ communities: CommunityRecord[]; total: number; hasMore: boolean }> {
   const offset = (page - 1) * limit;
+
+  const authorizedIds = authorizedFor !== undefined ? await getAuthorizedCommunityIds(authorizedFor) : undefined;
 
   // Community creation wizard fix (2026-08-21) — feeds the parent-community picker's search
   // box. Case-insensitive substring match on displayName; no index needed at this scale (see
   // /plan-eng-review's outside-voice finding — a client-side filter over the paginated list
   // silently excluded any parent past the first page, this fixes that properly).
+  //
+  // creatorAddress uses ilike (Child E, 2026-08-25, D3) rather than a case-sensitive eq() — a
+  // pre-existing divergence from isAuthorized()'s own lowercase comparison caught while building
+  // authorizedFor on top of it; a wallet whose stored casing differed from the queried casing
+  // would otherwise silently vanish from its own creator-match results.
   const conditions = [
     chainId !== undefined ? eq(maciGovernanceConfigs.chainId, chainId) : undefined,
-    creatorAddress !== undefined ? eq(communities.creatorAddress, creatorAddress) : undefined,
+    creatorAddress !== undefined ? ilike(communities.creatorAddress, creatorAddress) : undefined,
     search !== undefined && search.trim() !== "" ? ilike(communities.displayName, `%${search.trim()}%`) : undefined,
+    authorizedIds !== undefined ? inArray(communities.id, authorizedIds) : undefined,
   ].filter((condition) => condition !== undefined);
   const baseWhere = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -289,6 +323,19 @@ export class ParentCommunityNotFoundError extends Error {
   }
 }
 
+// formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D1) — checked AFTER the
+// self-parent/exists checks above, not before them in the route: unlike PATCH /:id or
+// DELETE /:id/membership (where isAuthorized-before-existence avoids confirming a resource's
+// existence to a non-owner), GET /:id is fully public here — there's no enumeration protection to
+// buy, and checking auth first would make a nonexistent/self-referential parent id look
+// "unauthorized" instead of "not found", regressing 2 existing tests and retiring
+// SelfParentError's specific message on the one path where it fires.
+export class ParentNotAuthorizedError extends Error {
+  constructor() {
+    super("Not authorized to create a child community under this parent");
+  }
+}
+
 export class CommunityNotFoundError extends Error {
   constructor(id: string) {
     super(`Community "${id}" not found`);
@@ -349,6 +396,9 @@ export async function createIdentity(
     if (data.parentCommunityId === data.id) throw new SelfParentError();
     const parent = await get(data.parentCommunityId);
     if (!parent) throw new ParentCommunityNotFoundError(data.parentCommunityId);
+    if (!(await isAuthorized(data.parentCommunityId, data.creatorAddress))) {
+      throw new ParentNotAuthorizedError();
+    }
   }
 
   if (data.category !== undefined) await assertCategoryExists(data.category);

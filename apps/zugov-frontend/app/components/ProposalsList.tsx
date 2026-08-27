@@ -4,6 +4,7 @@ import { Plus } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { JsonRpcProvider } from "ethers";
 import { useHasTierPermission, useIsCommunityAdmin } from "@/src/hooks/useMembershipPermission";
+import * as membershipApi from "@/src/services/membershipApi";
 import * as proposalApi from "@/src/services/proposalApi";
 import type { ProposalWithMeta, ProposalVotingProtocolType, VoteEligibilityReason } from "@/src/services/proposalApi";
 import * as communityApi from "@/src/services/communityApi";
@@ -456,6 +457,14 @@ function DraftRow({
   // DraftRow only ever renders once ProposalsList has already confirmed `connected` (it returns
   // early otherwise), so `true` here is safe rather than threading a redundant prop.
   const canVote = useHasTierPermission(communityId, true, "canVote");
+  // formalize-communities epic, Child H (/plan-eng-review 2026-08-25, AC2) — same
+  // ["membershipStatus", communityId] key ProposalsList/useHasTierPermission already query;
+  // React Query dedupes this, not an extra network request.
+  const { data: membershipStatus } = useQuery({
+    queryKey: ["membershipStatus", communityId],
+    queryFn: () => membershipApi.getMembershipStatus(communityId),
+  });
+  const isNonMember = membershipStatus?.status !== "member";
 
   const runAuthorizeIfReady = async (met: boolean) => {
     if (!met) return;
@@ -510,6 +519,7 @@ function DraftRow({
           </button>
         )}
       </div>
+      {!canVote && isNonMember && <p className="text-xs text-gray-500">Join this community to sponsor proposals.</p>}
       <p className="text-xs text-gray-500">Sponsors: {sponsorCount} (draft — not yet formalized)</p>
       {sponsorError && <p className="text-xs text-red-400">{sponsorError}</p>}
       {authorizeState === "authorized" &&
@@ -541,8 +551,17 @@ export function ProposalsList({ communityId, connected, walletAddress }: Proposa
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
 
+  // formalize-communities epic, Child H (/plan-eng-review 2026-08-25, D3) — walletAddress is part
+  // of the query key now: the backend's GET /:id/proposals no longer requires a SIWE session
+  // (only auth-gated writes still do), and its result is viewer-dependent (tier-filtered). Without
+  // this, a wallet account switch — a documented divergence between wagmi's connected address and
+  // the backend's SIWE cookie, see useSiwe.tsx's 2026-08-22 fix for the analogous write-path issue
+  // — could silently keep rendering the PREVIOUS wallet's cached, tier-filtered proposal list
+  // under the new address, with no error to signal it. Partial-key invalidation elsewhere in this
+  // file (invalidateQueries({queryKey: ["proposals", communityId]})) still matches this extended
+  // key by React Query's default prefix behavior — no other call site needs to change.
   const { data } = useQuery({
-    queryKey: ["proposals", communityId],
+    queryKey: ["proposals", communityId, walletAddress],
     queryFn: () => proposalApi.list(communityId),
     enabled: connected,
   });
@@ -557,6 +576,17 @@ export function ProposalsList({ communityId, connected, walletAddress }: Proposa
   });
 
   const canCreateProposals = useHasTierPermission(communityId, connected, "canCreateProposals");
+  // formalize-communities epic, Child H (/plan-eng-review 2026-08-25) — distinguishes "signed-in
+  // but not a member at all" from "a member whose tier just lacks canCreateProposals", so the new
+  // explanatory hint below only shows the join-prompt for the former (the latter is existing,
+  // unchanged behavior — a member without the right tier already correctly sees no create button
+  // and needs no further explanation).
+  const { data: membershipStatus } = useQuery({
+    queryKey: ["membershipStatus", communityId],
+    queryFn: () => membershipApi.getMembershipStatus(communityId),
+    enabled: connected,
+  });
+  const isNonMember = membershipStatus?.status !== "member";
   // isAuthorized-equivalent (creator OR canManageMembership) — matches tallyService.ts's server-side
   // check exactly; useIsCommunityAdmin alone only covers canManageMembership, so the creator match is
   // composed here, mirroring EventsSection.tsx's existing per-event composition.
@@ -594,6 +624,13 @@ export function ProposalsList({ communityId, connected, walletAddress }: Proposa
             <Plus className="w-4 h-4" />
             {community?.directDeploymentEnabled ? "Deploy Poll" : "New Draft"}
           </button>
+        )}
+        {/* Child H (/plan-eng-review 2026-08-25, AC2) — a non-member previously saw the create
+            button simply vanish, with no explanation. A member without canCreateProposals on
+            their tier still sees nothing here, unchanged — this hint is specifically about
+            joining, not about a tier permission a real member already has or lacks. */}
+        {!canCreateProposals && isNonMember && (
+          <p className="text-xs text-gray-500">Join this community to create proposals.</p>
         )}
       </div>
 

@@ -4,7 +4,8 @@ import { MaciProvider } from "./context/MaciContext";
 import HomePage from "../app/page";
 import AboutPage from "../app/about/page";
 import AnalyticsPage from "../app/analytics/page";
-import CommunityPage from "../app/community/[id]/page";
+import CommunityLayout from "../app/community/[id]/CommunityLayout";
+import { OverviewTab, EventsTab, ProposalsTab, DiscussionsTab } from "../app/community/[id]/CommunityTabRoutes";
 import CommunitySettingsPage from "../app/community/[id]/settings/page";
 import DelegatesPage from "../app/delegates/page";
 import KnowledgeBasePage from "../app/knowledge-base/page";
@@ -15,6 +16,7 @@ import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
 import UnionsPage from "../app/unions/page";
 import UnionDetailPage from "../app/unions/[id]/page";
+import EventsPage from "../app/events/page";
 import { RequireAuth } from "../app/components/RequireAuth";
 
 // Permanent redirect, no removal date (formalize-communities epic, Child C1, /plan-eng-review
@@ -34,8 +36,13 @@ export default function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/about" element={<AboutPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/community/:id" element={<CommunityPage />} />
-            <Route path="/community/:id/settings" element={<CommunitySettingsPage />} />
+            <Route path="/community/:id" element={<CommunityLayout />}>
+              <Route index element={<OverviewTab />} />
+              <Route path="events" element={<EventsTab />} />
+              <Route path="proposals" element={<ProposalsTab />} />
+              <Route path="discussions" element={<DiscussionsTab />} />
+              <Route path="settings" element={<CommunitySettingsPage />} />
+            </Route>
             <Route path="/delegates" element={<DelegatesPage />} />
             <Route path="/knowledge-base" element={<KnowledgeBasePage />} />
             <Route element={<RequireAuth />}>
@@ -48,6 +55,7 @@ export default function App() {
             <Route path="/proposals" element={<ProposalsPage />} />
             <Route path="/unions" element={<UnionsPage />} />
             <Route path="/unions/:id" element={<UnionDetailPage />} />
+            <Route path="/events" element={<EventsPage />} />
           </Routes>
         </BrowserRouter>
       </MaciProvider>

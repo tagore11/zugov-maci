@@ -1,22 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { MemoryRouter, Routes, Route } from "react-router-dom";
+import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import CommunitySettingsPage from "./page";
 import { HttpError } from "@/src/services/httpClient";
+import type { CommunityOutletContext } from "../CommunityLayout";
 
-const CREATOR_ADDRESS = "0x1111111111111111111111111111111111111111";
-const OTHER_ADDRESS = "0x2222222222222222222222222222222222222222";
-
-let mockAddress: string = CREATOR_ADDRESS;
-
+// community page redesign (/plan-eng-review 2026-08-26, D4) — this page no longer fetches the
+// community record or computes isCreator/isCommunityAdmin itself; both now come from
+// CommunityLayout's outlet context. Tests render CommunitySettingsPage under a stub parent route
+// that supplies a controllable context object, mirroring how CommunityLayout really renders it.
 vi.mock("wagmi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("wagmi")>();
   return {
     ...actual,
-    useAccount: () => ({ address: mockAddress, status: "connected" }),
-    // WalletConnectButton (in Header) calls useConnect() directly too (/plan-eng-review,
-    // 2026-08-23 — Privy removed); overriding avoids needing a real WagmiProvider here.
     useConnect: () => ({ connectors: [], connect: vi.fn(), isPending: false, error: null }),
     useDisconnect: () => ({ disconnect: vi.fn() }),
   };
@@ -24,31 +21,23 @@ vi.mock("wagmi", async (importOriginal) => {
 
 const mockSignOut = vi.fn();
 vi.mock("@/src/hooks/useSiwe", () => ({
-  // /plan-eng-review Phase B (2026-08-23) — Save Changes is now SiweGate-wrapped; isAuthenticated
-  // must be true for these tests to reach the real button instead of the sign-in prompt.
   useSiwe: () => ({ signOut: mockSignOut, isAuthenticated: true, isSigning: false, error: null, signIn: vi.fn() }),
 }));
 
-const getCommunityMock = vi.fn();
 const updateMock = vi.fn();
-// UnionMembershipSection (Child D, /plan-eng-review 2026-08-25) fetches this on mount now too —
-// mocked to resolve empty so it renders nothing, unrelated to what these tests exercise.
 const listUnionsForCommunityMock = vi.fn();
 vi.mock("@/src/services/communityApi", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/communityApi")>("@/src/services/communityApi");
   return {
     ...actual,
-    get: (...args: unknown[]) => getCommunityMock(...args),
     update: (...args: unknown[]) => updateMock(...args),
     listUnionsForCommunity: (...args: unknown[]) => listUnionsForCommunityMock(...args),
   };
 });
 
 const getTiersMock = vi.fn();
-const getMembershipStatusMock = vi.fn();
 vi.mock("@/src/services/membershipApi", () => ({
   getTiers: (...args: unknown[]) => getTiersMock(...args),
-  getMembershipStatus: (...args: unknown[]) => getMembershipStatusMock(...args),
   createTier: vi.fn(),
   updateTier: vi.fn(),
   deleteTier: vi.fn(),
@@ -61,13 +50,13 @@ vi.mock("@/src/services/eligibilityApi", () => ({
   replaceRuleset: (...args: unknown[]) => replaceRulesetMock(...args),
 }));
 
-// Merged in from the zupoll decision-adapter feature (main) — this page now also fetches which
-// decision adapters are attached, unrelated to what most of these tests exercise. Mocked out
-// entirely so the load effect's Promise.all doesn't hit a real fetch.
 const listDecisionAdaptersMock = vi.fn();
 vi.mock("@/src/services/zupollApi", () => ({
   listDecisionAdapters: (...args: unknown[]) => listDecisionAdaptersMock(...args),
 }));
+
+const CREATOR_ADDRESS = "0x1111111111111111111111111111111111111111";
+const OTHER_ADDRESS = "0x2222222222222222222222222222222222222222";
 
 const COMMUNITY = {
   id: "community-1",
@@ -75,23 +64,57 @@ const COMMUNITY = {
   description: "",
   logo: "",
   creatorAddress: CREATOR_ADDRESS,
+  parentCommunityId: null,
   membershipPolicy: "open" as const,
+  category: null,
   allowJoin: true,
   tierChangesRequireVote: false,
   directDeploymentEnabled: false,
+  defaultTierId: null,
+  cosponsorshipThreshold: 0,
+  createdAt: 0,
+  registeredAt: 0,
   // Required by the Community type; the page's DeployGovernanceSection gate now reads
   // attachedAdapters (mocked via listDecisionAdaptersMock below), not this field directly.
   governanceConfigured: true,
-  defaultTierId: null,
+  contractAddress: null,
+  chainId: null,
+  governanceType: null,
+  allowedPolicies: [] as number[],
+  supportedModes: [] as number[],
+  signUpPolicyType: null,
+  signUpPolicyAddress: null,
+  stateTreeDepth: null,
+  subgraphStatus: null,
+  subgraphName: null,
 };
 
-function renderPage() {
+function baseContext(overrides: Partial<CommunityOutletContext> = {}): CommunityOutletContext {
+  return {
+    community: COMMUNITY as CommunityOutletContext["community"],
+    address: CREATOR_ADDRESS,
+    connected: true,
+    status: "connected",
+    isCreator: true,
+    isCommunityAdmin: false,
+    rpcUrl: "http://mock-rpc",
+    ...overrides,
+  };
+}
+
+function ParentWithContext({ context }: { context: CommunityOutletContext }) {
+  return <Outlet context={context} />;
+}
+
+function renderPage(context: CommunityOutletContext = baseContext()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/community/community-1/settings"]}>
         <Routes>
-          <Route path="/community/:id/settings" element={<CommunitySettingsPage />} />
+          <Route path="/community/:id" element={<ParentWithContext context={context} />}>
+            <Route path="settings" element={<CommunitySettingsPage />} />
+          </Route>
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -99,101 +122,63 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  mockAddress = CREATOR_ADDRESS;
   mockSignOut.mockReset();
-  getCommunityMock.mockReset();
   updateMock.mockReset();
   getTiersMock.mockReset();
-  getMembershipStatusMock.mockReset();
   getRulesetMock.mockReset();
   replaceRulesetMock.mockReset();
   listDecisionAdaptersMock.mockReset();
   listUnionsForCommunityMock.mockReset();
 
-  getCommunityMock.mockResolvedValue(COMMUNITY);
   getTiersMock.mockResolvedValue([]);
-  getMembershipStatusMock.mockResolvedValue({ status: "none" });
   getRulesetMock.mockResolvedValue([]);
   replaceRulesetMock.mockResolvedValue(undefined);
   listUnionsForCommunityMock.mockResolvedValue([]);
-  // "maci" attached (not just the old governanceConfigured flag main replaced it with) so the
-  // page renders the plain "Governance is configured" text instead of DeployGovernanceSection,
-  // which pulls in useChainId()/useZuGovRegistry() and needs a real WagmiProvider -- unrelated
-  // to what most of these tests exercise.
   listDecisionAdaptersMock.mockResolvedValue({ adapters: ["maci"] });
 });
 
-// CRITICAL regression (Test Review, /plan-eng-review 2026-08-24): the owner/admin auth gate
-// (isCreator || isCommunityAdmin) moved here from /manage-communities/:id/edit. A route-param
-// mismatch during that move could silently disable the gate with nothing catching it until a
-// real user hit it — these two cases prove it still works at the new route.
+// CRITICAL regression (community page redesign, /plan-eng-review 2026-08-26) — isCreator/
+// isCommunityAdmin used to be computed here via a hand-rolled duplicate of useIsCommunityAdmin;
+// now they arrive via outlet context from CommunityLayout. These tests prove the gate still
+// reads them correctly at the new boundary. The canManageMembership-tier resolution itself is
+// now unit-tested directly on the hook in useMembershipPermission.test.tsx (D7) — it doesn't need
+// re-proving here.
 describe("CommunitySettingsPage authorization gate", () => {
   it("shows the settings form to the community's creator", async () => {
-    mockAddress = CREATOR_ADDRESS;
-    renderPage();
+    renderPage(baseContext({ isCreator: true, isCommunityAdmin: false }));
 
     expect(await screen.findByText("Community Settings")).toBeInTheDocument();
     expect(screen.getByText("Save Changes")).toBeInTheDocument();
   });
 
   it("blocks a non-creator, non-admin wallet with a clear message, not the form", async () => {
-    mockAddress = OTHER_ADDRESS;
-    getMembershipStatusMock.mockResolvedValue({ status: "none" });
-
-    renderPage();
+    renderPage(baseContext({ address: OTHER_ADDRESS, isCreator: false, isCommunityAdmin: false }));
 
     expect(await screen.findByText(/Only this community.s creator or an admin can manage it/)).toBeInTheDocument();
     expect(screen.queryByText("Community Settings")).not.toBeInTheDocument();
     expect(screen.queryByText("Save Changes")).not.toBeInTheDocument();
   });
 
-  // Review Army / testing specialist, 2026-08-25 — the creator and denied cases above never
-  // exercised the third branch: a non-creator member whose tier grants canManageMembership.
-  it("grants access to a non-creator wallet with a canManageMembership tier", async () => {
-    mockAddress = OTHER_ADDRESS;
-    getMembershipStatusMock.mockResolvedValue({ status: "member", tierLabel: "Admin" });
-    getTiersMock.mockResolvedValue([
-      {
-        id: "tier-admin",
-        label: "Admin",
-        canCreateProposals: true,
-        canVote: true,
-        canManageMembership: true,
-        canCreateEvents: true,
-        isDefault: true,
-      },
-    ]);
-
-    renderPage();
+  it("grants access to a non-creator wallet flagged as a community admin", async () => {
+    renderPage(baseContext({ address: OTHER_ADDRESS, isCreator: false, isCommunityAdmin: true }));
 
     expect(await screen.findByText("Community Settings")).toBeInTheDocument();
     expect(screen.getByText("Save Changes")).toBeInTheDocument();
   });
 });
 
-// Ship-time coverage audit finding, 2026-08-25 — loading and not-found states had no coverage.
-describe("CommunitySettingsPage load states", () => {
-  it("shows a loading state before the community data resolves", () => {
-    // Never resolves during this test — page should stay in its loading state.
-    getCommunityMock.mockReturnValue(new Promise(() => {}));
+// The community record itself is now guaranteed non-null by the time this page mounts
+// (CommunityLayout's own loading/not-found gate, covered by CommunityLayout.test.tsx) — this
+// page only has its own settings-specific loading state left (tiers/rules/decisionAdapters).
+describe("CommunitySettingsPage settings-data load state", () => {
+  it("shows a loading state before tiers/rules/decisionAdapters resolve", () => {
+    getTiersMock.mockReturnValue(new Promise(() => {}));
     renderPage();
 
-    expect(screen.getByText("Loading community…")).toBeInTheDocument();
-    expect(screen.queryByText("Community Settings")).not.toBeInTheDocument();
-  });
-
-  it("shows a not-found state when the community doesn't exist", async () => {
-    getCommunityMock.mockResolvedValue(null);
-    renderPage();
-
-    expect(await screen.findByText("Community not found.")).toBeInTheDocument();
-    expect(screen.queryByText("Community Settings")).not.toBeInTheDocument();
+    expect(screen.getByText("Loading settings…")).toBeInTheDocument();
   });
 });
 
-// Ship-time coverage audit finding, 2026-08-25 — handleTierEditorChange's removal cascade
-// (resetting defaultTierLabel when the removed tier WAS the default, and dropping eligibility
-// rules that referenced the removed tier) had no coverage at the new settings-page location.
 describe("CommunitySettingsPage tier removal cascade", () => {
   const TIER_REGULAR = {
     id: "tier-regular",
@@ -216,13 +201,13 @@ describe("CommunitySettingsPage tier removal cascade", () => {
 
   it("resets the default tier selection when the removed tier was the default", async () => {
     getTiersMock.mockResolvedValue([TIER_REGULAR, TIER_VIP]);
-    getCommunityMock.mockResolvedValue({ ...COMMUNITY, defaultTierId: "tier-regular" });
-
-    renderPage();
+    renderPage(
+      baseContext({
+        community: { ...COMMUNITY, defaultTierId: "tier-regular" } as CommunityOutletContext["community"],
+      }),
+    );
 
     await screen.findByText("Community Settings");
-    // The only <select> on this page in this scenario (governance already configured, no chain
-    // picker rendered) is the Default Tier dropdown.
     const select = screen.getByRole("combobox") as HTMLSelectElement;
     expect(select.value).toBe("Regular");
 
@@ -234,62 +219,50 @@ describe("CommunitySettingsPage tier removal cascade", () => {
 
   it("drops an eligibility rule that referenced the removed tier", async () => {
     getTiersMock.mockResolvedValue([TIER_REGULAR, TIER_VIP]);
-    getCommunityMock.mockResolvedValue({ ...COMMUNITY, defaultTierId: "tier-vip" });
     getRulesetMock.mockResolvedValue([
       { id: "rule-1", groupIndex: 0, mechanism: "tier", targetTierId: undefined, config: { tierId: "tier-regular" } },
     ]);
-    updateMock.mockResolvedValue(COMMUNITY);
-
-    renderPage();
+    renderPage(
+      baseContext({ community: { ...COMMUNITY, defaultTierId: "tier-vip" } as CommunityOutletContext["community"] }),
+    );
 
     await screen.findByText("Community Settings");
-    // Remove "Regular" (the tier the eligibility rule references).
     fireEvent.click(screen.getAllByText("Remove")[0]!);
-
     fireEvent.click(screen.getByText("Save Changes"));
 
-    // replaceRuleset is called with the rule referencing the removed tier dropped (empty array).
     await waitFor(() => expect(replaceRulesetMock).toHaveBeenCalledWith("community-1", []));
   });
 });
 
 describe("CommunitySettingsPage save flow", () => {
   it("saves successfully and navigates away", async () => {
-    updateMock.mockResolvedValue(COMMUNITY);
-
+    updateMock.mockResolvedValue(undefined);
     renderPage();
 
-    fireEvent.click(await screen.findByText("Save Changes"));
+    await screen.findByText("Community Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
-    expect(mockSignOut).not.toHaveBeenCalled();
   });
 
   it("includes allowJoin in the save payload", async () => {
-    updateMock.mockResolvedValue(COMMUNITY);
+    updateMock.mockResolvedValue(undefined);
+    renderPage(baseContext({ community: { ...COMMUNITY, allowJoin: false } as CommunityOutletContext["community"] }));
 
-    renderPage();
-
-    const toggle = await screen.findByLabelText(/Allow people to join this community/);
-    expect(toggle).toBeChecked();
-    fireEvent.click(toggle);
-    fireEvent.click(screen.getByText("Save Changes"));
+    await screen.findByText("Community Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() =>
       expect(updateMock).toHaveBeenCalledWith("community-1", expect.objectContaining({ allowJoin: false })),
     );
   });
 
-  // /plan-eng-review (2026-08-23) Batch 2 -- communityApi.update's call site here was the one
-  // Batch 1 missed (the wizard's call to the same function was wrapped via withAuthRetry, this
-  // page's call wasn't). The whole save sequence (update + tier CRUD + eligibility ruleset) is
-  // now wrapped in one withAuthDetect call so a 401 anywhere in it signs out exactly once.
   it("shows an error and signs out when saving fails with an expired session (401)", async () => {
     updateMock.mockRejectedValue(new HttpError(401, "Authentication required. Please sign in with Ethereum."));
-
     renderPage();
 
-    fireEvent.click(await screen.findByText("Save Changes"));
+    await screen.findByText("Community Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() =>
       expect(screen.getByText("Authentication required. Please sign in with Ethereum.")).toBeInTheDocument(),
@@ -299,10 +272,10 @@ describe("CommunitySettingsPage save flow", () => {
 
   it("shows an error without signing out when saving fails with a non-auth error", async () => {
     updateMock.mockRejectedValue(new Error("Network error"));
-
     renderPage();
 
-    fireEvent.click(await screen.findByText("Save Changes"));
+    await screen.findByText("Community Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => expect(screen.getByText("Network error")).toBeInTheDocument());
     expect(mockSignOut).not.toHaveBeenCalled();

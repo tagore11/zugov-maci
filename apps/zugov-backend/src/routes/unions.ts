@@ -42,6 +42,16 @@ unionsRouter.get("/", async (c) => {
   return c.json(result);
 });
 
+// Session-derived only — never takes an address as a query param, which is what keeps this
+// safe to expose without a privacy check (community page redesign, /plan-eng-review 2026-08-26,
+// D2). Anonymous callers get an empty list, matching every other session-gated route here.
+unionsRouter.get("/my-pending-invites", async (c) => {
+  const session = await getSession(c);
+  if (!session.address) return c.json({ invites: [] });
+  const invites = await unionService.listMyPendingInvites(session.address);
+  return c.json({ invites });
+});
+
 // Founding community joins as an active member automatically — the creator must be
 // authorized (canManageMembership) on the community they're founding the union as.
 unionsRouter.post("/", requireAuth, async (c) => {
@@ -67,28 +77,50 @@ unionsRouter.post("/", requireAuth, async (c) => {
   }
 });
 
+// community page redesign (/plan-eng-review 2026-08-26, D1) — extended to also report which of
+// the caller's own communities are active/pending here, so the union page can render "Your
+// Actions" (invite/leave for an active match, accept/decline for a pending match) without a
+// second round trip. getSession() returns {} (no address) for unauthenticated requests, so all
+// of this safely no-ops to empty for anonymous callers.
 unionsRouter.get("/:id", async (c) => {
   const id = c.req.param("id");
   const union = await unionService.get(id);
   if (!union) return c.json({ error: "Union not found" }, 404);
 
-  // Pending invites are only visible to callers authorized on an already-active member
-  // community — not public. getSession() returns {} (no address) for unauthenticated
-  // requests, so this safely defaults to active-only.
   const session = await getSession(c);
-  let includePending = false;
+  const myActiveCommunityIds: string[] = [];
+  const myPendingCommunityIds: string[] = [];
+  // Pending invites are only visible to callers authorized on an already-active member
+  // community (the full list, everyone's invites) OR on the specific pending community itself
+  // (just their own invite, so they can see and act on it without unrelated authority
+  // elsewhere in the union) — never public.
+  let canSeeAllPending = false;
+
   if (session.address) {
     const activeMembers = await unionService.listMembers(id, false);
     for (const member of activeMembers) {
       if (await isAuthorized(member.communityId, session.address)) {
-        includePending = true;
-        break;
+        canSeeAllPending = true;
+        myActiveCommunityIds.push(member.communityId);
       }
     }
   }
 
-  const members = await unionService.listMembers(id, includePending);
-  return c.json({ union, members });
+  const allMembers = await unionService.listMembers(id, true);
+  if (session.address) {
+    for (const member of allMembers) {
+      if (member.status === "pending" && (await isAuthorized(member.communityId, session.address))) {
+        myPendingCommunityIds.push(member.communityId);
+      }
+    }
+  }
+  const myPendingIdSet = new Set(myPendingCommunityIds);
+
+  const members = canSeeAllPending
+    ? allMembers
+    : allMembers.filter((m) => m.status === "active" || myPendingIdSet.has(m.communityId));
+
+  return c.json({ union, members, myActiveCommunityIds, myPendingCommunityIds });
 });
 
 // Any active member community's admin can invite (canManageMembership on actingCommunityId) —

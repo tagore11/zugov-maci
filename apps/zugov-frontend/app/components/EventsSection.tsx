@@ -1,48 +1,24 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, MapPin, MoreVertical, Pencil, Ban, Copy, Mic, Wrench, PartyPopper, Users, Calendar } from "lucide-react";
+import { Plus, MapPin, MoreVertical, Pencil, Ban, Copy, ChevronDown, ChevronRight } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
-import type { Event, EventKind } from "@/src/services/eventApi";
+import type { Event } from "@/src/services/eventApi";
 import { useIsCommunityAdmin, useHasTierPermission } from "@/src/hooks/useMembershipPermission";
 import { CreateEventModal } from "./CreateEventModal";
+import { RepeatFields } from "./RepeatFields";
+import { KIND_META, formatTimeRange, groupEventsByDate } from "./eventDisplay";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
+
+// Re-exported for reuse on the global /events page (2026-08-26 design review, "What already
+// exists") — same convention, not a second copy. Actual definitions live in eventDisplay.ts
+// (2026-08-27) to break a circular import with CreateEventModal.tsx, which also needs KIND_META.
+export { KIND_META, formatTimeRange };
 
 interface EventsSectionProps {
   communityId: string;
   connected: boolean;
   walletAddress?: string;
-}
-
-// Monochrome icon + label, not a colored badge — DESIGN.md's single-accent rule means kind
-// isn't a place to spend color (2026-08-19 /plan-design-review, D2).
-const KIND_META: Record<EventKind, { label: string; Icon: typeof Mic }> = {
-  talk: { label: "Talk", Icon: Mic },
-  workshop: { label: "Workshop", Icon: Wrench },
-  social: { label: "Social", Icon: PartyPopper },
-  meeting: { label: "Meeting", Icon: Users },
-  other: { label: "Other", Icon: Calendar },
-};
-
-const DAY_SECONDS = 24 * 60 * 60;
-
-function formatDateHeader(unixSec: number): string {
-  return new Date(unixSec * 1000).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-}
-
-function formatTime(unixSec: number): string {
-  return new Date(unixSec * 1000).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-}
-
-function formatTimeRange(startAt: number, endAt: number): string {
-  if (endAt - startAt > DAY_SECONDS) {
-    return `${formatDateHeader(startAt)} – ${formatDateHeader(endAt)}`;
-  }
-  return `${formatTime(startAt)} – ${formatTime(endAt)}`;
-}
-
-function dateGroupKey(unixSec: number): string {
-  return new Date(unixSec * 1000).toDateString();
 }
 
 function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; eventId: string; onDone: () => void }) {
@@ -69,33 +45,12 @@ function DuplicateForm({ communityId, eventId, onDone }: { communityId: string; 
 
   return (
     <div className="mt-2 p-3 border border-gray-700 rounded-lg bg-gray-800/60 space-y-2 text-sm">
-      <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5 text-gray-400">
-          Repeat
-          <input
-            type="number"
-            min={1}
-            max={52}
-            value={count}
-            onChange={(e) => setCount(Number(e.target.value))}
-            className="w-14 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-foreground"
-            aria-label="Number of additional occurrences"
-          />
-          times
-        </label>
-        <label className="flex items-center gap-1.5 text-gray-400">
-          every
-          <input
-            type="number"
-            min={1}
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="w-14 px-2 py-1 bg-gray-900 border border-gray-600 rounded text-foreground"
-            aria-label="Interval in days"
-          />
-          days
-        </label>
-      </div>
+      <RepeatFields
+        count={count}
+        onCountChange={setCount}
+        intervalDays={intervalDays}
+        onIntervalDaysChange={setIntervalDays}
+      />
       <div className="flex items-center gap-2">
         <button
           onClick={handleSubmit}
@@ -120,6 +75,9 @@ function EventRow({
   walletAddress,
   isCommunityAdmin,
   onEdit,
+  sideEvents,
+  isExpanded,
+  onToggleExpand,
 }: {
   communityId: string;
   event: Event;
@@ -127,6 +85,11 @@ function EventRow({
   walletAddress?: string;
   isCommunityAdmin: boolean;
   onEdit: () => void;
+  /** Events expansion (2026-08-26) — client-side grouped from the same flat list() response
+   * (Decision 3), never a separate fetch. Present only on top-level rows that have ≥1 side-event. */
+  sideEvents?: Event[];
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
 }) {
   const queryClient = useQueryClient();
   const [showMenu, setShowMenu] = useState(false);
@@ -184,13 +147,26 @@ function EventRow({
   return (
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 border-b border-gray-800 last:border-b-0">
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-foreground">{event.title}</p>
+        <div className="flex items-center gap-1.5">
+          {sideEvents && sideEvents.length > 0 && (
+            <button
+              type="button"
+              onClick={onToggleExpand}
+              aria-expanded={isExpanded}
+              aria-label={isExpanded ? "Collapse side-events" : "Expand side-events"}
+              className="shrink-0 p-0.5 text-gray-400 hover:text-foreground"
+            >
+              {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+            </button>
+          )}
+          <p className="font-medium text-foreground">{event.title}</p>
+        </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-400">
           <span className="flex items-center gap-1">
             <KindIcon className="w-3.5 h-3.5" aria-hidden="true" />
             {kindLabel}
           </span>
-          <span className="font-mono tabular-nums">{formatTimeRange(event.startAt, event.endAt)}</span>
+          <span className="font-mono tabular-nums">{formatTimeRange(event.startAt, event.endAt, event.isAllDay)}</span>
           {(event.locationText ?? event.venueId) && (
             <span className="flex items-center gap-1">
               <MapPin className="w-3.5 h-3.5" aria-hidden="true" />
@@ -281,29 +257,90 @@ function EventRow({
   );
 }
 
+// Events expansion (2026-08-26, Decision 7) — a data filter (same layout, different query), not
+// a switch between distinct content panels, so aria-pressed buttons are the semantically correct
+// WAI-ARIA category here, not role="tab". Visual style reuses CommunityLayout.tsx's existing
+// underline convention (border-b-2, active = border-accent text-foreground).
+// Exported for reuse on the new global /events page — same toggle, same visual convention
+// (2026-08-26 design review, "What already exists").
+export function CollectionToggle({
+  collection,
+  onChange,
+}: {
+  collection: "upcoming" | "past";
+  onChange: (collection: "upcoming" | "past") => void;
+}) {
+  return (
+    <div className="flex gap-1 border-b border-gray-700">
+      {(["upcoming", "past"] as const).map((option) => (
+        <button
+          key={option}
+          type="button"
+          aria-pressed={collection === option}
+          onClick={() => onChange(option)}
+          className={`min-h-[44px] px-3 text-sm font-medium border-b-2 transition-colors capitalize ${
+            collection === option
+              ? "border-accent text-foreground"
+              : "border-transparent text-gray-400 hover:text-foreground hover:border-gray-700"
+          }`}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function EventsSection({ communityId, connected, walletAddress }: EventsSectionProps) {
   const queryClient = useQueryClient();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [collection, setCollection] = useState<"upcoming" | "past">("upcoming");
+  const [expandedParentIds, setExpandedParentIds] = useState<Set<string>>(new Set());
   const isCommunityAdmin = useIsCommunityAdmin(communityId, connected);
   const canCreateEvents = useHasTierPermission(communityId, connected, "canCreateEvents");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["events", communityId],
-    queryFn: () => eventApi.listEvents(communityId, { limit: 50 }),
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D4) — walletAddress in the
+  // key: visibility is now viewer-dependent, so an account-switch without it could briefly render
+  // the previous wallet's filtered list under the new wallet's identity (mirrors Child H's D3 fix
+  // on ProposalsList.tsx). invalidateQueries elsewhere in this file still matches by prefix.
+  // Events expansion (2026-08-26) — collection in the key too, so toggling tabs doesn't briefly
+  // render the other tab's cached data under the new tab's identity.
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["events", communityId, walletAddress, collection],
+    // Events expansion Approach B (2026-08-27, D4 outside-voice fix) — raised from 50: this page
+    // never paginates further, so a community with 50+ active events could have some side-events
+    // of a shown parent land on a page never fetched, silently vanishing from the parentEventId
+    // grouping below. 200 matches eventService.ts's own list() comment, which already assumes
+    // "dozens-to-low-hundreds of rows" per community.
+    queryFn: () => eventApi.listEvents(communityId, { limit: 200, collection }),
   });
 
-  const events = data?.events ?? [];
-  const groups: { key: string; header: string; events: Event[] }[] = [];
-  for (const event of events) {
-    const key = dateGroupKey(event.startAt);
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup?.key === key) {
-      lastGroup.events.push(event);
-    } else {
-      groups.push({ key, header: formatDateHeader(event.startAt), events: [event] });
-    }
+  const allEvents = data?.events ?? [];
+  // Events expansion (2026-08-26, Decision 3) — the single list() response already contains every
+  // community event (top-level + side-events, no parentEventId filter server-side); group by
+  // parentEventId client-side rather than firing a second fetch. Top-level events are
+  // date-grouped as before; side-events are excluded from those groups and attached to their
+  // parent's expand panel instead.
+  const topLevelEvents = allEvents.filter((event) => event.parentEventId === null);
+  const sideEventsByParent = new Map<string, Event[]>();
+  for (const event of allEvents) {
+    if (event.parentEventId === null) continue;
+    const siblings = sideEventsByParent.get(event.parentEventId) ?? [];
+    siblings.push(event);
+    sideEventsByParent.set(event.parentEventId, siblings);
   }
+
+  const groups = groupEventsByDate(topLevelEvents);
+
+  const toggleExpanded = (eventId: string) => {
+    setExpandedParentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(eventId)) next.delete(eventId);
+      else next.add(eventId);
+      return next;
+    });
+  };
 
   const invalidateAndClose = () => {
     queryClient.invalidateQueries({ queryKey: ["events", communityId] });
@@ -326,6 +363,8 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
         )}
       </div>
 
+      <CollectionToggle collection={collection} onChange={setCollection} />
+
       {isLoading && (
         <div className="space-y-2 animate-pulse">
           <div className="h-4 bg-gray-800 rounded w-24" />
@@ -333,10 +372,26 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
         </div>
       )}
 
-      {!isLoading && events.length === 0 && (
+      {!isLoading && isError && (
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-6 text-center">
-          <p className="text-sm text-gray-400">No upcoming events yet.</p>
-          {canCreateEvents && (
+          <p className="text-sm text-error">Couldn&apos;t load events right now.</p>
+          <button
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ["events", communityId, walletAddress, collection] })
+            }
+            className="mt-3 text-sm font-medium text-accent-hover hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!isLoading && !isError && topLevelEvents.length === 0 && (
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-6 text-center">
+          <p className="text-sm text-gray-400">
+            {collection === "upcoming" ? "No upcoming events yet." : "No past events."}
+          </p>
+          {collection === "upcoming" && canCreateEvents && (
             <button
               onClick={() => setShowCreateModal(true)}
               className="mt-3 text-sm font-medium text-accent-hover hover:underline"
@@ -351,17 +406,64 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
         <div key={group.key}>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">{group.header}</h3>
           <div className="rounded-lg border border-gray-700 bg-gray-900 px-4">
-            {group.events.map((event) => (
-              <EventRow
-                key={event.id}
-                communityId={communityId}
-                event={event}
-                connected={connected}
-                walletAddress={walletAddress}
-                isCommunityAdmin={isCommunityAdmin}
-                onEdit={() => setEditingEvent(event)}
-              />
-            ))}
+            {group.events.map((event) => {
+              const sideEvents = sideEventsByParent.get(event.id);
+              const isExpanded = expandedParentIds.has(event.id);
+              return (
+                // Events expansion (2026-08-26, Decision 1) — scroll-anchor id: the global
+                // /events page's cards link here (/community/:id/events#event-<id>) rather than
+                // a new per-event detail route.
+                <div key={event.id} id={`event-${event.id}`}>
+                  <EventRow
+                    communityId={communityId}
+                    event={event}
+                    connected={connected}
+                    walletAddress={walletAddress}
+                    isCommunityAdmin={isCommunityAdmin}
+                    onEdit={() => setEditingEvent(event)}
+                    sideEvents={sideEvents}
+                    isExpanded={isExpanded}
+                    onToggleExpand={() => toggleExpanded(event.id)}
+                  />
+                  {isExpanded &&
+                    sideEvents &&
+                    (() => {
+                      // Events expansion Approach B (2026-08-27, D4/D5/D6 design review) — group
+                      // side-events by day; skip day-headers entirely when they all fall on one
+                      // distinct day (a redundant "Day 1" label above an obviously-single-day list
+                      // adds noise with zero information value). Day-header labels reuse the same
+                      // formatDateHeader() the outer <h3> date-groups already use, wrapped in <h4>
+                      // so screen readers see a correctly-nested heading outline.
+                      const dayGroups = groupEventsByDate(sideEvents);
+                      const showDayHeaders = dayGroups.length > 1;
+                      return (
+                        <div className="ml-6 pl-3 border-l border-gray-800">
+                          {dayGroups.map((dayGroup) => (
+                            <div key={dayGroup.key}>
+                              {showDayHeaders && (
+                                <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1 mt-2 first:mt-0">
+                                  {dayGroup.header}
+                                </h4>
+                              )}
+                              {dayGroup.events.map((sideEvent) => (
+                                <EventRow
+                                  key={sideEvent.id}
+                                  communityId={communityId}
+                                  event={sideEvent}
+                                  connected={connected}
+                                  walletAddress={walletAddress}
+                                  isCommunityAdmin={isCommunityAdmin}
+                                  onEdit={() => setEditingEvent(sideEvent)}
+                                />
+                              ))}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}

@@ -11,6 +11,7 @@ import {
 } from "../db/schema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
 import { evaluateEligibilityAcrossUnion } from "./eligibilityService.js";
+import { listAvailable as listAvailableDecisionAdapters } from "./decisionAdapterService.js";
 
 export class TierChangesRequireVoteError extends Error {
   constructor() {
@@ -54,6 +55,36 @@ export class RequestNotFoundError extends Error {
   }
 }
 
+// formalize-communities epic, Child F (/plan-eng-review 2026-08-25, D1) — the creator's
+// isAuthorized() grant comes from communities.creatorAddress, independent of any memberships row,
+// so leaving would silently strip their tier permissions (canVote/canCreateProposals/etc, all
+// gated through hasTierPermission's memberships⋈membershipTiers join) while they keep settings
+// authority — a confusing half-state, not a real "left" state. A non-creator admin doesn't need
+// this carve-out: their isAuthorized() grant comes ONLY from that same join, so leaving revokes
+// their admin authority fully and consistently.
+export class CreatorCannotLeaveError extends Error {
+  constructor() {
+    super("The community's creator cannot leave it");
+  }
+}
+
+// D3 — deliberately NOT communities.governanceConfigured, which reflects only whether a
+// maciGovernanceConfigs row exists. Since the governance restructure, a community's governance is
+// a menu of independently-attachable decision adapters (communityDecisionAdapters); zupoll attaches
+// with zero dependency on maciGovernanceConfigs, so governanceConfigured would read false for a
+// zupoll-governed community and incorrectly allow Leave.
+export class CommunityHasGovernanceError extends Error {
+  constructor() {
+    super("Leaving isn't available for communities with governance attached yet");
+  }
+}
+
+export class NotAMemberError extends Error {
+  constructor() {
+    super("Not a member of this community");
+  }
+}
+
 /**
  * Creator/owner (Community.creatorAddress) always has this authority, regardless of tier
  * configuration; a member holding a tier with canManageMembership: true also has it.
@@ -85,13 +116,14 @@ export async function isAuthorized(communityId: string, walletAddress: string): 
 export async function hasTierPermission(
   communityId: string,
   walletAddress: string,
-  permission: "canCreateProposals" | "canVote" | "canCreateEvents",
+  permission: "canCreateProposals" | "canVote" | "canCreateEvents" | "canPostDiscussions",
 ): Promise<boolean> {
   const rows = await db
     .select({
       canCreateProposals: membershipTiers.canCreateProposals,
       canVote: membershipTiers.canVote,
       canCreateEvents: membershipTiers.canCreateEvents,
+      canPostDiscussions: membershipTiers.canPostDiscussions,
     })
     .from(memberships)
     .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
@@ -99,6 +131,136 @@ export async function hasTierPermission(
     .limit(1);
 
   return rows[0]?.[permission] ?? false;
+}
+
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D3) — extracted from
+// proposalService.ts's private getMemberTier, which needed this exact join shape for its own
+// canView()/sponsor()/checkVoteEligibility(). Events' new canView() needs the identical lookup, so
+// this moved here (the other membership-lookup functions already live in this file) rather than
+// being copy-pasted a second time.
+export async function getMemberTier(
+  communityId: string,
+  walletAddress: string,
+): Promise<{ tierId: string; canVote: boolean } | null> {
+  const [row] = await db
+    .select({ tierId: memberships.tierId, canVote: membershipTiers.canVote })
+    .from(memberships)
+    .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+    .where(and(eq(memberships.walletAddress, walletAddress), eq(memberships.communityId, communityId)))
+    .limit(1);
+  return row ?? null;
+}
+
+// formalize-communities epic, Child J (/plan-eng-review 2026-08-26, D6) — extracted from
+// eventService.ts, which needed this exact shape for its own canView()/list(). Both functions are
+// generic over {communityId, creatorAddress, eligibleTierIds}, nothing Event-specific, and
+// discussionService.ts needs the identical logic — moved here rather than copy-pasted a third
+// time (also see serializeEligibleTierIds/deserializeEligibleTierIds below for the same reasoning
+// applied to the null-vs-"null" serialization trap).
+export interface ViewerContext {
+  viewerAddress: string;
+  isAdmin: boolean;
+  tier: { tierId: string; canVote: boolean } | null;
+}
+
+/** isAuthorized/getMemberTier are loop-invariant for a single list() call (same communityId +
+ * viewerAddress for every row) — resolve once, reuse across every row's canViewRestricted() call,
+ * instead of a naive per-row lookup (/plan-eng-review 2026-08-25 outside-voice finding). */
+export async function resolveViewerContext(
+  communityId: string,
+  viewerAddress: string | undefined,
+): Promise<ViewerContext | null> {
+  if (!viewerAddress) return null;
+  const [isAdmin, tier] = await Promise.all([
+    isAuthorized(communityId, viewerAddress),
+    getMemberTier(communityId, viewerAddress),
+  ]);
+  return { viewerAddress, isAdmin, tier };
+}
+
+// Creator/author OR admin bypasses tier restriction (Child I, D1/D2) — assertCanManageEvent-style
+// resources already grant admins unconditional authority over items they didn't create, so
+// without this bypass an admin could out-manage what they can't even see. `ownerAddress` is taken
+// explicitly rather than read off a fixed field name (events use `creatorAddress`, discussions use
+// `authorAddress` — this stays agnostic to either).
+export function canViewRestricted(
+  item: { eligibleTierIds: string | null },
+  ownerAddress: string,
+  ctx: ViewerContext | null,
+): boolean {
+  if (item.eligibleTierIds === null) return true;
+  if (!ctx) return false;
+  if (ownerAddress.toLowerCase() === ctx.viewerAddress.toLowerCase()) return true;
+  if (ctx.isAdmin) return true;
+  return ctx.tier ? (JSON.parse(item.eligibleTierIds) as string[]).includes(ctx.tier.tierId) : false;
+}
+
+/** Explicit null vs JSON.stringify(null) (which would insert the string "null", not SQL NULL, and
+ * silently break canViewRestricted's `=== null` check) — the trap proposals' own insert paths
+ * don't have to dodge because that column is NOT NULL and always populated. */
+export function serializeEligibleTierIds(eligibleTierIds: string[] | null | undefined): string | null {
+  return eligibleTierIds ? JSON.stringify(eligibleTierIds) : null;
+}
+
+export function deserializeEligibleTierIds<T extends { eligibleTierIds: string | null }>(
+  row: T,
+): Omit<T, "eligibleTierIds"> & { eligibleTierIds: string[] | null } {
+  return { ...row, eligibleTierIds: row.eligibleTierIds ? (JSON.parse(row.eligibleTierIds) as string[]) : null };
+}
+
+/**
+ * Events expansion (/plan-eng-review 2026-08-26, D1a, outside-voice fix) — the global cross-
+ * community events feed needs viewer context (admin/tier) for every distinct communityId on a
+ * fetched page, but calling resolveViewerContext() once per community would fire up to ~2N
+ * queries in parallel for a diverse page (N = distinct communities, up to page size). This does
+ * exactly 2 queries total regardless of N: one `communities WHERE id IN (...)` for the
+ * creator-match path of isAuthorized(), one `memberships JOIN membershipTiers WHERE communityId
+ * IN (...) AND walletAddress = ?` for the tier-match path — both of isAuthorized()'s two
+ * independent admin paths, replicated here since this bypasses isAuthorized() itself for
+ * batching. Used only by the global events endpoint; resolveViewerContext() is untouched.
+ */
+export async function resolveViewerContextsForCommunities(
+  communityIds: string[],
+  viewerAddress: string | undefined,
+): Promise<Map<string, ViewerContext | null>> {
+  const result = new Map<string, ViewerContext | null>();
+  if (!viewerAddress || communityIds.length === 0) {
+    for (const communityId of communityIds) result.set(communityId, null);
+    return result;
+  }
+
+  const uniqueIds = [...new Set(communityIds)];
+  const [creatorRows, tierRows] = await Promise.all([
+    db
+      .select({ id: communities.id, creatorAddress: communities.creatorAddress })
+      .from(communities)
+      .where(inArray(communities.id, uniqueIds)),
+    db
+      .select({
+        communityId: memberships.communityId,
+        tierId: memberships.tierId,
+        canVote: membershipTiers.canVote,
+        canManageMembership: membershipTiers.canManageMembership,
+      })
+      .from(memberships)
+      .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
+      .where(and(inArray(memberships.communityId, uniqueIds), eq(memberships.walletAddress, viewerAddress))),
+  ]);
+
+  const creatorByCommunity = new Map(creatorRows.map((row) => [row.id, row.creatorAddress]));
+  const tierByCommunity = new Map(tierRows.map((row) => [row.communityId, row]));
+
+  for (const communityId of uniqueIds) {
+    const creatorAddress = creatorByCommunity.get(communityId);
+    const tierRow = tierByCommunity.get(communityId);
+    const isCreator = creatorAddress !== undefined && creatorAddress.toLowerCase() === viewerAddress.toLowerCase();
+    result.set(communityId, {
+      viewerAddress,
+      isAdmin: isCreator || (tierRow?.canManageMembership ?? false),
+      tier: tierRow ? { tierId: tierRow.tierId, canVote: tierRow.canVote } : null,
+    });
+  }
+  return result;
 }
 
 /**
@@ -156,6 +318,7 @@ export async function createTiersForCommunity(
     canDelegate: tier.canDelegate,
     canBeDelegatedTo: tier.canBeDelegatedTo,
     canCreateEvents: tier.canCreateEvents,
+    canPostDiscussions: tier.canPostDiscussions,
     createdAt: now,
   }));
   const inserted = await db.insert(membershipTiers).values(rows).returning();
@@ -170,7 +333,8 @@ export async function createTiersForCommunity(
   // every permission enabled, preferring one literally labeled "Admin" if several qualify, and
   // falling back to the default tier only if no full-permission tier exists at all.
   const fullPermissionTiers = inserted.filter(
-    (row) => row.canCreateProposals && row.canVote && row.canManageMembership && row.canCreateEvents,
+    (row) =>
+      row.canCreateProposals && row.canVote && row.canManageMembership && row.canCreateEvents && row.canPostDiscussions,
   );
   const creatorTier = fullPermissionTiers.find((row) => row.label === "Admin") ?? fullPermissionTiers[0] ?? defaultTier;
 
@@ -362,6 +526,37 @@ export async function submitJoinRequest(
     resolvedAt: null,
   });
   return { status: "pending" };
+}
+
+/**
+ * formalize-communities epic, Child F (/plan-eng-review 2026-08-25) — deletes the caller's own
+ * memberships row. Does NOT touch joinRequests history (AC5) — approved/rejected records stay
+ * for audit regardless of a later leave.
+ *
+ * Guard order: creator check (D1) and governance check (D3) both run before the delete attempt,
+ * so a blocked caller never sees a query that could have succeeded. The delete itself is a single
+ * atomic DELETE...RETURNING (D2) — not a separate SELECT-then-DELETE — so a second concurrent
+ * Leave call (double-click, stale second tab) can't race the first: at most one caller sees a row
+ * back, the other sees an empty result and gets NotAMemberError, never a silent no-op success.
+ */
+export async function leave(communityId: string, walletAddress: string): Promise<void> {
+  const [community] = await db
+    .select({ creatorAddress: communities.creatorAddress })
+    .from(communities)
+    .where(eq(communities.id, communityId))
+    .limit(1);
+  if (community?.creatorAddress.toLowerCase() === walletAddress.toLowerCase()) {
+    throw new CreatorCannotLeaveError();
+  }
+
+  const attachedAdapters = await listAvailableDecisionAdapters(communityId);
+  if (attachedAdapters.length > 0) throw new CommunityHasGovernanceError();
+
+  const deleted = await db
+    .delete(memberships)
+    .where(and(eq(memberships.walletAddress, walletAddress), eq(memberships.communityId, communityId)))
+    .returning();
+  if (deleted.length === 0) throw new NotAMemberError();
 }
 
 /** Communities this wallet holds an approved membership in — used by the profile page's

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { communities, memberships, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
+import { communities, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
 import type {
   CreateDraftBody,
   DirectAuthorizeBody,
@@ -208,18 +208,9 @@ async function validateTierAndAxis(
   }
 }
 
-async function getMemberTier(
-  communityId: string,
-  walletAddress: string,
-): Promise<{ tierId: string; canVote: boolean } | null> {
-  const [row] = await db
-    .select({ tierId: memberships.tierId, canVote: membershipTiers.canVote })
-    .from(memberships)
-    .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
-    .where(and(eq(memberships.walletAddress, walletAddress), eq(memberships.communityId, communityId)))
-    .limit(1);
-  return row ?? null;
-}
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D3) — moved to
+// membershipService.ts (getMemberTier), which events' new canView() also needs; re-exported
+// nowhere, call sites below now import membershipService directly.
 
 /** Once a poll is formalized, the real access gate is whatever eligibility policy was deployed
  * on-chain for it — mirrors confirmDirect's directEligibleTierIds (research.md #2), so the
@@ -233,11 +224,30 @@ async function getVotingTierIds(communityId: string): Promise<string[]> {
   return tiers.filter((t) => t.canVote).map((t) => t.id);
 }
 
-async function canView(action: ViewableProposal, viewerAddress: string): Promise<boolean> {
-  if (action.creatorAddress.toLowerCase() === viewerAddress.toLowerCase()) return true;
-  const tier = await getMemberTier(action.communityId, viewerAddress);
-  if (!tier) return false;
-  return action.eligibleTierIds.includes(tier.tierId);
+// formalize-communities epic, Child H (/plan-eng-review 2026-08-25, D1/D2) — viewerAddress is now
+// optional: this fires for a signed-in-but-non-member caller, or a caller with no SIWE session at
+// all (requireAuth was dropped from the two GET routes that call this via listForViewer/
+// getForViewer). D2 — "unrestricted" is deliberately NOT "eligibleTierIds includes
+// communities.defaultTierId": defaultTierId can be (and per this codebase's own seed.ts taxonomy,
+// naturally is) a non-voting tier, while eligibleTierIds is always voting-tier-derived — that
+// combination would make every proposal look "restricted" to a non-member on exactly the tier
+// setup this app recommends. Instead: unrestricted = eligibleTierIds is a superset of every
+// currently voting-capable tier, matching what every proposal-creation path actually sets today
+// (no UI yet narrows it below "all voting tiers") — this only starts excluding non-members once a
+// future creator-narrowing UI drops a tier, which is the real restriction this gate exists for.
+async function canView(action: ViewableProposal, viewerAddress: string | undefined): Promise<boolean> {
+  if (viewerAddress && action.creatorAddress.toLowerCase() === viewerAddress.toLowerCase()) return true;
+  const tier = viewerAddress ? await membershipService.getMemberTier(action.communityId, viewerAddress) : null;
+  if (tier) return action.eligibleTierIds.includes(tier.tierId);
+  const votingTierIds = await getVotingTierIds(action.communityId);
+  // /ship review army (2026-08-26, security specialist) — Array.prototype.every() on an empty
+  // array is vacuously true, so a community with zero voting-capable tiers (all canVote:false)
+  // would make EVERY proposal look "unrestricted" to a fully anonymous caller, regardless of its
+  // real eligibleTierIds. Harmless before Child H (GET routes required auth then, capping the
+  // blast radius at registered members), but Child H's own requireAuth removal widened it to
+  // the open internet — guard explicitly rather than rely on "no voting tiers" never happening.
+  if (votingTierIds.length === 0) return false;
+  return votingTierIds.every((id) => action.eligibleTierIds.includes(id));
 }
 
 export async function createDraft(
@@ -287,7 +297,7 @@ export async function createDraft(
 
 export async function listForViewer(
   communityId: string,
-  viewerAddress: string,
+  viewerAddress: string | undefined,
 ): Promise<(ViewableProposal & { sponsorCount: number; thresholdMet: boolean })[]> {
   const rows = await db.select().from(proposals).where(eq(proposals.communityId, communityId));
   const threshold = await getCosponsorshipThreshold(communityId);
@@ -305,7 +315,7 @@ export async function listForViewer(
 export async function getForViewer(
   communityId: string,
   actionId: string,
-  viewerAddress: string,
+  viewerAddress: string | undefined,
 ): Promise<(ViewableProposal & { sponsorCount: number; thresholdMet: boolean }) | null> {
   const [row] = await db
     .select()
@@ -340,7 +350,7 @@ export async function sponsor(
   const action = await getActionOrThrow(communityId, actionId);
   if (action.status !== "draft") throw new AlreadyFormalizedError();
 
-  const tier = await getMemberTier(communityId, walletAddress);
+  const tier = await membershipService.getMemberTier(communityId, walletAddress);
   if (!tier || !tier.canVote || !action.eligibleTierIds.includes(tier.tierId)) {
     throw new NotAuthorizedToSponsorError();
   }
@@ -570,7 +580,7 @@ export async function checkVoteEligibility(
   const hasVotingRights = await membershipService.hasTierPermission(communityId, walletAddress, "canVote");
   if (!hasVotingRights) return { eligible: false, reason: "tier_lacks_voting_rights" };
 
-  const tier = await getMemberTier(communityId, walletAddress);
+  const tier = await membershipService.getMemberTier(communityId, walletAddress);
   if (!tier || !action.eligibleTierIds.includes(tier.tierId)) {
     return { eligible: false, reason: "tier_not_eligible_for_action" };
   }

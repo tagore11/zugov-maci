@@ -4,8 +4,7 @@ import * as eventService from "../services/eventService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
 import { isAuthorized, hasTierPermission } from "../services/membershipService.js";
-
-const EVENT_KIND = z.enum(["talk", "workshop", "social", "meeting", "other"]);
+import { EVENT_KIND } from "../validators/eventSchema.js";
 
 // A datetime-local input's year segment has no format constraint — a stray keystroke (or a typo
 // like "83333" instead of "2033") sails through as a huge-but-otherwise-valid Unix timestamp:
@@ -19,6 +18,28 @@ const maxEventTimestamp = () => Math.floor(Date.now() / 1000) + MAX_EVENT_YEARS_
 // constraint. endAt must be after startAt (2026-08-19 review, T1 validation-edges finding).
 // startAt must be in the future (specs/010 US3, FR-009) — a past start date is confusing to
 // attendees and signals a broken product.
+// formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — omit/undefined/null all
+// mean "unrestricted"; a non-empty array restricts to those tiers.
+const eligibleTierIdsSchema = z.array(z.string()).min(1).nullable().optional();
+
+// Events expansion Approach B (2026-08-27, D2, outside-voice fix) — shared between create()'s
+// new repeat field and the existing post-creation duplicate() endpoint below, same bounds
+// (MAX_DUPLICATE_COUNT=52 in eventService.ts) so there's one source of truth for "how many
+// events can be created in one call."
+const repeatSchema = z.object({
+  count: z.number().int().min(1).max(52),
+  intervalDays: z.number().int().min(1),
+});
+
+// A same-day all-day event's startAt (local midnight) is already in the past the moment the
+// form is submitted — the single most common real case ("today is a rest day"). Exempted from
+// the future-start check below; still can't be in the genuine past (before today).
+function startOfTodayLocal(): number {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return Math.floor(d.getTime() / 1000);
+}
+
 const createEventSchema = z
   .object({
     title: z.string().min(1).max(120),
@@ -28,12 +49,24 @@ const createEventSchema = z
     startAt: z.number().int(),
     endAt: z.number().int(),
     kind: EVENT_KIND.optional(),
+    eligibleTierIds: eligibleTierIdsSchema,
+    // Events expansion (2026-08-26, D2) — optional side-event parent. Immutable after creation:
+    // deliberately absent from updateEventSchema below, not just unchecked at runtime.
+    parentEventId: z.string().optional(),
+    // Events expansion Approach B (2026-08-27, D3/D2).
+    isAllDay: z.boolean().optional(),
+    repeat: repeatSchema.optional(),
   })
   .refine((data) => !!data.venueId !== !!data.locationText, {
     message: "Provide exactly one of venueId or locationText",
   })
   .refine((data) => data.endAt > data.startAt, { message: "endAt must be after startAt" })
-  .refine((data) => data.startAt > Math.floor(Date.now() / 1000), { message: "startAt must be in the future" })
+  .refine(
+    (data) => (data.isAllDay ? data.startAt >= startOfTodayLocal() : data.startAt > Math.floor(Date.now() / 1000)),
+    {
+      message: "startAt must be in the future",
+    },
+  )
   .refine((data) => data.startAt < maxEventTimestamp(), {
     message: `startAt must be within ${MAX_EVENT_YEARS_OUT} years`,
   })
@@ -48,6 +81,8 @@ const updateEventSchema = z
     startAt: z.number().int().optional(),
     endAt: z.number().int().optional(),
     kind: EVENT_KIND.optional(),
+    eligibleTierIds: eligibleTierIdsSchema,
+    isAllDay: z.boolean().optional(),
   })
   .refine((data) => !(data.venueId && data.locationText), {
     message: "Cannot set both venueId and locationText",
@@ -67,10 +102,7 @@ const updateEventSchema = z
 // actual bug report is about *creating* events in the past, not editing them. The max-year bound
 // DOES apply to edits too — there's no legitimate reason to move an event's date to year 83333.
 
-const duplicateEventSchema = z.object({
-  count: z.number().int().min(1).max(52),
-  intervalDays: z.number().int().min(1),
-});
+const duplicateEventSchema = repeatSchema;
 
 export const eventsRouter = new Hono();
 
@@ -90,10 +122,26 @@ eventsRouter.post("/:id/events", requireAuth, async (c) => {
   }
 
   try {
-    const event = await eventService.create({ communityId, creatorAddress: session.address!, ...parsed.data });
-    return c.json({ event }, 201);
+    // Events expansion Approach B (2026-08-27, D2) — create() returns [source, ...repeats] when
+    // repeat is set, or a single-element array otherwise. Response stays additive: existing
+    // { event } consumers still get exactly that; repeatedEvents is empty unless repeat was used.
+    const [event, ...repeatedEvents] = await eventService.create({
+      communityId,
+      creatorAddress: session.address!,
+      ...parsed.data,
+    });
+    return c.json({ event, repeatedEvents }, 201);
   } catch (err) {
     if (err instanceof eventService.InvalidVenueError) {
+      return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof eventService.EventNotFoundError) {
+      return c.json({ error: "parentEventId does not reference an event in this community" }, 422);
+    }
+    if (err instanceof eventService.NestedSideEventError) {
+      return c.json({ error: err.message }, 422);
+    }
+    if (err instanceof RangeError) {
       return c.json({ error: err.message }, 422);
     }
     throw err;
@@ -114,20 +162,36 @@ eventsRouter.get("/:id/events", async (c) => {
   const endAtStr = c.req.query("endAt");
   const kindParam = c.req.query("kind");
   const kind = EVENT_KIND.safeParse(kindParam).success ? (kindParam as z.infer<typeof EVENT_KIND>) : undefined;
+  // Events expansion (2026-08-26, T6) — upcoming = endAt >= now, past = endAt < now. Independent
+  // of startAt/endAt range filtering above; omit for the existing unfiltered behavior.
+  const collectionParam = c.req.query("collection");
+  const collection = collectionParam === "upcoming" || collectionParam === "past" ? collectionParam : undefined;
 
-  const result = await eventService.list(communityId, page, limit, {
-    startAt: startAtStr !== undefined ? Number(startAtStr) : undefined,
-    endAt: endAtStr !== undefined ? Number(endAtStr) : undefined,
-    kind,
-  });
+  // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — this route stays
+  // unauthenticated (unchanged from before this child); session.address is optional viewer
+  // identity for tier-gated visibility, not an auth requirement.
+  const session = await getSession(c);
+  const result = await eventService.list(
+    communityId,
+    page,
+    limit,
+    {
+      startAt: startAtStr !== undefined ? Number(startAtStr) : undefined,
+      endAt: endAtStr !== undefined ? Number(endAtStr) : undefined,
+      kind,
+      collection,
+    },
+    session.address,
+  );
   return c.json(result);
 });
 
 eventsRouter.get("/:id/events/:eventId", async (c) => {
   const communityId = c.req.param("id");
   const eventId = c.req.param("eventId");
-  const event = await eventService.get(eventId);
-  if (!event || event.communityId !== communityId) {
+  const session = await getSession(c);
+  const event = await eventService.getForViewer(eventId, communityId, session.address);
+  if (!event) {
     return c.json({ error: "Event not found" }, 404);
   }
   return c.json({ event });
@@ -178,8 +242,13 @@ eventsRouter.delete("/:id/events/:eventId", requireAuth, async (c) => {
 
   try {
     await assertCanManageEvent(communityId, eventId, session.address!);
-    const event = await eventService.cancel(eventId, communityId);
-    return c.json({ event });
+    // D5 (2026-08-26) — cancel() now returns the target event plus any cascaded side-events
+    // (D4's cascade-cancel). Response gains cascadedSideEvents additively; existing { event }
+    // consumers still get the field they expect.
+    const updated = await eventService.cancel(eventId, communityId);
+    const event = updated.find((e) => e.id === eventId)!;
+    const cascadedSideEvents = updated.filter((e) => e.id !== eventId);
+    return c.json({ event, cascadedSideEvents });
   } catch (err) {
     if (err instanceof eventService.EventNotFoundError) return c.json({ error: err.message }, 404);
     if (err instanceof NotAuthorizedForEventError) {
@@ -211,6 +280,8 @@ eventsRouter.post("/:id/events/:eventId/duplicate", requireAuth, async (c) => {
       return c.json({ error: "Not authorized to duplicate this event" }, 403);
     }
     if (err instanceof eventService.EventCancelledError) return c.json({ error: err.message }, 409);
+    // Events expansion Approach B (2026-08-27, D2 outside-voice fix) — mixed-series guard.
+    if (err instanceof eventService.MixedSeriesError) return c.json({ error: err.message }, 409);
     throw err;
   }
 });

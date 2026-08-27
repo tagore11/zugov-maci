@@ -229,6 +229,9 @@ export const membershipTiers = pgTable("membership_tiers", {
   // (matched to how pop-up-city events actually work — see review's sola.day research) is the
   // out-of-the-box behavior; a community can restrict it per-tier without a migration.
   canCreateEvents: boolean("can_create_events").notNull().default(true),
+  // formalize-communities epic, Child J (/plan-eng-review 2026-08-26, D2) — mirrors
+  // canCreateEvents's "on by default, tier can narrow it" posture exactly.
+  canPostDiscussions: boolean("can_post_discussions").notNull().default(true),
   // Eligibility-adapters review (2026-08-19): breaks ties when a wallet's holdings satisfy
   // multiple eligibilityRules groups at once (e.g. an ERC20 balance clearing both a "Resident"
   // and a higher "OG" threshold) — the group targeting the highest-rank tier wins, regardless
@@ -429,17 +432,74 @@ export const events = pgTable(
     startAt: integer("start_at").notNull(),
     endAt: integer("end_at").notNull(),
     seriesId: text("series_id"),
-    kind: text("kind").$type<"talk" | "workshop" | "social" | "meeting" | "other">().notNull().default("other"),
+    // Events expansion Approach B (/plan-eng-review + /plan-design-review 2026-08-27) —
+    // widened from 5 to 17 values (Sola.day's fuller taxonomy). "meeting" is deliberately
+    // KEPT alongside the new "meetup" rather than migrated away — dropping it would break
+    // any existing row's kind-based icon lookup (KIND_META[event.kind]) with no data
+    // migration benefit. Still a plain text column, no DB CHECK constraint — this widening
+    // is pure TS/Zod, zero migration for the taxonomy itself (only isAllDay below needs one).
+    kind: text("kind")
+      .$type<
+        | "talk"
+        | "panel"
+        | "workshop"
+        | "activity"
+        | "seminar"
+        | "conference"
+        | "meetup"
+        | "networking"
+        | "training"
+        | "exhibition"
+        | "hackathon"
+        | "demo_day"
+        | "social"
+        | "open_mic"
+        | "wellness"
+        | "meeting"
+        | "other"
+      >()
+      .notNull()
+      .default("other"),
+    // Events expansion Approach B (2026-08-27, D3) — lets the display layer distinguish "a
+    // real 23h59m event" from "an all-day event" without reverse-engineering timestamps.
+    // Locked boundary: startAt = local midnight (creator's browser timezone at creation
+    // time), endAt = 23:59:59 on the last day. Exempted from the startAt-must-be-future
+    // check in createEventSchema — a same-day all-day event's startAt is already in the
+    // past the moment it's submitted, which is the single most common real case.
+    isAllDay: boolean("is_all_day").notNull().default(false),
     creatorAddress: text("creator_address").notNull(),
     status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
     createdAt: integer("created_at").notNull(),
     cancelledAt: integer("cancelled_at"),
+    // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — nullable, unlike
+    // proposals.eligibleTierIds (NOT NULL, always populated): null means "unrestricted, visible to
+    // everyone," checked directly by canView() with no tier-list inference needed. Every existing
+    // event gets null on migration, so nothing already-live changes visibility. JSON-stringified
+    // string[] when restricted.
+    eligibleTierIds: text("eligible_tier_ids"),
+    // Events expansion (/office-hours + /plan-eng-review 2026-08-26) — side-events, distinct from
+    // seriesId (recurrence). Self-referential, ON DELETE SET NULL (mirrors venueId's pattern): a
+    // deleted parent orphans its side-events rather than cascading their deletion. App-level-only
+    // invariants (validator, not DB constraints): a side-event's communityId must match its
+    // parent's; nesting is capped at one level (reject a parent that itself has a parentEventId);
+    // immutable after creation (no reparenting). eligibleTierIds is inherited as a snapshot copy
+    // of the parent's value at creation time when omitted on a side-event, not a live reference.
+    parentEventId: text("parent_event_id").references((): AnyPgColumn => events.id, { onDelete: "set null" }),
   },
   // Primary list query ("events for community X in date range A-B") is a range scan on exactly
   // these two columns — the first explicit secondary index in this schema file, added
   // deliberately for a known hot path rather than following the rest of the schema's
   // PK-implicit-index-only convention (2026-08-19 review, Performance section).
-  (table) => [index("events_community_start_idx").on(table.communityId, table.startAt)],
+  //
+  // events_start_idx (D1b, 2026-08-26): the composite index above is (communityId, startAt) —
+  // Postgres can't use its second column efficiently without constraining the first, so it does
+  // NOT serve the new global cross-community `ORDER BY startAt` scan in listGlobal(). A bare
+  // single-column index on startAt is added for that query pattern, which didn't exist before
+  // this PR (no prior "existing behavior" to protect by deferring it).
+  (table) => [
+    index("events_community_start_idx").on(table.communityId, table.startAt),
+    index("events_start_idx").on(table.startAt),
+  ],
 );
 
 export type Event = typeof events.$inferSelect;
@@ -469,6 +529,33 @@ export const eventRsvps = pgTable(
 
 export type EventRsvp = typeof eventRsvps.$inferSelect;
 export type NewEventRsvp = typeof eventRsvps.$inferInsert;
+
+// formalize-communities epic, Child J (/plan-eng-review 2026-08-26) — flat posts only, no
+// threading/replies (D1): no parentId/threadId column, every row is a top-level, standalone post.
+// Members-only categorically (D5), enforced at the route layer, not by this table's shape.
+export const communityDiscussions = pgTable(
+  "community_discussions",
+  {
+    id: text("id").primaryKey(),
+    communityId: text("community_id")
+      .notNull()
+      .references(() => communities.id, { onDelete: "cascade" }),
+    authorAddress: text("author_address").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    // Same nullable shape as events.eligibleTierIds (Child I, D1) — null means unrestricted,
+    // visible to every member (not literally everyone, per this child's own D5 membership gate).
+    eligibleTierIds: text("eligible_tier_ids"),
+    createdAt: integer("created_at").notNull(),
+  },
+  // /ship review army (2026-08-26, performance specialist) — every list()/get() query filters on
+  // communityId; matches the events_community_start_idx precedent already established in this
+  // file for the identical "list this community's rows" access pattern.
+  (table) => [index("community_discussions_community_idx").on(table.communityId)],
+);
+
+export type CommunityDiscussion = typeof communityDiscussions.$inferSelect;
+export type NewCommunityDiscussion = typeof communityDiscussions.$inferInsert;
 
 // Eligibility adapters (2026-08-19 /plan-eng-review) — identity/structural layer, anchored to
 // communities.id, never governance-gated (same reasoning as venues/events: "who can join this

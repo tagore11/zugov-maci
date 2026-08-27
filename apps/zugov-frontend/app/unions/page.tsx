@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Users2 } from "lucide-react";
 import { Header } from "../components/Header";
@@ -9,12 +9,26 @@ import * as communityApi from "@/src/services/communityApi";
 // UnionsSection.tsx on the community detail page, and UnionsPanel.tsx on manage-communities).
 // No wallet/auth required, mirrors the homepage's community browse pattern.
 export default function UnionsPage() {
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["allUnions", page],
+  const unionsQueryKey = ["allUnions", page];
+  const { data, isLoading, isError } = useQuery({
+    queryKey: unionsQueryKey,
     queryFn: () => communityApi.listAllUnions(page),
   });
+
+  // Session-derived (no address passed) — resolves to an empty list for a disconnected visitor,
+  // matching every other pending-invite check in this app (community page redesign,
+  // /plan-eng-review 2026-08-26, D2). Failure here is non-critical (a missed badge, not a broken
+  // page), so it's allowed to fail silently rather than surfacing an error state.
+  const { data: pendingInvites } = useQuery({
+    queryKey: ["myPendingUnionInvites"],
+    queryFn: () => communityApi.getMyPendingUnionInvites(),
+    retry: false,
+    throwOnError: false,
+  });
+  const pendingUnionIds = new Set((pendingInvites ?? []).map((invite) => invite.unionId));
 
   return (
     <div className="min-h-screen bg-gray-950 text-foreground">
@@ -30,6 +44,20 @@ export default function UnionsPage() {
           <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">
             <p className="text-gray-400">Loading unions...</p>
           </div>
+        ) : isError ? (
+          // TODOS.md follow-up (2026-08-26, surfaced by the /events page's Pass 2 design review)
+          // — a broken request previously rendered identically to "no unions," a Nielsen
+          // error-visibility violation. Same isError + Retry shape as the new /events page.
+          <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">
+            <p className="text-gray-400">Couldn&apos;t load unions right now.</p>
+            <button
+              type="button"
+              onClick={() => queryClient.invalidateQueries({ queryKey: unionsQueryKey })}
+              className="mt-3 text-sm font-medium text-accent-hover hover:underline"
+            >
+              Retry
+            </button>
+          </div>
         ) : !data?.unions.length ? (
           <div className="text-center py-12 bg-gray-900 rounded-lg border border-gray-700">
             <p className="text-gray-400">No unions yet.</p>
@@ -42,9 +70,16 @@ export default function UnionsPage() {
                 to={`/unions/${union.id}`}
                 className="bg-gray-900 rounded-lg border border-gray-700 p-6 hover:border-accent transition-colors"
               >
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="text-3xl">{union.logo || "🤝"}</div>
-                  <h3 className="font-semibold text-lg text-foreground mt-1">{union.displayName}</h3>
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex items-start gap-3">
+                    <div className="text-3xl">{union.logo || "🤝"}</div>
+                    <h3 className="font-semibold text-lg text-foreground mt-1">{union.displayName}</h3>
+                  </div>
+                  {pendingUnionIds.has(union.id) && (
+                    <span className="shrink-0 mt-1 px-2 py-0.5 rounded-full bg-accent/20 text-accent-hover text-xs font-medium">
+                      Pending invite
+                    </span>
+                  )}
                 </div>
                 {union.description && <p className="text-sm text-gray-400 mb-4 line-clamp-2">{union.description}</p>}
                 <div className="flex items-center gap-1.5 text-sm text-gray-500">

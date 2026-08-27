@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { testDb, clearCommunities } from "./helpers/testDb.js";
 import * as schema from "../src/db/schema.js";
-import { listMembersByAddresses } from "../src/services/membershipService.js";
+import { listMembersByAddresses, resolveViewerContextsForCommunities } from "../src/services/membershipService.js";
 
 const MEMBER_A = "0x1111111111111111111111111111111111111a";
 const MEMBER_B = "0x2222222222222222222222222222222222222b";
@@ -81,5 +81,80 @@ describe("membershipService.listMembersByAddresses", () => {
     await insertTierAndMember(otherCommunityId, MEMBER_A);
 
     expect(await listMembersByAddresses(communityId, [MEMBER_A])).toEqual([]);
+  });
+});
+
+// Events expansion (/plan-eng-review 2026-08-26, D1a, outside-voice fix) — batched viewer-context
+// resolution for the global events feed, exactly 2 queries total regardless of N communities.
+describe("membershipService.resolveViewerContextsForCommunities", () => {
+  beforeEach(async () => {
+    await clearCommunities();
+  });
+
+  afterAll(async () => {
+    await clearCommunities();
+  });
+
+  const VIEWER = "0x4444444444444444444444444444444444444d";
+
+  async function insertCommunityWithCreator(creatorAddress: string) {
+    const id = randomUUID();
+    const now = Math.floor(Date.now() / 1000);
+    await testDb.insert(schema.communities).values({
+      id,
+      displayName: "resolveViewerContextsForCommunities Test Community",
+      creatorAddress,
+      createdAt: now,
+      registeredAt: now,
+    });
+    return id;
+  }
+
+  it("returns null for every community when viewerAddress is undefined", async () => {
+    const communityId = await insertCommunity();
+    const result = await resolveViewerContextsForCommunities([communityId], undefined);
+    expect(result.get(communityId)).toBeNull();
+  });
+
+  it("returns an empty map and fires no query for an empty communityIds array", async () => {
+    const result = await resolveViewerContextsForCommunities([], VIEWER);
+    expect(result.size).toBe(0);
+  });
+
+  it("resolves a creator, a plain member, and a non-member across 3 distinct communities in one batched call", async () => {
+    const createdCommunityId = await insertCommunityWithCreator(VIEWER);
+    const memberCommunityId = await insertCommunity();
+    await insertTierAndMember(memberCommunityId, VIEWER);
+    const nonMemberCommunityId = await insertCommunity();
+
+    const result = await resolveViewerContextsForCommunities(
+      [createdCommunityId, memberCommunityId, nonMemberCommunityId],
+      VIEWER,
+    );
+
+    expect(result.get(createdCommunityId)?.isAdmin).toBe(true);
+    expect(result.get(memberCommunityId)?.isAdmin).toBe(false);
+    expect(result.get(memberCommunityId)?.tier).not.toBeNull();
+    expect(result.get(nonMemberCommunityId)?.isAdmin).toBe(false);
+    expect(result.get(nonMemberCommunityId)?.tier).toBeNull();
+  });
+
+  it("marks isAdmin via the canManageMembership tier path, not just the creator path", async () => {
+    const communityId = await insertCommunity();
+    const tierId = randomUUID();
+    const now = Math.floor(Date.now() / 1000);
+    await testDb.insert(schema.membershipTiers).values({
+      id: tierId,
+      communityId,
+      label: "Admin",
+      canCreateProposals: true,
+      canVote: true,
+      canManageMembership: true,
+      createdAt: now,
+    });
+    await testDb.insert(schema.memberships).values({ walletAddress: VIEWER, communityId, tierId, joinedAt: now });
+
+    const result = await resolveViewerContextsForCommunities([communityId], VIEWER);
+    expect(result.get(communityId)?.isAdmin).toBe(true);
   });
 });

@@ -4,7 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { encodeFunctionResult, getAddress } from "viem";
 import { eq } from "drizzle-orm";
 import { clearCommunities, testDb } from "./helpers/testDb.js";
-import { communities, maciGovernanceConfigs, communityDecisionAdapters } from "../src/db/schema.js";
+import { communities, maciGovernanceConfigs, communityDecisionAdapters, memberships } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -677,6 +677,130 @@ describe("POST /api/communities", () => {
         }),
       });
       expect(res.status).toBe(422);
+    });
+  });
+
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25) — D1: the auth check runs
+  // AFTER the self-parent/exists checks above (both proven still 422, not 403, by the two tests
+  // immediately above this block), not before them — verified via isAuthorized's own semantics.
+  describe("parentCommunityId authorization (Child E, D1)", () => {
+    it("returns 403 when the caller is not authorized on the parent, and creates no row", async () => {
+      const parentCookie = await authCookieFor(REGISTRANT);
+      const { community: parent } = await registerIdentity(parentCookie);
+
+      const strangerCookie = await authCookieFor(privateKeyToAccount(`0x${"cc".repeat(32)}`));
+      const res = await app.request("/api/communities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: strangerCookie },
+        body: JSON.stringify({ ...IDENTITY_BODY, source: "wizard", parentCommunityId: parent.id }),
+      });
+      expect(res.status).toBe(403);
+
+      const childrenRes = await app.request(`/api/communities/${parent.id}/children`);
+      const { communities: children } = (await childrenRes.json()) as { communities: unknown[] };
+      expect(children).toHaveLength(0);
+    });
+
+    it("succeeds when the caller is the parent's creator", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community: parent } = await registerIdentity(cookie);
+
+      const { res } = await registerIdentity(cookie, { parentCommunityId: parent.id });
+      expect(res.status).toBe(201);
+    });
+
+    it("succeeds when the caller holds a canManageMembership tier on the parent, without being its creator", async () => {
+      const ownerCookie = await authCookieFor(REGISTRANT);
+      const { community: parent } = await registerIdentity(ownerCookie);
+
+      const tiersRes = await app.request(`/api/communities/${parent.id}/tiers`);
+      const { tiers } = (await tiersRes.json()) as { tiers: { id: string; canManageMembership: boolean }[] };
+      const adminTier = tiers.find((t) => t.canManageMembership)!;
+
+      const adminAccount = privateKeyToAccount(`0x${"dd".repeat(32)}`);
+      await testDb
+        .insert(memberships)
+        .values({ walletAddress: adminAccount.address, communityId: parent.id, tierId: adminTier.id, joinedAt: 0 });
+
+      const adminCookie = await authCookieFor(adminAccount);
+      const { res } = await registerIdentity(adminCookie, { parentCommunityId: parent.id });
+      expect(res.status).toBe(201);
+    });
+  });
+
+  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D4) — the authorizedFor
+  // query param this child adds to GET /api/communities, feeding both the parent-picker and the
+  // /manage-communities dashboard fix.
+  describe("GET /api/communities?authorizedFor=... (Child E, D4)", () => {
+    it("returns communities the wallet created", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community } = await registerIdentity(cookie);
+
+      const res = await app.request(`/api/communities?authorizedFor=${REGISTRANT.address}`);
+      const { communities: results } = (await res.json()) as { communities: { id: string }[] };
+      expect(results.map((c) => c.id)).toContain(community.id);
+    });
+
+    it("returns communities where the wallet holds a canManageMembership tier, not just created ones", async () => {
+      const ownerCookie = await authCookieFor(REGISTRANT);
+      const { community: parent } = await registerIdentity(ownerCookie);
+
+      const tiersRes = await app.request(`/api/communities/${parent.id}/tiers`);
+      const { tiers } = (await tiersRes.json()) as { tiers: { id: string; canManageMembership: boolean }[] };
+      const adminTier = tiers.find((t) => t.canManageMembership)!;
+      const adminAccount = privateKeyToAccount(`0x${"ee".repeat(32)}`);
+      await testDb
+        .insert(memberships)
+        .values({ walletAddress: adminAccount.address, communityId: parent.id, tierId: adminTier.id, joinedAt: 0 });
+
+      const res = await app.request(`/api/communities?authorizedFor=${adminAccount.address}`);
+      const { communities: results } = (await res.json()) as { communities: { id: string }[] };
+      expect(results.map((c) => c.id)).toContain(parent.id);
+    });
+
+    it("excludes communities where the wallet is a plain member with no canManageMembership tier", async () => {
+      const ownerCookie = await authCookieFor(REGISTRANT);
+      const { community: parent } = await registerIdentity(ownerCookie, {
+        tiers: [{ label: "Regular", canCreateProposals: false, canVote: true, canManageMembership: false }],
+        defaultTierLabel: "Regular",
+      });
+
+      const tiersRes = await app.request(`/api/communities/${parent.id}/tiers`);
+      const { tiers } = (await tiersRes.json()) as { tiers: { id: string }[] };
+      const plainMemberAccount = privateKeyToAccount(`0x${"11".repeat(32)}`);
+      await testDb.insert(memberships).values({
+        walletAddress: plainMemberAccount.address,
+        communityId: parent.id,
+        tierId: tiers[0]!.id,
+        joinedAt: 0,
+      });
+
+      const res = await app.request(`/api/communities?authorizedFor=${plainMemberAccount.address}`);
+      const { communities: results } = (await res.json()) as { communities: { id: string }[] };
+      expect(results.map((c) => c.id)).not.toContain(parent.id);
+    });
+
+    it("is case-insensitive on the wallet address (D3 fix)", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community } = await registerIdentity(cookie);
+
+      const upper = REGISTRANT.address.toUpperCase().replace("0X", "0x");
+      const res = await app.request(`/api/communities?authorizedFor=${upper}`);
+      const { communities: results } = (await res.json()) as { communities: { id: string }[] };
+      expect(results.map((c) => c.id)).toContain(community.id);
+    });
+
+    it("combines with the existing search param", async () => {
+      const cookie = await authCookieFor(REGISTRANT);
+      const { community } = await registerIdentity(cookie, { displayName: "Findable Authorized Community" });
+
+      const res = await app.request(`/api/communities?authorizedFor=${REGISTRANT.address}&search=Findable`);
+      const { communities: results } = (await res.json()) as { communities: { id: string }[] };
+      expect(results.map((c) => c.id)).toContain(community.id);
+
+      const missRes = await app.request(`/api/communities?authorizedFor=${REGISTRANT.address}&search=NoMatch`);
+      const { communities: missResults } = (await missRes.json()) as { communities: { id: string }[] };
+      expect(missResults.map((c) => c.id)).not.toContain(community.id);
     });
   });
 });

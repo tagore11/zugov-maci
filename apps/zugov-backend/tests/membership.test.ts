@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import { SiweMessage } from "siwe";
 import { privateKeyToAccount } from "viem/accounts";
-import { clearCommunities, clearCredentials } from "./helpers/testDb.js";
+import { eq, and } from "drizzle-orm";
+import { clearCommunities, clearCredentials, testDb } from "./helpers/testDb.js";
+import { joinRequests } from "../src/db/schema.js";
 
 process.env.CORS_ORIGIN ??= "http://localhost:5173"; // pre-existing bug, see specs/003 research.md
 
@@ -279,6 +281,167 @@ describe("POST /api/communities/:id/join (FR-009 duplicate prevention)", () => {
       headers: { Cookie: cookie },
     });
     expect(res.status).toBe(409);
+  });
+});
+
+// formalize-communities epic, Child F (/plan-eng-review 2026-08-25) — D1 (creator blocked), D2
+// (not idempotent, atomic delete), D3 (gate on the decision-adapter registry, not the MACI-only
+// governanceConfigured flag).
+describe("DELETE /api/communities/:id/membership — Leave", () => {
+  it("returns 401 without authentication", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const res = await app.request(`/api/communities/${community.id}/membership`, { method: "DELETE" });
+    expect(res.status).toBe(401);
+  });
+
+  it("returns 404 when the caller is not a member", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const strangerCookie = await authCookieFor(privateKeyToAccount(`0x${"66".repeat(32)}`));
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: strangerCookie },
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/not a member/i);
+  });
+
+  it("returns 403 when the caller is the community's creator (D1)", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/creator/i);
+  });
+
+  // /ship review army (2026-08-26, testing specialist) — the two guards' documented ordering
+  // (creator-check before governance-check) was never exercised with both conditions true at once.
+  it("returns 403 (creator), not 409 (governance), when the caller is both the creator and governance is attached", async () => {
+    const { attach } = await import("../src/services/decisionAdapterService.js");
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    await attach(community.id, "maci");
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: cookie },
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/creator/i);
+  });
+
+  it("returns 409 when a MACI decision adapter is attached (D3) — not governanceConfigured, the decision-adapter registry", async () => {
+    const { attach } = await import("../src/services/decisionAdapterService.js");
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const memberAccount = privateKeyToAccount(`0x${"77".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    await app.request(`/api/communities/${community.id}/join`, { method: "POST", headers: { Cookie: memberCookie } });
+
+    await attach(community.id, "maci");
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: memberCookie },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("returns 409 when a zupoll decision adapter is attached (D3) — a fully off-chain adapter still counts as governed", async () => {
+    const { attach } = await import("../src/services/decisionAdapterService.js");
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const memberAccount = privateKeyToAccount(`0x${"88".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    await app.request(`/api/communities/${community.id}/join`, { method: "POST", headers: { Cookie: memberCookie } });
+
+    await attach(community.id, "zupoll");
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: memberCookie },
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("deletes the caller's membership and returns 200 on success", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const memberAccount = privateKeyToAccount(`0x${"99".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    await app.request(`/api/communities/${community.id}/join`, { method: "POST", headers: { Cookie: memberCookie } });
+
+    const res = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: memberCookie },
+    });
+    expect(res.status).toBe(200);
+
+    const statusRes = await app.request(`/api/communities/${community.id}/membership`, {
+      headers: { Cookie: memberCookie },
+    });
+    const statusBody = (await statusRes.json()) as { status: string };
+    expect(statusBody.status).toBe("none");
+  });
+
+  it("returns 404 on a second Leave call — not idempotent (D2)", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie);
+    const memberAccount = privateKeyToAccount(`0x${"aa".repeat(32)}`);
+    const memberCookie = await authCookieFor(memberAccount);
+    await app.request(`/api/communities/${community.id}/join`, { method: "POST", headers: { Cookie: memberCookie } });
+
+    const first = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: memberCookie },
+    });
+    expect(first.status).toBe(200);
+
+    const second = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: memberCookie },
+    });
+    expect(second.status).toBe(404);
+  });
+
+  it("does not touch joinRequests history — the approved request row survives leaving (AC5)", async () => {
+    const cookie = await getAuthCookie();
+    const { community } = await registerIdentity(cookie, { membershipPolicy: "approval" });
+    const joinerAccount = privateKeyToAccount(`0x${"bb".repeat(32)}`);
+    const joinerCookie = await authCookieFor(joinerAccount);
+
+    await app.request(`/api/communities/${community.id}/join`, { method: "POST", headers: { Cookie: joinerCookie } });
+    const listRes = await app.request(`/api/communities/${community.id}/join-requests`, {
+      headers: { Cookie: cookie },
+    });
+    const { requests } = (await listRes.json()) as { requests: { id: string; walletAddress: string }[] };
+    const request = requests.find((r) => r.walletAddress.toLowerCase() === joinerAccount.address.toLowerCase());
+    await app.request(`/api/communities/${community.id}/join-requests/${request!.id}/approve`, {
+      method: "POST",
+      headers: { Cookie: cookie },
+    });
+
+    const leaveRes = await app.request(`/api/communities/${community.id}/membership`, {
+      method: "DELETE",
+      headers: { Cookie: joinerCookie },
+    });
+    expect(leaveRes.status).toBe(200);
+
+    const [survivingRequest] = await testDb
+      .select()
+      .from(joinRequests)
+      .where(and(eq(joinRequests.communityId, community.id), eq(joinRequests.walletAddress, joinerAccount.address)));
+    expect(survivingRequest).toBeTruthy();
+    expect(survivingRequest!.status).toBe("approved");
   });
 });
 

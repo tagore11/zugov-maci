@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { useAccount } from "wagmi";
-import { Header } from "../../../components/Header";
+import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
-import * as communityApi from "@/src/services/communityApi";
 import * as membershipApi from "@/src/services/membershipApi";
+import * as communityApi from "@/src/services/communityApi";
 import * as eligibilityApi from "@/src/services/eligibilityApi";
 import * as zupollApi from "@/src/services/zupollApi";
 import { AttachZupollAdapter } from "@/app/components/AttachZupollAdapter";
@@ -25,6 +23,7 @@ import {
 import { StepNetworkCheck } from "@/app/components/CreateCommunityWizard/StepNetworkCheck";
 import { StepReview } from "@/app/components/CreateCommunityWizard/StepReview";
 import { StepDeploying } from "@/app/components/CreateCommunityWizard/StepDeploying";
+import type { CommunityOutletContext } from "../CommunityLayout";
 
 type DeploySubStep = "idle" | "network_check" | "review" | "deploying";
 
@@ -87,80 +86,66 @@ function DeployGovernanceSection({ communityId, config }: { communityId: string;
   );
 }
 
+// community page redesign (/plan-eng-review 2026-08-26, D4) — this page used to do its own
+// hand-rolled useEffect + communityApi.get(communityId) fetch, completely separate from
+// CommunityLayout's TanStack Query fetch of the same record, plus its own duplicate
+// canManageMembership tier-lookup (the exact logic useIsCommunityAdmin already provides). Both
+// are gone: `community`/`isCreator`/`isCommunityAdmin` now come from the layout's outlet context.
+// This page keeps only its own settings-specific fetch (tiers/rules/decisionAdapters) and its own
+// `!isAuthorized` gate — Layout does NOT enforce that gate, since other tabs stay visible to
+// non-admins.
 export default function CommunitySettingsPage() {
-  const params = useParams();
-  const communityId = params.id!;
+  const { community, isCreator, isCommunityAdmin } = useOutletContext<CommunityOutletContext>();
+  const communityId = community.id;
   const navigate = useNavigate();
-  const { address } = useAccount();
   const { signOut } = useSiwe();
 
-  const [loading, setLoading] = useState(true);
-  const [notFound, setNotFound] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const [displayName, setDisplayName] = useState("");
-  const [description, setDescription] = useState("");
-  const [logo, setLogo] = useState("");
-  const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>("open");
-  const [allowJoin, setAllowJoin] = useState(false);
-  const [tierChangesRequireVote, setTierChangesRequireVote] = useState(false);
-  const [directDeploymentEnabled, setDirectDeploymentEnabled] = useState(false);
+  const [displayName, setDisplayName] = useState(community.displayName);
+  const [description, setDescription] = useState(community.description ?? "");
+  const [logo, setLogo] = useState(community.logo ?? "");
+  const [membershipPolicy, setMembershipPolicy] = useState<MembershipPolicy>(community.membershipPolicy);
+  const [allowJoin, setAllowJoin] = useState(community.allowJoin);
+  const [tierChangesRequireVote, setTierChangesRequireVote] = useState(community.tierChangesRequireVote);
+  const [directDeploymentEnabled, setDirectDeploymentEnabled] = useState(community.directDeploymentEnabled);
   const [defaultTierLabel, setDefaultTierLabel] = useState("");
   const [tiers, setTiers] = useState<EditableTier[]>([]);
   const [originalTierIds, setOriginalTierIds] = useState<Set<string>>(new Set());
   const [eligibilityRules, setEligibilityRules] = useState<RuleDraft[]>([]);
   const [attachedAdapters, setAttachedAdapters] = useState<string[]>([]);
-  const [creatorAddress, setCreatorAddress] = useState<string | null>(null);
-  const [isCommunityAdmin, setIsCommunityAdmin] = useState(false);
 
   const tiersLocked = tierChangesRequireVote;
+  const isAuthorized = isCreator || isCommunityAdmin;
 
   useEffect(() => {
+    if (!isAuthorized) return;
     let cancelled = false;
     async function load() {
-      const [community, tierRows, membershipStatus, rules, decisionAdapters] = await Promise.all([
-        communityApi.get(communityId),
+      const [tierRows, rules, decisionAdapters] = await Promise.all([
         membershipApi.getTiers(communityId),
-        membershipApi.getMembershipStatus(communityId),
         eligibilityApi.getRuleset(communityId),
         zupollApi.listDecisionAdapters(communityId),
       ]);
       if (cancelled) return;
-      if (!community) {
-        setNotFound(true);
-        setLoading(false);
-        return;
-      }
-      setDisplayName(community.displayName);
-      setDescription(community.description ?? "");
-      setLogo(community.logo ?? "");
-      setMembershipPolicy(community.membershipPolicy);
-      setAllowJoin(community.allowJoin);
-      setTierChangesRequireVote(community.tierChangesRequireVote);
-      setDirectDeploymentEnabled(community.directDeploymentEnabled);
       setAttachedAdapters(decisionAdapters.adapters);
-      setCreatorAddress(community.creatorAddress);
       setTiers(tierRows);
       setOriginalTierIds(new Set(tierRows.map((t) => t.id)));
       setEligibilityRules(rules.map(({ id: _id, ...draft }) => draft));
       const defaultTier = tierRows.find((t) => t.id === community.defaultTierId);
       setDefaultTierLabel(defaultTier?.label ?? tierRows[0]?.label ?? "");
-      // Frontend authorization gate (2026-08-19 community-creation-rework review, D6) — this
-      // page previously had none; relying on the backend alone was low-risk when the worst case
-      // was a rejected PATCH, but the "Deploy governance now" button raises the stakes to real
-      // gas cost for an unauthorized wallet, so gate the whole page section, not just that
-      // button.
-      const memberTier =
-        membershipStatus.status === "member" ? tierRows.find((t) => t.label === membershipStatus.tierLabel) : undefined;
-      setIsCommunityAdmin(!!memberTier?.canManageMembership);
-      setLoading(false);
+      setSettingsLoading(false);
     }
     void load();
     return () => {
       cancelled = true;
     };
-  }, [communityId]);
+    // isAuthorized is stable for the lifetime of this mount (derived from context, not local
+    // state this effect could invalidate) — only communityId/defaultTierId can actually change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [communityId, community.defaultTierId, isAuthorized]);
 
   // TierEditor owns add/remove/update internally (2026-08-19 review, D8) — this page only needs
   // to react to the resulting array and keep defaultTierLabel pointing at a tier that still
@@ -242,46 +227,19 @@ export default function CommunitySettingsPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-foreground">
-        <Header />
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          <p className="text-gray-500">Loading community…</p>
-        </main>
-      </div>
-    );
-  }
-
-  if (notFound) {
-    return (
-      <div className="min-h-screen bg-gray-950 text-foreground">
-        <Header />
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          <p className="text-gray-500">Community not found.</p>
-          <Link to="/manage-communities" className="text-accent-hover hover:text-accent font-medium">
-            Back to Manage Communities
-          </Link>
-        </main>
-      </div>
-    );
-  }
-
-  const isCreator = !!address && !!creatorAddress && address.toLowerCase() === creatorAddress.toLowerCase();
-  const isAuthorized = isCreator || isCommunityAdmin;
-
   if (!isAuthorized) {
     return (
-      <div className="min-h-screen bg-gray-950 text-foreground">
-        <Header />
-        <main className="max-w-4xl mx-auto px-4 py-8">
-          <p className="text-gray-500">Only this community&apos;s creator or an admin can manage it.</p>
-          <Link to="/manage-communities" className="text-accent-hover hover:text-accent font-medium">
-            Back to Manage Communities
-          </Link>
-        </main>
+      <div className="space-y-4">
+        <p className="text-gray-500">Only this community&apos;s creator or an admin can manage it.</p>
+        <Link to="/manage-communities" className="text-accent-hover hover:text-accent font-medium">
+          Back to Manage Communities
+        </Link>
       </div>
     );
+  }
+
+  if (settingsLoading) {
+    return <p className="text-gray-500">Loading settings…</p>;
   }
 
   const deployConfig: DeployGovernanceConfig = {
@@ -292,227 +250,221 @@ export default function CommunitySettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-foreground">
-      <Header />
+    <>
+      <Link
+        to="/manage-communities"
+        className="inline-flex items-center gap-2 text-accent-hover hover:text-accent mb-6 font-medium"
+      >
+        <ArrowLeft className="w-4 h-4" />
+        Back to Manage Communities
+      </Link>
 
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Link
-          to="/manage-communities"
-          className="inline-flex items-center gap-2 text-accent-hover hover:text-accent mb-6 font-medium"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Back to Manage Communities
-        </Link>
+      <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8 space-y-8">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-foreground">Community Settings</h1>
+          <Link
+            to={`/manage-communities/${communityId}/members`}
+            className="text-sm font-medium text-accent-hover hover:text-accent"
+          >
+            Review pending requests →
+          </Link>
+        </div>
 
-        <div className="bg-gray-900 rounded-2xl border border-gray-700 p-8 space-y-8">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-foreground">Community Settings</h1>
-            <Link
-              to={`/manage-communities/${communityId}/members`}
-              className="text-sm font-medium text-accent-hover hover:text-accent"
-            >
-              Review pending requests →
-            </Link>
-          </div>
-
-          <div className="space-y-4">
-            <h2 className="text-lg font-semibold text-foreground mb-3">Governance</h2>
-            {attachedAdapters.includes("maci") ? (
-              <p className="text-sm text-gray-400">Governance is configured for this community.</p>
-            ) : (
-              <>
-                <DeployGovernanceSection communityId={communityId} config={deployConfig} />
-                <div className="flex items-center gap-3 text-xs text-gray-500">
-                  <div className="h-px flex-1 bg-gray-700" />
-                  or
-                  <div className="h-px flex-1 bg-gray-700" />
-                </div>
-                <RegisterExistingContract
-                  communityId={communityId}
-                  isAttached={false}
-                  onAttached={() => setAttachedAdapters((prev) => [...prev, "maci"])}
-                />
-              </>
-            )}
-            {attachedAdapters.includes("zupoll") ? (
-              <p className="text-sm text-gray-400">Zupoll (anonymous surveys) is enabled for this community.</p>
-            ) : (
-              <AttachZupollAdapter
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold text-foreground mb-3">Governance</h2>
+          {attachedAdapters.includes("maci") ? (
+            <p className="text-sm text-gray-400">Governance is configured for this community.</p>
+          ) : (
+            <>
+              <DeployGovernanceSection communityId={communityId} config={deployConfig} />
+              <div className="flex items-center gap-3 text-xs text-gray-500">
+                <div className="h-px flex-1 bg-gray-700" />
+                or
+                <div className="h-px flex-1 bg-gray-700" />
+              </div>
+              <RegisterExistingContract
                 communityId={communityId}
                 isAttached={false}
-                onAttached={() => setAttachedAdapters((prev) => [...prev, "zupoll"])}
+                onAttached={() => setAttachedAdapters((prev) => [...prev, "maci"])}
               />
-            )}
+            </>
+          )}
+          {attachedAdapters.includes("zupoll") ? (
+            <p className="text-sm text-gray-400">Zupoll (anonymous surveys) is enabled for this community.</p>
+          ) : (
+            <AttachZupollAdapter
+              communityId={communityId}
+              isAttached={false}
+              onAttached={() => setAttachedAdapters((prev) => [...prev, "zupoll"])}
+            />
+          )}
+        </div>
+
+        <UnionMembershipSection communityId={communityId} />
+
+        <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Community Name *</label>
+            <input
+              type="text"
+              required
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
+            />
           </div>
 
-          <UnionMembershipSection communityId={communityId} />
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={4}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
+            />
+          </div>
 
-          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-8">
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Community Name *</label>
-              <input
-                type="text"
-                required
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
-              />
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Logo (emoji or URL)</label>
+            <input
+              type="text"
+              value={logo}
+              onChange={(e) => setLogo(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Membership Tiers *</label>
+            <TierEditor tiers={tiers} onChange={handleTierEditorChange} locked={tiersLocked} />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Rules</label>
+            <p className="text-xs text-gray-500 mb-3">
+              Who is allowed to join, beyond the membership policy below — compose one or more conditions (optionally
+              requiring several at once) with alternate ways to qualify. Existing members are never retroactively
+              removed when this changes.
+            </p>
+            <EligibilityRulesetEditor
+              rules={eligibilityRules}
+              tiers={tiers.filter((t): t is EditableTier & { id: string } => !!t.id)}
+              onChange={setEligibilityRules}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Default Tier</label>
+            <select
+              value={defaultTierLabel}
+              onChange={(e) => setDefaultTierLabel(e.target.value)}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
+            >
+              {tiers.map((t, i) => (
+                <option key={t.id ?? `new-${i}`} value={t.label}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold text-foreground mb-3">Membership Policy</label>
+            <div className="flex flex-wrap gap-x-6 gap-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="radio"
+                  name="membershipPolicy"
+                  checked={membershipPolicy === "open"}
+                  onChange={() => setMembershipPolicy("open")}
+                />
+                Open (auto-approve)
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-300">
+                <input
+                  type="radio"
+                  name="membershipPolicy"
+                  checked={membershipPolicy === "approval"}
+                  onChange={() => setMembershipPolicy("approval")}
+                />
+                Approval required
+              </label>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Description</label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Logo (emoji or URL)</label>
-              <input
-                type="text"
-                value={logo}
-                onChange={(e) => setLogo(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Membership Tiers *</label>
-              <TierEditor tiers={tiers} onChange={handleTierEditorChange} locked={tiersLocked} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Eligibility Rules</label>
-              <p className="text-xs text-gray-500 mb-3">
-                Who is allowed to join, beyond the membership policy below — compose one or more conditions (optionally
-                requiring several at once) with alternate ways to qualify. Existing members are never retroactively
-                removed when this changes.
-              </p>
-              <EligibilityRulesetEditor
-                rules={eligibilityRules}
-                tiers={tiers.filter((t): t is EditableTier & { id: string } => !!t.id)}
-                onChange={setEligibilityRules}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Default Tier</label>
-              <select
-                value={defaultTierLabel}
-                onChange={(e) => setDefaultTierLabel(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-600 text-foreground rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent text-base"
-              >
-                {tiers.map((t, i) => (
-                  <option key={t.id ?? `new-${i}`} value={t.label}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-foreground mb-3">Membership Policy</label>
-              <div className="flex flex-wrap gap-x-6 gap-y-2">
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="radio"
-                    name="membershipPolicy"
-                    checked={membershipPolicy === "open"}
-                    onChange={() => setMembershipPolicy("open")}
-                  />
-                  Open (auto-approve)
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-300">
-                  <input
-                    type="radio"
-                    name="membershipPolicy"
-                    checked={membershipPolicy === "approval"}
-                    onChange={() => setMembershipPolicy("approval")}
-                  />
-                  Approval required
-                </label>
-              </div>
-            </div>
-
-            <label className="flex items-start gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={allowJoin}
-                onChange={(e) => setAllowJoin(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Allow people to join this community
-                <span className="block text-xs text-gray-500">
-                  Independent of Membership Policy above — off means nobody can submit a join request at all, even under
-                  an open policy. Useful for registering a community before it's ready to accept members.
-                </span>
+          <label className="flex items-start gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={allowJoin}
+              onChange={(e) => setAllowJoin(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Allow people to join this community
+              <span className="block text-xs text-gray-500">
+                Independent of Membership Policy above — off means nobody can submit a join request at all, even under
+                an open policy. Useful for registering a community before it's ready to accept members.
               </span>
-            </label>
+            </span>
+          </label>
 
-            <label className="flex items-start gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={tierChangesRequireVote}
-                onChange={(e) => setTierChangesRequireVote(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Tier changes require a community vote
-                <span className="block text-xs text-gray-500">
-                  Not yet available — enabling this blocks tier edits.
-                </span>
+          <label className="flex items-start gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={tierChangesRequireVote}
+              onChange={(e) => setTierChangesRequireVote(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Tier changes require a community vote
+              <span className="block text-xs text-gray-500">Not yet available — enabling this blocks tier edits.</span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-2 text-sm text-gray-300">
+            <input
+              type="checkbox"
+              checked={directDeploymentEnabled}
+              onChange={(e) => setDirectDeploymentEnabled(e.target.checked)}
+              className="mt-0.5"
+            />
+            <span>
+              Allow direct poll deployment (skip draft & co-sponsorship)
+              <span className="block text-xs text-gray-500">
+                When on, eligible members deploy a poll in one step instead of going through a draft.
               </span>
-            </label>
+            </span>
+          </label>
 
-            <label className="flex items-start gap-2 text-sm text-gray-300">
-              <input
-                type="checkbox"
-                checked={directDeploymentEnabled}
-                onChange={(e) => setDirectDeploymentEnabled(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                Allow direct poll deployment (skip draft & co-sponsorship)
-                <span className="block text-xs text-gray-500">
-                  When on, eligible members deploy a poll in one step instead of going through a draft.
-                </span>
-              </span>
-            </label>
+          {error && (
+            <div className="rounded-lg border border-red-600/50 bg-red-900/20 p-3 text-sm text-red-300">{error}</div>
+          )}
 
-            {error && (
-              <div className="rounded-lg border border-red-600/50 bg-red-900/20 p-3 text-sm text-red-300">{error}</div>
-            )}
-
-            <div className="flex gap-4 pt-6 border-t border-gray-700">
-              <Link
-                to="/manage-communities"
-                className="flex-1 px-6 py-3 border-2 border-gray-600 text-gray-300 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center text-base"
-              >
-                Cancel
-              </Link>
-              {/* /plan-eng-review Phase B (2026-08-23) — Save Changes used to bypass SiweGate
-                  entirely, unlike this page's sibling register page, even though the save
-                  sequence's writes need a SIWE session. Wrapping only the button (not the whole
-                  form) matches the register page's own SiweGate placement. */}
-              <div className="flex-1">
-                <SiweGate message="Sign in to save changes">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="w-full px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60"
-                  >
-                    {saving ? "Saving…" : "Save Changes"}
-                  </button>
-                </SiweGate>
-              </div>
+          <div className="flex gap-4 pt-6 border-t border-gray-700">
+            <Link
+              to="/manage-communities"
+              className="flex-1 px-6 py-3 border-2 border-gray-600 text-gray-300 rounded-lg font-semibold hover:bg-gray-800 transition-colors text-center text-base"
+            >
+              Cancel
+            </Link>
+            {/* /plan-eng-review Phase B (2026-08-23) — Save Changes used to bypass SiweGate
+                entirely, unlike this page's sibling register page, even though the save
+                sequence's writes need a SIWE session. Wrapping only the button (not the whole
+                form) matches the register page's own SiweGate placement. */}
+            <div className="flex-1">
+              <SiweGate message="Sign in to save changes">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full px-6 py-3 bg-accent text-white rounded-lg font-semibold hover:bg-accent-hover transition-colors text-base disabled:opacity-60"
+                >
+                  {saving ? "Saving…" : "Save Changes"}
+                </button>
+              </SiweGate>
             </div>
-          </form>
-        </div>
-      </main>
-    </div>
+          </div>
+        </form>
+      </div>
+    </>
   );
 }

@@ -109,7 +109,12 @@ export function CreateCommunityWizard({ onSubmittingChange }: Props) {
           />
         )}
 
-        {state.step === "success" && <StepSuccess communityId={state.identityCommunityId} reset={reset} />}
+        {/* WizardState is a flat interface, not a discriminated union, so TypeScript can't narrow
+            identityCommunityId from step === "success" alone. Safe in practice (formalize-
+            communities epic, Child A, /plan-eng-review 2026-08-25): setCommunitySetup is the only
+            place that sets step: "success", and it always sets identityCommunityId in the same
+            setState call — the create call throws (never reaching "success") on any failure. */}
+        {state.step === "success" && <StepSuccess communityId={state.identityCommunityId!} reset={reset} />}
       </div>
     </SiweGate>
   );
