@@ -7,6 +7,7 @@ import {
   membershipTiers,
   joinRequests,
   eligibilityRules,
+  unionMemberships,
   type MembershipTier,
 } from "../db/schema.js";
 import type { TierBody } from "../validators/membershipSchema.js";
@@ -107,6 +108,53 @@ export async function isAuthorized(communityId: string, walletAddress: string): 
     .limit(1);
 
   return rows[0]?.canManageMembership ?? false;
+}
+
+// Union-as-community merge (2026-08-28 /plan-eng-review, D3/D10) — a union's "members" are OTHER
+// COMMUNITIES (unionMemberships), not wallets, so isAuthorized() on the union's own community
+// row (which only ever recognizes its creator + tier holders, and unions deliberately get no
+// creator tier — see communityService.createCommunityRow()'s skipCreatorEnrollment) can't be the
+// authority check for posting a union's events/proposals/discussions. Matches the union's real,
+// already-shipped authority model instead (routes/unions.ts's invite/leave: any ACTIVE member
+// community's admin has real authority) — a wallet may post the union's content if it's
+// isAuthorized() on any community with an active unionMemberships row for this union. The
+// founding community qualifies immediately (routes/unions.ts's POST / already requires the
+// creator be isAuthorized() on foundingCommunityId, which becomes an active row at creation), so
+// no separate creator-specific check is needed.
+export async function isAuthorizedForUnionContent(unionId: string, walletAddress: string): Promise<boolean> {
+  const activeMembers = await db
+    .select({ communityId: unionMemberships.communityId })
+    .from(unionMemberships)
+    .where(and(eq(unionMemberships.unionId, unionId), eq(unionMemberships.status, "active")));
+
+  for (const { communityId } of activeMembers) {
+    if (await isAuthorized(communityId, walletAddress)) return true;
+  }
+  return false;
+}
+
+// Union-as-community merge (2026-08-28, D10) — the single composition point routes/events.ts
+// and discussionService.ts both call, instead of duplicating the type-branch in each. Proposals
+// deliberately don't need this: proposalService.createProposal() already checks
+// isAttached(communityId, decisionAdapterType) before it ever reaches a tier-permission check,
+// and a union can never have a decision adapter attached (see communityService.attachGovernance
+// and routes/zupoll.ts's decision-adapters route, both guarded) — so proposal creation is
+// already, correctly, unreachable for a union via that pre-existing check, with no new branch
+// needed here.
+export async function canCreateCommunityContent(
+  communityId: string,
+  walletAddress: string,
+  permission: "canCreateEvents" | "canPostDiscussions",
+): Promise<boolean> {
+  const [community] = await db
+    .select({ type: communities.type })
+    .from(communities)
+    .where(eq(communities.id, communityId))
+    .limit(1);
+  if (community?.type === "union") {
+    return isAuthorizedForUnionContent(communityId, walletAddress);
+  }
+  return hasTierPermission(communityId, walletAddress, permission);
 }
 
 /**
@@ -302,10 +350,17 @@ export async function listMembers(communityId: string): Promise<{ walletAddress:
     .where(eq(memberships.communityId, communityId));
 }
 
+// Union-as-community merge (2026-08-28) — accepts an optional transaction client so
+// communityService.createCommunityRow() can call this from inside db.transaction() and have the
+// tier insert commit/rollback atomically with the communities-row insert. Defaults to the
+// module-level db for every pre-existing call site, unchanged.
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+
 export async function createTiersForCommunity(
   communityId: string,
   tiers: TierBody[],
   defaultTierLabel: string,
+  dbClient: DbOrTx = db,
 ): Promise<{ defaultTierId: string; creatorTierId: string }> {
   const now = Math.floor(Date.now() / 1000);
   const rows = tiers.map((tier) => ({
@@ -321,7 +376,7 @@ export async function createTiersForCommunity(
     canPostDiscussions: tier.canPostDiscussions,
     createdAt: now,
   }));
-  const inserted = await db.insert(membershipTiers).values(rows).returning();
+  const inserted = await dbClient.insert(membershipTiers).values(rows).returning();
   const defaultTier = inserted.find((row) => row.label === defaultTierLabel);
   if (!defaultTier) {
     throw new Error(`defaultTierLabel "${defaultTierLabel}" does not match any provided tier`);

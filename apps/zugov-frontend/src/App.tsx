@@ -5,7 +5,13 @@ import HomePage from "../app/page";
 import AboutPage from "../app/about/page";
 import AnalyticsPage from "../app/analytics/page";
 import CommunityLayout from "../app/community/[id]/CommunityLayout";
-import { OverviewTab, EventsTab, ProposalsTab, DiscussionsTab } from "../app/community/[id]/CommunityTabRoutes";
+import {
+  OverviewTab,
+  EventsTab,
+  ProposalsTab,
+  DiscussionsTab,
+  MemberCommunitiesTab,
+} from "../app/community/[id]/CommunityTabRoutes";
 import CommunitySettingsPage from "../app/community/[id]/settings/page";
 import DelegatesPage from "../app/delegates/page";
 import KnowledgeBasePage from "../app/knowledge-base/page";
@@ -15,7 +21,6 @@ import CommunityMembersPage from "../app/manage-communities/[id]/members/page";
 import ManageProfilePage from "../app/manage-profile/page";
 import ProposalsPage from "../app/proposals/page";
 import UnionsPage from "../app/unions/page";
-import UnionDetailPage from "../app/unions/[id]/page";
 import EventsPage from "../app/events/page";
 import { RequireAuth } from "../app/components/RequireAuth";
 
@@ -25,6 +30,14 @@ import { RequireAuth } from "../app/components/RequireAuth";
 function EditCommunityRedirect() {
   const { id } = useParams();
   return <Navigate to={`/community/${id}/settings`} replace />;
+}
+
+// Union-as-community merge (2026-08-28 /plan-eng-review, D5) — a union's detail page is now
+// served entirely by /community/:id (same id, reused per D8's UUID-preservation decision), no
+// separate UnionLayout. Same no-removal-date reasoning as EditCommunityRedirect above.
+function UnionDetailRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/community/${id}`} replace />;
 }
 
 export default function App() {
@@ -41,6 +54,7 @@ export default function App() {
               <Route path="events" element={<EventsTab />} />
               <Route path="proposals" element={<ProposalsTab />} />
               <Route path="discussions" element={<DiscussionsTab />} />
+              <Route path="members" element={<MemberCommunitiesTab />} />
               <Route path="settings" element={<CommunitySettingsPage />} />
             </Route>
             <Route path="/delegates" element={<DelegatesPage />} />
@@ -54,7 +68,7 @@ export default function App() {
             <Route path="/manage-communities/:id/members" element={<CommunityMembersPage />} />
             <Route path="/proposals" element={<ProposalsPage />} />
             <Route path="/unions" element={<UnionsPage />} />
-            <Route path="/unions/:id" element={<UnionDetailPage />} />
+            <Route path="/unions/:id" element={<UnionDetailRedirect />} />
             <Route path="/events" element={<EventsPage />} />
           </Routes>
         </BrowserRouter>

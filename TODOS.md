@@ -1279,3 +1279,37 @@ the redesign's diff rather than conflating two unrelated changes.
 subgraph or RPC-batching implementation server-side — either way, needs its own scoping pass)
 **Priority:** P3
 **Depends on:** None
+
+## ZuGov / Unions-as-communities follow-ups (from 2026-08-28 `/plan-eng-review`)
+
+### Union governance/decision-making
+
+**What:** Attach a real decision adapter (MACI or zupoll) to union-type communities so their
+proposals can actually be voted on, not just created and discussed.
+
+**Why:** Explicitly deferred during the union-as-community merge (2026-08-28 `/plan-eng-review`)
+— the founder flagged it as "tricky" and wanted it scoped separately from the entity-merge work
+itself. After that merge, a union-type community has full Overview/Events/Proposals/Discussions/
+Settings, but a created proposal has no attached decision adapter — same starting state as any
+brand-new regular community (`NoDecisionAdapterAttachedError`'s existing behavior).
+
+**Pros:** Completes the "union is also a community" model for its last major piece — governance
+is the one capability regular communities have that unions still won't have after that merge
+lands.
+
+**Cons:** Real complexity, not a thin wiring job. Needs its own design pass on what "a union
+votes on something" even means before any adapter-attachment work starts: do only member
+communities' admins get a vote? One vote per member community, or weighted by something (member
+count, tier, stake)? MACI's existing per-wallet voter model doesn't map cleanly onto
+"communities are the voters," so this may need real changes to the decision-adapter layer
+itself, not just a config toggle.
+
+**Context:** The union-as-community merge locked an explicit guard (`attachGovernance()` rejects
+`type === 'union'` targets) precisely so this stays a deliberate, designed decision later rather
+than something that silently works today in a half-broken way.
+
+**Depends on:** The union-as-community merge (2026-08-28) landing first.
+
+**Effort:** L (needs its own product/architecture design pass before implementation sizing is
+even possible — the voter-model question above is the crux of it)
+**Priority:** P2

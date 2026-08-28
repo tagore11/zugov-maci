@@ -8,6 +8,7 @@ import * as communityApi from "@/src/services/communityApi";
 import type { Community } from "@/src/services/communityApi";
 import { useIsCommunityAdmin } from "@/src/hooks/useMembershipPermission";
 import { JoinSection } from "./JoinSection";
+import { UnionActions } from "../../components/UnionActions";
 
 export interface CommunityOutletContext {
   community: Community;
@@ -175,15 +176,24 @@ export default function CommunityLayout() {
             <InfoRow label="Creator" value={`${dc.creatorAddress.slice(0, 6)}…${dc.creatorAddress.slice(-4)}`} mono />
           </div>
 
-          <JoinSection
-            communityId={dc.id}
-            contractAddress={dc.contractAddress}
-            connected={!!address}
-            status={status}
-            rpcUrl={rpcUrl}
-            isCreator={isCreator}
-            allowJoin={dc.allowJoin}
-          />
+          {/* Union-as-community merge (2026-08-28 /plan-eng-review, D4) — a wallet never "joins"
+              a union directly (its "members" are OTHER COMMUNITIES via unionMemberships, not
+              wallets), so the persistent action slot swaps to UnionActions for type==='union'
+              instead of JoinSection. Same header ROLE (your relationship to this entity),
+              different content for the different relationship type. */}
+          {dc.type === "union" ? (
+            <UnionActions unionId={dc.id} connected={!!address} />
+          ) : (
+            <JoinSection
+              communityId={dc.id}
+              contractAddress={dc.contractAddress}
+              connected={!!address}
+              status={status}
+              rpcUrl={rpcUrl}
+              isCreator={isCreator}
+              allowJoin={dc.allowJoin}
+            />
+          )}
         </div>
 
         {/* Route-backed tab nav (community page redesign, /plan-design-review + /plan-eng-review,
@@ -199,6 +209,9 @@ export default function CommunityLayout() {
           <TabLink to={`/community/${dc.id}/events`}>Events</TabLink>
           <TabLink to={`/community/${dc.id}/proposals`}>Proposals</TabLink>
           <TabLink to={`/community/${dc.id}/discussions`}>Discussions</TabLink>
+          {/* Union-as-community merge (2026-08-28, D5) — only unions have "member communities"
+              (a regular community's members are wallets, tracked entirely differently). */}
+          {dc.type === "union" && <TabLink to={`/community/${dc.id}/members`}>Member Communities</TabLink>}
           {(isCreator || isCommunityAdmin) && (
             <NavLink
               to={`/community/${dc.id}/settings`}

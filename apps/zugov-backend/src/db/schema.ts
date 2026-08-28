@@ -53,45 +53,60 @@ export type Category = typeof categories.$inferSelect;
 // runs. Membership/role structure (membershipPolicy, tierChangesRequireVote, defaultTierId)
 // lives here too, not in the governance table — "who belongs and what they can do" is a
 // structural fact about a community, not a property of its voting mechanism.
-export const communities = pgTable("communities", {
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  description: text("description"),
-  logo: text("logo"),
-  creatorAddress: text("creator_address").notNull(),
-  // Lightpaper's "communities and sub-communities" building block: local chapters, event
-  // teams, and contributor circles as first-class components, not a separate hierarchy
-  // bolted on top. Self-referencing, nullable — top-level communities have no parent.
-  // ON DELETE SET NULL: deleting a parent orphans its children as top-level rather than
-  // cascading the delete (a parent community disappearing shouldn't take its sub-communities
-  // with it).
-  parentCommunityId: text("parent_community_id").references((): AnyPgColumn => communities.id, {
-    onDelete: "set null",
-  }),
-  membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
-  tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
-  defaultTierId: text("default_tier_id"),
-  // Creator-selected community type tag, shown on the community explorer's filter chips.
-  // References the categories table (not a hardcoded union) so adding a category never requires
-  // a code change. Nullable: communities created before this column existed have no value, and
-  // the explorer's "All" filter still includes them. Unrelated to governance — never conflate
-  // with governanceType/subgraphStatus (see the landing page's governance badge). ON DELETE SET
-  // NULL: there's no admin UI to delete a category today, but if one ever exists, a deleted
-  // category shouldn't take its communities' identity rows down with it.
-  category: text("category").references(() => categories.id, { onDelete: "set null" }),
-  // Independent of membershipPolicy: membershipPolicy governs HOW a join request is evaluated
-  // (open vs. requires approval); allowJoin governs WHETHER joining is possible at all. Lets a
-  // community register on-chain first, then open joining once ready, without touching
-  // membershipPolicy. New communities default closed (false); communities that existed before
-  // this column was added were migrated to true (see the migration that introduces this column —
-  // a single schema DEFAULT can't give new and existing rows different values, so createIdentity
-  // relies on this DEFAULT for new rows and the migration backfills existing rows explicitly).
-  allowJoin: boolean("allow_join").notNull().default(false),
-  cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
-  directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
-  createdAt: integer("created_at").notNull(),
-  registeredAt: integer("registered_at").notNull(),
-});
+export const communities = pgTable(
+  "communities",
+  {
+    id: text("id").primaryKey(),
+    displayName: text("display_name").notNull(),
+    description: text("description"),
+    logo: text("logo"),
+    creatorAddress: text("creator_address").notNull(),
+    // Union-as-community merge (2026-08-28 /plan-eng-review, D1/D2) — a union is a real
+    // communities row with type='union', not a separate table. Lets it own events/proposals/
+    // discussions through the exact same communityId-scoped machinery every regular community
+    // already uses, with zero new columns on those three tables. NOT NULL DEFAULT 'standard':
+    // every existing row is correctly 'standard', no backfill decision needed.
+    type: text("type").$type<"standard" | "union">().notNull().default("standard"),
+    // Lightpaper's "communities and sub-communities" building block: local chapters, event
+    // teams, and contributor circles as first-class components, not a separate hierarchy
+    // bolted on top. Self-referencing, nullable — top-level communities have no parent.
+    // ON DELETE SET NULL: deleting a parent orphans its children as top-level rather than
+    // cascading the delete (a parent community disappearing shouldn't take its sub-communities
+    // with it).
+    parentCommunityId: text("parent_community_id").references((): AnyPgColumn => communities.id, {
+      onDelete: "set null",
+    }),
+    membershipPolicy: text("membership_policy").$type<"open" | "approval">().notNull().default("open"),
+    tierChangesRequireVote: boolean("tier_changes_require_vote").notNull().default(false),
+    defaultTierId: text("default_tier_id"),
+    // Creator-selected community type tag, shown on the community explorer's filter chips.
+    // References the categories table (not a hardcoded union) so adding a category never requires
+    // a code change. Nullable: communities created before this column existed have no value, and
+    // the explorer's "All" filter still includes them. Unrelated to governance — never conflate
+    // with governanceType/subgraphStatus (see the landing page's governance badge). ON DELETE SET
+    // NULL: there's no admin UI to delete a category today, but if one ever exists, a deleted
+    // category shouldn't take its communities' identity rows down with it.
+    category: text("category").references(() => categories.id, { onDelete: "set null" }),
+    // Independent of membershipPolicy: membershipPolicy governs HOW a join request is evaluated
+    // (open vs. requires approval); allowJoin governs WHETHER joining is possible at all. Lets a
+    // community register on-chain first, then open joining once ready, without touching
+    // membershipPolicy. New communities default closed (false); communities that existed before
+    // this column was added were migrated to true (see the migration that introduces this column —
+    // a single schema DEFAULT can't give new and existing rows different values, so createIdentity
+    // relies on this DEFAULT for new rows and the migration backfills existing rows explicitly).
+    allowJoin: boolean("allow_join").notNull().default(false),
+    cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
+    directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
+    createdAt: integer("created_at").notNull(),
+    registeredAt: integer("registered_at").notNull(),
+  },
+  (table) => [
+    index("communities_type_idx").on(table.type),
+    // Bundled fix (2026-08-28 /plan-eng-review, D9) — pre-existing TODOS.md P3 gap, same table,
+    // same migration: category-filtered community-explorer queries had no supporting index.
+    index("communities_category_idx").on(table.category),
+  ],
+);
 
 export type Community = typeof communities.$inferSelect;
 export type NewCommunity = typeof communities.$inferInsert;
@@ -176,20 +191,17 @@ export type CommunityDecisionAdapter = typeof communityDecisionAdapters.$inferSe
 export type NewCommunityDecisionAdapter = typeof communityDecisionAdapters.$inferInsert;
 
 // Peer/federation relationship between fully independent communities — distinct from
-// parentCommunityId's hierarchy. A union has no governance of its own; it's a structural
-// grouping, same layer as communities themselves. id is always a server-generated UUID, never
-// an address — unions are never on-chain deployed objects.
-export const unions = pgTable("unions", {
-  id: text("id").primaryKey(),
-  displayName: text("display_name").notNull(),
-  description: text("description"),
-  logo: text("logo"),
-  creatorAddress: text("creator_address").notNull(),
-  createdAt: integer("created_at").notNull(),
-});
-
-export type Union = typeof unions.$inferSelect;
-export type NewUnion = typeof unions.$inferInsert;
+// parentCommunityId's hierarchy. A union has no governance of its own (enforced explicitly —
+// see communityService.attachGovernance); it's a structural grouping, same layer as communities
+// themselves.
+//
+// Union-as-community merge (2026-08-28 /plan-eng-review, D1) — a union is no longer its own
+// table. It's a communities row with type='union' (see communities.type above); unionId below
+// now references communities.id directly. The former standalone `unions` table (id, displayName,
+// description, logo, creatorAddress, createdAt — the exact subset of communities' own columns a
+// union ever needed) was dropped in the same migration that added communities.type, reusing each
+// union's existing UUID (both tables generated ids via crypto.randomUUID(), so no id remapping
+// was needed — see the migration file for the full data-move).
 
 // Many-to-many, consent-gated: invite() creates a "pending" row, respond() (by the INVITED
 // community's own admin, never the inviter) flips it to "active" or "declined". leave() (by the
@@ -198,9 +210,13 @@ export type NewUnion = typeof unions.$inferInsert;
 export const unionMemberships = pgTable(
   "union_memberships",
   {
+    // References a communities row with type='union' (enforced in application code, not a CHECK
+    // constraint — Drizzle/Postgres has no clean way to express "FK target must also satisfy a
+    // column predicate on the target table" without a trigger, and every write path into this
+    // table already goes through unionService, which only ever creates/targets type='union' rows).
     unionId: text("union_id")
       .notNull()
-      .references(() => unions.id, { onDelete: "cascade" }),
+      .references(() => communities.id, { onDelete: "cascade" }),
     communityId: text("community_id")
       .notNull()
       .references(() => communities.id, { onDelete: "cascade" }),

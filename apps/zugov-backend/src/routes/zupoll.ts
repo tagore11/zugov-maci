@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
 import * as membershipService from "../services/membershipService.js";
+import * as communityService from "../services/communityService.js";
 import { attach, listAvailable } from "../services/decisionAdapterService.js";
 import * as proposalService from "../services/proposalService.js";
 import {
@@ -93,6 +94,17 @@ zupollCommunityRouter.post("/:id/decision-adapters", requireAuth, async (c) => {
 
   if (!(await membershipService.isAuthorized(communityId, session.address!))) {
     return c.json({ error: "Not authorized" }, 403);
+  }
+
+  // Union-as-community merge (2026-08-28, D11) — found while wiring union content authorization
+  // into proposals: this route is a SEPARATE path to giving a community a decision adapter,
+  // independent of communityService.attachGovernance() (which is already guarded). Without this
+  // check a union could attach the zupoll adapter and fully bypass "governance is deferred for
+  // unions" — not just get a bare maciGovernanceConfigs row, but an actually-votable proposal
+  // pipeline.
+  const community = await communityService.get(communityId);
+  if (community?.type === "union") {
+    return c.json({ error: "Decision adapters cannot be attached to a union" }, 422);
   }
 
   await attach(communityId, "zupoll");

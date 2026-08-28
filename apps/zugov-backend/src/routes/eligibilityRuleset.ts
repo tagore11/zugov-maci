@@ -3,6 +3,7 @@ import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
 import { isAuthorized } from "../services/membershipService.js";
 import * as eligibilityService from "../services/eligibilityService.js";
+import * as communityService from "../services/communityService.js";
 import { rulesetBodySchema } from "../validators/eligibilitySchema.js";
 
 export const eligibilityRulesetRouter = new Hono();
@@ -29,6 +30,14 @@ eligibilityRulesetRouter.post("/:id/eligibility-ruleset", requireAuth, async (c)
   const session = await getSession(c);
   if (!(await isAuthorized(communityId, session.address!))) {
     return c.json({ error: "Not authorized to manage eligibility rules for this community" }, 403);
+  }
+
+  // Union-as-community merge (2026-08-28, D11) — a union has no eligibility rules of its own;
+  // guarded here alongside attachGovernance() and parentCommunityId, the other two entry points
+  // where a union could otherwise acquire something by omission rather than by design.
+  const community = await communityService.get(communityId);
+  if (community?.type === "union") {
+    return c.json({ error: "Eligibility rules cannot be configured for a union" }, 422);
   }
 
   await eligibilityService.replaceRuleset(communityId, parsed.data.rules);

@@ -26,8 +26,12 @@ vi.mock("@/src/hooks/useSiwe", () => ({
 }));
 
 const communityGetMock = vi.fn();
+// Union-as-community merge (2026-08-28) — UnionActions (rendered for type==='union') calls
+// getUnion(); mocked here so those tests don't hit a real fetch.
+const getUnionMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   get: (...args: unknown[]) => communityGetMock(...args),
+  getUnion: (...args: unknown[]) => getUnionMock(...args),
   subgraphQueryUrl: (id: string) => `http://mock-subgraph/${id}`,
 }));
 
@@ -47,6 +51,9 @@ const COMMUNITY = {
   description: "",
   logo: "",
   creatorAddress: CREATOR_ADDRESS,
+  // Union-as-community merge (2026-08-28, D2) — every existing test fixture is correctly
+  // 'standard'.
+  type: "standard" as const,
   parentCommunityId: null,
   membershipPolicy: "open" as const,
   category: null,
@@ -87,8 +94,15 @@ beforeEach(() => {
   communityGetMock.mockReset();
   getTiersMock.mockReset();
   getMembershipStatusMock.mockReset();
+  getUnionMock.mockReset();
   getTiersMock.mockResolvedValue([]);
   getMembershipStatusMock.mockResolvedValue({ status: "none" });
+  getUnionMock.mockResolvedValue({
+    union: COMMUNITY,
+    members: [],
+    myActiveCommunityIds: [],
+    myPendingCommunityIds: [],
+  });
 });
 
 function renderWithProviders(path = "/community/unknown-id") {
@@ -190,6 +204,46 @@ describe("CommunityLayout", () => {
       expect(tabNav.getByText("Events")).toBeInTheDocument();
       expect(tabNav.getByText("Proposals")).toBeInTheDocument();
       expect(tabNav.getByText("Discussions")).toBeInTheDocument();
+    });
+
+    // Union-as-community merge (2026-08-28 /plan-eng-review, D5) — only unions have "member
+    // communities" (a regular community's members are wallets, tracked entirely differently).
+    it("shows a Member Communities tab only for type==='union'", async () => {
+      communityGetMock.mockResolvedValue({ ...COMMUNITY, type: "union" });
+      renderWithProviders("/community/community-1");
+
+      await screen.findByText("Zukas Residency");
+      const tabNav = within(screen.getByRole("navigation", { name: "Community sections" }));
+      expect(tabNav.getByText("Member Communities")).toBeInTheDocument();
+    });
+
+    it("hides the Member Communities tab for a standard community", async () => {
+      communityGetMock.mockResolvedValue(COMMUNITY);
+      renderWithProviders("/community/community-1");
+
+      await screen.findByText("Zukas Residency");
+      const tabNav = within(screen.getByRole("navigation", { name: "Community sections" }));
+      expect(tabNav.queryByText("Member Communities")).not.toBeInTheDocument();
+    });
+  });
+
+  // Union-as-community merge (2026-08-28 /plan-eng-review, D4) — a wallet never "joins" a union
+  // directly, so the persistent header action slot must show UnionActions, not JoinSection.
+  describe("action slot branching by type (D4)", () => {
+    it("renders JoinSection's connect prompt for a standard community when disconnected", async () => {
+      communityGetMock.mockResolvedValue(COMMUNITY);
+      renderWithProviders("/community/community-1");
+
+      await screen.findByText("Zukas Residency");
+      expect(screen.getByText(/Connect your wallet to join this community/)).toBeInTheDocument();
+    });
+
+    it("does not render JoinSection's connect prompt for a union", async () => {
+      communityGetMock.mockResolvedValue({ ...COMMUNITY, type: "union" });
+      renderWithProviders("/community/community-1");
+
+      await screen.findByText("Zukas Residency");
+      expect(screen.queryByText(/Connect your wallet to join this community/)).not.toBeInTheDocument();
     });
   });
 });

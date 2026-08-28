@@ -36,8 +36,9 @@ export async function clearCommunities() {
   await testDb.delete(schema.joinRequests);
   await testDb.delete(schema.memberships);
   await testDb.delete(schema.membershipTiers);
+  // Union-as-community merge (2026-08-28) — unions are now communities rows (type='union'),
+  // cleared by the final communities delete below; only the join table needs its own clear.
   await testDb.delete(schema.unionMemberships);
-  await testDb.delete(schema.unions);
   await testDb.delete(schema.maciGovernanceConfigs);
   await testDb.delete(schema.communityDecisionAdapters);
   await testDb.delete(schema.communities);
