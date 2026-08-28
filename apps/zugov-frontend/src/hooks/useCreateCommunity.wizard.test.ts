@@ -44,6 +44,7 @@ function makeMockSiwe() {
     error: null,
     signIn: vi.fn(),
     signOut: vi.fn(),
+    connectionLost: false,
   };
 }
 
@@ -89,12 +90,14 @@ describe("RESIDENT_ORGANIZER_TIERS", () => {
       canVote: true,
       canCreateProposals: false,
       canManageMembership: false,
+      canCreateEvents: true,
     });
     expect(organizer).toEqual({
       label: "Organizer",
       canVote: true,
       canCreateProposals: true,
       canManageMembership: true,
+      canCreateEvents: true,
     });
   });
 });
@@ -137,8 +140,14 @@ describe("useCreateCommunity wizard flow", () => {
   it("submits creator-edited tiers, not the hardcoded preset, when the resident customizes them", async () => {
     const { result } = renderHook(() => useCreateCommunity(makeMockSiwe()));
     const customTiers = [
-      { label: "Neighbor", canVote: true, canCreateProposals: false, canManageMembership: false },
-      { label: "Steward", canVote: true, canCreateProposals: true, canManageMembership: true },
+      {
+        label: "Neighbor",
+        canVote: true,
+        canCreateProposals: false,
+        canManageMembership: false,
+        canCreateEvents: true,
+      },
+      { label: "Steward", canVote: true, canCreateProposals: true, canManageMembership: true, canCreateEvents: true },
     ];
 
     act(() => {

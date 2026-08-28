@@ -44,7 +44,12 @@ export interface CreateDiscussionData {
 }
 
 export async function create(data: CreateDiscussionData): Promise<ViewableDiscussion> {
-  if (!(await membershipService.hasTierPermission(data.communityId, data.authorAddress, "canPostDiscussions"))) {
+  // Union-as-community merge (2026-08-28, D3/D10) — a union has zero membership tiers, so
+  // hasTierPermission alone would lock out every active member community's admin.
+  // canCreateCommunityContent branches to isAuthorizedForUnionContent for a union target.
+  if (
+    !(await membershipService.canCreateCommunityContent(data.communityId, data.authorAddress, "canPostDiscussions"))
+  ) {
     throw new NotAuthorizedToPostError();
   }
 

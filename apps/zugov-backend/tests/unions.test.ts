@@ -1005,3 +1005,242 @@ describe("GET /api/communities/:id/unions", () => {
     expect(byId[pendingUnion.id]).toBeUndefined();
   });
 });
+
+// Union-as-community merge (2026-08-28 /plan-eng-review, D1-D3/D10) — a union is now a real
+// communities row with type='union', reusing the exact events/discussions routes every regular
+// community uses. Content authority is derived from isAuthorized() on any ACTIVE member
+// community (membershipService.isAuthorizedForUnionContent), matching the union's pre-existing
+// invite/leave authority model (any active member's admin, not creator-only) — the outside-voice
+// pass caught that "creator-only" would have been a real regression from that model.
+describe("union content authority — events/discussions on a union-type community", () => {
+  async function createUnionWithPeerMember() {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Founding Co");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Content Authority Union");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const peerCookie = await authCookieFor(PEER_ADMIN);
+    const peerCommunity = await registerCommunity(peerCookie, [MANAGE_TIER], "Peer Co");
+    await app.request(`/api/unions/${union.id}/invite`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ communityId: peerCommunity, actingCommunityId: founderCommunity }),
+    });
+    await app.request(`/api/unions/${union.id}/respond`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ communityId: peerCommunity, accept: true }),
+    });
+
+    const outsiderCookie = await authCookieFor(OUTSIDER);
+    await registerCommunity(outsiderCookie, [MANAGE_TIER], "Outsider Co");
+
+    return { union, founderCookie, peerCookie, outsiderCookie };
+  }
+
+  const NOW = Math.floor(Date.now() / 1000);
+  const DAY = 86400;
+
+  it("union row is type='union' with allowJoin false, per D3/D13", async () => {
+    const { union, founderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}`, { headers: { Cookie: founderCookie } });
+    const { community } = (await res.json()) as { community: { type: string; allowJoin: boolean } };
+    expect(community.type).toBe("union");
+    expect(community.allowJoin).toBe(false);
+  });
+
+  it("the founding community's admin can create an event for the union", async () => {
+    const { union, founderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({
+        title: "Union Kickoff",
+        locationText: "Somewhere",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  // The core of the D3 fix — proves this is NOT creator-only.
+  it("a peer active member community's admin (not the founder) can also create an event for the union", async () => {
+    const { union, peerCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({
+        title: "Peer-organized Session",
+        locationText: "Somewhere Else",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+      }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("a wallet with no active membership relationship to the union cannot create an event for it", async () => {
+    const { union, outsiderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: outsiderCookie },
+      body: JSON.stringify({
+        title: "Should Be Rejected",
+        locationText: "Nowhere",
+        startAt: NOW + DAY,
+        endAt: NOW + DAY + 3600,
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("the founding community's admin can post a discussion for the union", async () => {
+    const { union, founderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/discussions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ title: "Welcome", body: "First union announcement" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("a peer active member community's admin can also post a discussion for the union", async () => {
+    const { union, peerCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/discussions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: peerCookie },
+      body: JSON.stringify({ title: "Peer note", body: "From a peer member" }),
+    });
+    expect(res.status).toBe(201);
+  });
+
+  it("a wallet with no active membership relationship cannot post a discussion for the union", async () => {
+    const { union, outsiderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/discussions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: outsiderCookie },
+      body: JSON.stringify({ title: "Nope", body: "Should be rejected" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  // proposalService.createProposal() already checks isAttached(communityId, decisionAdapterType)
+  // before any tier-permission check, and a union can never have a decision adapter attached
+  // (see communityService.attachGovernance and routes/zupoll.ts's decision-adapters route, both
+  // guarded below) — so proposal creation is naturally, correctly blocked upstream, not by a
+  // tier-permission gap. Confirmed here rather than assumed.
+  it("proposal creation on a union fails with NoDecisionAdapterAttached, not a tier-permission error", async () => {
+    const { union, founderCookie } = await createUnionWithPeerMember();
+    const res = await app.request(`/api/communities/${union.id}/proposals`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({
+        title: "Union Proposal",
+        description: "Should be rejected",
+        privacy: "privacy_preserving",
+        executionLocation: "onchain",
+        votingProtocolType: "simple",
+        eligibleTierIds: ["placeholder"],
+      }),
+    });
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toMatch(/decision adapter/i);
+  });
+});
+
+// Union-as-community merge (2026-08-28, D11) — a union has no governance, category, or hierarchy
+// position of its own; guarded at every entry point that could otherwise let one acquire any of
+// those by omission.
+describe("union invariant guards (D11)", () => {
+  it("rejects attaching MACI governance to a union", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Guard Test Founder");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Guarded Union");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const res = await app.request(`/api/communities/${union.id}/governance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({
+        chainId: 534351,
+        contractAddress: "0x1234567890123456789012345678901234567890",
+        allowedPolicies: [1],
+        supportedModes: [1],
+        signUpPolicyType: "FreeForAll",
+        signUpPolicyAddress: null,
+        stateTreeDepth: 10,
+        maciDeploymentBlock: 1,
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects attaching the zupoll decision adapter to a union", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Guard Test Founder Two");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Guarded Union Two");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const res = await app.request(`/api/communities/${union.id}/decision-adapters`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ adapterType: "zupoll" }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects configuring eligibility rules for a union", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Guard Test Founder Three");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Guarded Union Three");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const res = await app.request(`/api/communities/${union.id}/eligibility-ruleset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({ rules: [] }),
+    });
+    expect(res.status).toBe(422);
+  });
+
+  it("rejects creating a community with a union as its parent", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Guard Test Founder Four");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Guarded Union Four");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const res = await app.request("/api/communities", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Cookie: founderCookie },
+      body: JSON.stringify({
+        displayName: "Should Be Rejected",
+        source: "wizard",
+        membershipPolicy: "open",
+        tierChangesRequireVote: false,
+        parentCommunityId: union.id,
+        tiers: [MANAGE_TIER],
+        defaultTierLabel: MANAGE_TIER.label,
+      }),
+    });
+    expect(res.status).toBe(422);
+  });
+});
+
+// Union-as-community merge (2026-08-28, D12) — fails CLOSED: unions must not leak into the
+// generic community listing (the homepage explorer, manage-communities, manage-profile) by
+// default.
+describe("union leakage prevention (D12)", () => {
+  it("GET /api/communities (generic list, no type override) excludes union rows", async () => {
+    const founderCookie = await authCookieFor(FOUNDER);
+    const founderCommunity = await registerCommunity(founderCookie, [MANAGE_TIER], "Leakage Test Founder");
+    const unionRes = await createUnion(founderCookie, founderCommunity, "Should Not Leak Union");
+    const { union } = (await unionRes.json()) as { union: { id: string } };
+
+    const res = await app.request("/api/communities?limit=50");
+    const { communities } = (await res.json()) as { communities: { id: string }[] };
+    expect(communities.some((c) => c.id === union.id)).toBe(false);
+    expect(communities.some((c) => c.id === founderCommunity)).toBe(true);
+  });
+});

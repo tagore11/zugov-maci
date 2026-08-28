@@ -3,7 +3,7 @@ import { z } from "zod";
 import * as eventService from "../services/eventService.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 import { getSession } from "../middleware/session.js";
-import { isAuthorized, hasTierPermission } from "../services/membershipService.js";
+import { isAuthorized, canCreateCommunityContent } from "../services/membershipService.js";
 import { EVENT_KIND } from "../validators/eventSchema.js";
 
 // A datetime-local input's year segment has no format constraint — a stray keystroke (or a typo
@@ -117,7 +117,12 @@ eventsRouter.post("/:id/events", requireAuth, async (c) => {
   }
 
   const session = await getSession(c);
-  if (!(await hasTierPermission(communityId, session.address!, "canCreateEvents"))) {
+  // Union-as-community merge (2026-08-28, D3/D10) — a union has zero membership tiers (no one is
+  // ever enrolled into its placeholder tier), so hasTierPermission alone would lock out every
+  // active member community's admin. canCreateCommunityContent branches to
+  // isAuthorizedForUnionContent for a union target, matching the union's real, already-shipped
+  // authority model (any active member's admin, not creator-only).
+  if (!(await canCreateCommunityContent(communityId, session.address!, "canCreateEvents"))) {
     return c.json({ error: "Not authorized to create events for this community" }, 403);
   }
 

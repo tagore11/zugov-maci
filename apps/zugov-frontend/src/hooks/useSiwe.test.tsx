@@ -205,6 +205,30 @@ describe("useSiwe", () => {
     );
   });
 
+  // Bug fix (2026-08-28) — a mid-session permission drop (e.g. switching MetaMask to an account
+  // this site was never connected with) makes wagmi report address as undefined, not the new
+  // address directly, until the site re-requests permission. connectionLost distinguishes this
+  // from a plain first-visit disconnected state so the UI can show a clearer message.
+  it("marks connectionLost when a previously-connected wallet disconnects, and clears it once reconnected", async () => {
+    mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
+    const { result, rerender } = renderUseSiwe();
+    expect(result.current.connectionLost).toBe(false);
+
+    mockUseAccount.mockReturnValue({ address: EMBEDDED_WALLET_ADDRESS, chainId: 11155111 });
+    mockSignMessageAsync.mockRejectedValue(new Error("user rejected"));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => ({ nonce: "n" }) }));
+    rerender();
+    await waitFor(() => expect(result.current.connectionLost).toBe(false));
+
+    mockUseAccount.mockReturnValue({ address: undefined, chainId: undefined });
+    rerender();
+    await waitFor(() => expect(result.current.connectionLost).toBe(true));
+
+    mockUseAccount.mockReturnValue({ address: EXTERNAL_WALLET_ADDRESS, chainId: 11155111 });
+    rerender();
+    await waitFor(() => expect(result.current.connectionLost).toBe(false));
+  });
+
   // Session-lifecycle fix (2026-08-22) — the more severe half of the same bug: switching to a
   // DIFFERENT connected address (MetaMask account switch) left the stale session authenticated
   // as the OLD address. Every write kept silently succeeding against the old address's backend

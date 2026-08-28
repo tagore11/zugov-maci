@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Routes, Route, Outlet } from "react-router-dom";
-import { OverviewTab, EventsTab, ProposalsTab, DiscussionsTab } from "./CommunityTabRoutes";
+import { OverviewTab, EventsTab, ProposalsTab, DiscussionsTab, MemberCommunitiesTab } from "./CommunityTabRoutes";
 import type { CommunityOutletContext } from "./CommunityLayout";
 
 // Thin wrappers around already-tested components — mocked out entirely so these tests verify
@@ -25,10 +25,13 @@ vi.mock("./DiscussionsSection", () => ({
 
 const listChildrenMock = vi.fn();
 const listUnionsForCommunityMock = vi.fn();
+// Union-as-community merge (2026-08-28) — MemberCommunitiesTab calls getUnion().
+const getUnionMock = vi.fn();
 vi.mock("@/src/services/communityApi", () => ({
   subgraphQueryUrl: (id: string) => `http://mock-subgraph/${id}`,
   listChildren: (...args: unknown[]) => listChildrenMock(...args),
   listUnionsForCommunity: (...args: unknown[]) => listUnionsForCommunityMock(...args),
+  getUnion: (...args: unknown[]) => getUnionMock(...args),
 }));
 
 const fetchMembersMock = vi.fn();
@@ -109,6 +112,7 @@ beforeEach(() => {
   listUnionsForCommunityMock.mockReset();
   fetchMembersMock.mockReset();
   fetchPollsMock.mockReset();
+  getUnionMock.mockReset();
   listChildrenMock.mockResolvedValue([]);
   listUnionsForCommunityMock.mockResolvedValue([]);
 });
@@ -204,5 +208,70 @@ describe("DiscussionsTab", () => {
       walletAddress: "0xabc",
       isCreator: true,
     });
+  });
+});
+
+// Union-as-community merge (2026-08-28 /plan-eng-review D5 + /plan-design-review D15) —
+// redistributed from UnionDetailPage's old member-communities grid + pending-invites section.
+describe("MemberCommunitiesTab", () => {
+  const ACTIVE_MEMBER = { communityId: "community-2", displayName: "Peer Co", logo: null, status: "active" as const };
+  const PENDING_MEMBER = {
+    communityId: "community-3",
+    displayName: "Invited Co",
+    logo: null,
+    status: "pending" as const,
+  };
+
+  it("shows active member communities as links", async () => {
+    getUnionMock.mockResolvedValue({
+      union: BASE_COMMUNITY,
+      members: [ACTIVE_MEMBER],
+      myActiveCommunityIds: [],
+      myPendingCommunityIds: [],
+    });
+    renderTab(<MemberCommunitiesTab />, baseContext());
+
+    expect(await screen.findByText("Peer Co")).toBeInTheDocument();
+    expect(screen.getByText(/Member communities/)).toBeInTheDocument();
+  });
+
+  it("shows a Pending invites section when there are pending members", async () => {
+    getUnionMock.mockResolvedValue({
+      union: BASE_COMMUNITY,
+      members: [ACTIVE_MEMBER, PENDING_MEMBER],
+      myActiveCommunityIds: [],
+      myPendingCommunityIds: [],
+    });
+    renderTab(<MemberCommunitiesTab />, baseContext());
+
+    expect(await screen.findByText("Pending invites")).toBeInTheDocument();
+    expect(screen.getByText("Invited Co")).toBeInTheDocument();
+  });
+
+  // Design review D15 — matches UnionsSection.tsx's own established zero-state convention: an
+  // empty "Pending invites" heading with nothing under it is worse than no heading at all.
+  it("omits the Pending invites section entirely when there are zero pending members", async () => {
+    getUnionMock.mockResolvedValue({
+      union: BASE_COMMUNITY,
+      members: [ACTIVE_MEMBER],
+      myActiveCommunityIds: [],
+      myPendingCommunityIds: [],
+    });
+    renderTab(<MemberCommunitiesTab />, baseContext());
+
+    await screen.findByText("Peer Co");
+    expect(screen.queryByText("Pending invites")).not.toBeInTheDocument();
+  });
+
+  it("shows the empty state when there are no active member communities", async () => {
+    getUnionMock.mockResolvedValue({
+      union: BASE_COMMUNITY,
+      members: [],
+      myActiveCommunityIds: [],
+      myPendingCommunityIds: [],
+    });
+    renderTab(<MemberCommunitiesTab />, baseContext());
+
+    expect(await screen.findByText("No active member communities.")).toBeInTheDocument();
   });
 });

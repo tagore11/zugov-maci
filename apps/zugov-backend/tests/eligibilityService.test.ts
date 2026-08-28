@@ -68,16 +68,10 @@ async function insertMembership(communityId: string, walletAddress: string, tier
   });
 }
 
-async function insertUnion(overrides: Partial<typeof schema.unions.$inferInsert> = {}) {
-  const id = randomUUID();
-  await testDb.insert(schema.unions).values({
-    id,
-    displayName: "Test Union",
-    creatorAddress: "0x0000000000000000000000000000000000dead",
-    createdAt: Math.floor(Date.now() / 1000),
-    ...overrides,
-  });
-  return id;
+// Union-as-community merge (2026-08-28) — a union is now a communities row with type='union';
+// this helper is a thin wrapper over insertCommunity() rather than its own insert.
+async function insertUnion(overrides: Partial<typeof schema.communities.$inferInsert> = {}) {
+  return insertCommunity({ displayName: "Test Union", type: "union", ...overrides });
 }
 
 async function addUnionMembership(

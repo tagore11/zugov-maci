@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "wagmi";
 import type { UseCreateCommunityResult } from "@/src/hooks/useCreateCommunity";
 import * as communityApi from "@/src/services/communityApi";
 import type { CommunityCategory } from "@/src/services/communityApi";
+import { CommunitySearchInput } from "../CommunitySearchInput";
 
 interface Props {
   initialName?: string;
@@ -45,80 +46,6 @@ export function StepCommunityInfo({
     queryFn: communityApi.listCategories,
     staleTime: Infinity,
   });
-
-  // Searchable parent-community combobox (community creation wizard fix, 2026-08-21). Search
-  // runs server-side (communityApi.list's new `search` param) rather than filtering client-side
-  // over one paginated fetch — a client-side-only filter would silently exclude any parent past
-  // the first page, which is exactly the bug this replaces (/plan-eng-review outside-voice
-  // finding). Deliberately no chainId filter passed to list(): chainId lives on
-  // maciGovernanceConfigs, so filtering by it silently excludes every ungoverned community from
-  // ever being selectable as a parent (governance-restructure Phase 1 review, confirmed bug).
-  //
-  // formalize-communities epic, Child E (/plan-eng-review 2026-08-25, D2) — the list is filtered
-  // to communities the connected wallet is authorized on (authorizedFor). Fails CLOSED, not open:
-  // while `address` is still resolving (wallet connecting on page load), the search effect below
-  // doesn't fire at all rather than falling back to the full public list — the naive
-  // `authorizedFor: address ?? undefined` would silently widen the list back open at exactly the
-  // moment it's most likely to matter.
-  const [parentQuery, setParentQuery] = useState("");
-  const [parentResults, setParentResults] = useState<communityApi.Community[]>([]);
-  const [parentDropdownOpen, setParentDropdownOpen] = useState(false);
-  const [parentSearchLoading, setParentSearchLoading] = useState(false);
-
-  // Resolve the already-selected parent's display name once, on mount — relevant when this step
-  // re-renders with a parent already chosen (e.g. the user hit Back after picking one), since the
-  // combobox's text input needs a name to show, not just the id.
-  useEffect(() => {
-    if (!initialParentCommunityId) return;
-    let cancelled = false;
-    communityApi
-      .get(initialParentCommunityId)
-      .then((community) => {
-        if (!cancelled && community) setParentQuery(community.displayName);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [initialParentCommunityId]);
-
-  useEffect(() => {
-    if (!parentDropdownOpen) return;
-    if (!address) {
-      setParentResults([]);
-      return;
-    }
-    let cancelled = false;
-    setParentSearchLoading(true);
-    const timer = setTimeout(() => {
-      communityApi
-        .list(1, undefined, undefined, parentQuery, address)
-        .then(({ communities }) => {
-          if (!cancelled) setParentResults(communities);
-        })
-        .catch(() => {
-          if (!cancelled) setParentResults([]);
-        })
-        .finally(() => {
-          if (!cancelled) setParentSearchLoading(false);
-        });
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [parentQuery, parentDropdownOpen, address]);
-
-  function handleSelectParent(parent: communityApi.Community | null) {
-    if (parent) {
-      setParentCommunityId(parent.id);
-      setParentQuery(parent.displayName);
-    } else {
-      setParentCommunityId("");
-      setParentQuery("");
-    }
-    setParentDropdownOpen(false);
-  }
 
   const nameError = touched && name.trim().length === 0 ? "Community name is required" : undefined;
   const canProceed = name.trim().length > 0 && name.trim().length <= 80;
@@ -201,58 +128,19 @@ export function StepCommunityInfo({
         <label htmlFor="parent-community-search" className="block text-sm font-medium text-gray-300 mb-1">
           Parent community <span className="text-gray-500">(optional)</span>
         </label>
-        <div className="relative">
-          <input
-            id="parent-community-search"
-            type="text"
-            value={parentQuery}
-            onChange={(e) => {
-              setParentQuery(e.target.value);
-              setParentCommunityId("");
-              setParentDropdownOpen(true);
-            }}
-            onFocus={() => setParentDropdownOpen(true)}
-            onBlur={() => {
-              // Delayed so a click on a dropdown option below registers before it unmounts.
-              setTimeout(() => setParentDropdownOpen(false), 150);
-            }}
-            placeholder="Search communities…"
-            autoComplete="off"
-            className="w-full px-3 py-2 rounded-lg bg-gray-800 border border-gray-600 text-foreground
-              placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-accent text-sm"
-          />
-          {parentDropdownOpen && (
-            <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto rounded-lg border border-gray-600 bg-gray-800 shadow-lg">
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleSelectParent(null)}
-                className="w-full text-left px-3 py-2 text-sm text-gray-300 hover:bg-gray-700"
-              >
-                None — top-level community
-              </button>
-              {parentSearchLoading && <p className="px-3 py-2 text-xs text-gray-500">Searching…</p>}
-              {!parentSearchLoading && parentResults.length === 0 && (
-                <p className="px-3 py-2 text-xs text-gray-500">No matching communities</p>
-              )}
-              {!parentSearchLoading &&
-                parentResults.map((parent) => (
-                  <button
-                    key={parent.id}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelectParent(parent)}
-                    className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-gray-700"
-                  >
-                    {parent.displayName}
-                  </button>
-                ))}
-            </div>
-          )}
-        </div>
-        <p className="mt-1 text-xs text-gray-500">
-          Nest this as a local chapter, event team, or contributor circle under an existing community.
-        </p>
+        {/* Bug fix (2026-08-28) — extracted into a shared CommunitySearchInput so InviteToUnionForm
+            (UnionMembershipSection.tsx) can reuse this exact search-by-name UX instead of a raw
+            community-ID text field. Fails CLOSED per D2 above: searchEnabled={!!address} keeps
+            the wizard's original "no results while wallet resolving" guard intact. */}
+        <CommunitySearchInput
+          id="parent-community-search"
+          selectedId={parentCommunityId}
+          onSelect={(parent) => setParentCommunityId(parent?.id ?? "")}
+          authorizedFor={address}
+          searchEnabled={!!address}
+          noneOption={{ label: "None — top-level community" }}
+          helpText="Nest this as a local chapter, event team, or contributor circle under an existing community."
+        />
       </div>
 
       <div className="flex gap-3 pt-2">

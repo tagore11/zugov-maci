@@ -13,6 +13,7 @@ import {
   type Category,
 } from "../db/schema.js";
 import type { IdentityBody, GovernanceBody, PollDeployConfigBody } from "../validators/communitySchema.js";
+import type { TierBody } from "../validators/membershipSchema.js";
 import { getRpcUrl } from "./chainRpc.js";
 import { createTiersForCommunity, listTiers, isAuthorized } from "./membershipService.js";
 import { deployCommunitySubgraph, subgraphQueryUrlFor } from "./subgraphDeployService.js";
@@ -159,6 +160,16 @@ export async function list(
   creatorAddress?: string,
   search?: string,
   authorizedFor?: string,
+  // Union-as-community merge (2026-08-28, D12) — defaults to 'standard' (fails CLOSED), not
+  // every type, when the caller doesn't specify. Confirmed 4 real call sites (app/page.tsx's
+  // community explorer, manage-communities/page.tsx, manage-profile/page.tsx,
+  // AwaitingActions.tsx) had zero type filtering before this — once union rows existed in this
+  // table, they'd have appeared in the homepage directory and "my communities" views
+  // indistinguishably from real communities. This default also means the union-invite search
+  // combobox (which never passes this param) naturally can't surface unions as invitable
+  // "member communities" of another union — an emergent, correct-by-default behavior, not a
+  // separate guard.
+  type: "standard" | "union" = "standard",
 ): Promise<{ communities: CommunityRecord[]; total: number; hasMore: boolean }> {
   const offset = (page - 1) * limit;
 
@@ -174,6 +185,7 @@ export async function list(
   // authorizedFor on top of it; a wallet whose stored casing differed from the queried casing
   // would otherwise silently vanish from its own creator-match results.
   const conditions = [
+    eq(communities.type, type),
     chainId !== undefined ? eq(maciGovernanceConfigs.chainId, chainId) : undefined,
     creatorAddress !== undefined ? ilike(communities.creatorAddress, creatorAddress) : undefined,
     search !== undefined && search.trim() !== "" ? ilike(communities.displayName, `%${search.trim()}%`) : undefined,
@@ -362,6 +374,22 @@ export class CategoryNotFoundError extends Error {
   }
 }
 
+// Union-as-community merge (2026-08-28, D11) — a union has no governance, category, or
+// hierarchy position of its own; guarded at every entry point that could otherwise let one
+// acquire any of those by omission (attachGovernance, the eligibility-ruleset write route, and
+// here — a union set as, or assigned, a parentCommunityId).
+export class ParentIsUnionError extends Error {
+  constructor(id: string) {
+    super(`Community "${id}" is a union and cannot be used as a parent community`);
+  }
+}
+
+export class CommunityIsUnionError extends Error {
+  constructor(id: string) {
+    super(`Community "${id}" is a union — governance cannot be attached to it`);
+  }
+}
+
 // Reference data for the community explorer's filter chips and the creation wizard's category
 // picker — a real table, not a hardcoded list, so adding a category is a direct DB insert, not a
 // code deploy (formalize-communities epic, Child C1, /plan-eng-review 2026-08-24).
@@ -387,15 +415,108 @@ async function assertCategoryExists(categoryId: string): Promise<void> {
  * before: a duplicate-key insert on a client-supplied id returns the existing record rather
  * than erroring).
  */
+export interface CreateCommunityRowData {
+  id?: string;
+  displayName: string;
+  description?: string;
+  logo?: string;
+  creatorAddress: string;
+  // Union-as-community merge (2026-08-28 /plan-eng-review, D1/D2) — 'standard' for every
+  // existing caller (createIdentity below); unionService.create() is the only 'union' caller.
+  type?: "standard" | "union";
+  parentCommunityId?: string | null;
+  membershipPolicy?: "open" | "approval";
+  category?: string | null;
+  tierChangesRequireVote?: boolean;
+  tiers: TierBody[];
+  defaultTierLabel: string;
+  // D3 (final)/D6 — a union's content authority is derived from isAuthorized() on any active
+  // member community (membershipService.isAuthorizedForUnionContent), never from a tier on the
+  // union's own row, so enrolling its creator into a tier here would be dead data nothing ever
+  // checks. Still creates exactly one placeholder tier regardless (below) — every community row
+  // needs a non-null defaultTierId or the generic join route's `submitJoinRequest` 500s instead
+  // of cleanly rejecting via allowJoin (verified: membershipService.ts's defaultTierId check
+  // runs before the allowJoin check) — unionService.create() passes allowJoin: false separately,
+  // so the tier stays practically unreachable either way.
+  skipCreatorEnrollment?: boolean;
+}
+
+/**
+ * Shared by createIdentity() (regular communities) and unionService.create() (D6). Atomic:
+ * the communities-row insert, tier creation, defaultTierId backfill, and creator enrollment all
+ * commit or roll back together — previously createIdentity() ran these as separate, unwrapped
+ * calls, so a failure partway through (e.g. the tier insert failing after the communities row
+ * already committed) could silently leave a real community with no tiers and no default tier at
+ * all. Caught and fixed here as part of the union merge (eng-review outside-voice pass,
+ * 2026-08-28), not scoped to unions specifically — the bug always applied to every community.
+ */
+export async function createCommunityRow(
+  data: CreateCommunityRowData,
+): Promise<{ community: Community; defaultTierId: string; creatorTierId: string }> {
+  const now = Math.floor(Date.now() / 1000);
+  const id = data.id ?? randomUUID();
+
+  return db.transaction(async (tx) => {
+    const [community] = await tx
+      .insert(communities)
+      .values({
+        id,
+        displayName: data.displayName,
+        description: data.description ?? null,
+        logo: data.logo ?? null,
+        creatorAddress: data.creatorAddress,
+        type: data.type ?? "standard",
+        parentCommunityId: data.parentCommunityId ?? null,
+        membershipPolicy: data.membershipPolicy ?? "open",
+        category: data.category ?? null,
+        tierChangesRequireVote: data.tierChangesRequireVote ?? false,
+        createdAt: now,
+        registeredAt: now,
+      })
+      .returning();
+
+    const { defaultTierId, creatorTierId } = await createTiersForCommunity(
+      community!.id,
+      data.tiers,
+      data.defaultTierLabel,
+      tx,
+    );
+
+    const [withDefaultTier] = await tx
+      .update(communities)
+      .set({ defaultTierId })
+      .where(eq(communities.id, community!.id))
+      .returning();
+
+    // The creator otherwise has no membership row at all, so tier-scoped permission checks
+    // (e.g. proposalService's canCreateProposals) would reject them on their own community.
+    // Enroll them at the full-permission ("Admin"-equivalent) tier, not the default tier meant
+    // for new joiners — those are frequently different (e.g. the wizard's own default is
+    // "Regular", which lacks canCreateProposals), and a creator locked out of their own
+    // community's governance actions is a real, previously-reproducible bug.
+    if (!data.skipCreatorEnrollment) {
+      await tx.insert(memberships).values({
+        walletAddress: data.creatorAddress,
+        communityId: community!.id,
+        tierId: creatorTierId,
+        joinedAt: now,
+      });
+    }
+
+    return { community: withDefaultTier!, defaultTierId, creatorTierId };
+  });
+}
+
 export async function createIdentity(
   data: IdentityBody & { id?: string; creatorAddress: string },
 ): Promise<{ community: CommunityRecord; created: boolean }> {
-  const now = Math.floor(Date.now() / 1000);
-
   if (data.parentCommunityId !== undefined) {
     if (data.parentCommunityId === data.id) throw new SelfParentError();
     const parent = await get(data.parentCommunityId);
     if (!parent) throw new ParentCommunityNotFoundError(data.parentCommunityId);
+    // Union-as-community merge (2026-08-28, D11) — a union has no governance, category, or
+    // hierarchy position of its own; nothing about being a "parent" makes sense for it.
+    if (parent.type === "union") throw new ParentIsUnionError(data.parentCommunityId);
     if (!(await isAuthorized(data.parentCommunityId, data.creatorAddress))) {
       throw new ParentNotAuthorizedError();
     }
@@ -403,51 +524,21 @@ export async function createIdentity(
 
   if (data.category !== undefined) await assertCategoryExists(data.category);
 
-  const id = data.id ?? randomUUID();
-  const newRecord = {
-    id,
-    displayName: data.displayName,
-    description: data.description ?? null,
-    logo: data.logo ?? null,
-    creatorAddress: data.creatorAddress,
-    parentCommunityId: data.parentCommunityId ?? null,
-    membershipPolicy: data.membershipPolicy,
-    category: data.category ?? null,
-    tierChangesRequireVote: data.tierChangesRequireVote,
-    createdAt: now,
-    registeredAt: now,
-  };
-
   try {
-    const inserted = await db.insert(communities).values(newRecord).returning();
-    const community = inserted[0]!;
-
-    const { defaultTierId, creatorTierId } = await createTiersForCommunity(
-      community.id,
-      data.tiers,
-      data.defaultTierLabel,
-    );
-    const [withDefaultTier] = await db
-      .update(communities)
-      .set({ defaultTierId })
-      .where(eq(communities.id, community.id))
-      .returning();
-
-    // The creator otherwise has no membership row at all, so tier-scoped permission checks
-    // (e.g. proposalService's canCreateProposals, or union invite's
-    // canManageMembership gate) would reject them on their own community. Enroll them at the
-    // full-permission ("Admin"-equivalent) tier, not the default tier meant for new joiners —
-    // those are frequently different (e.g. the wizard's own default is "Regular", which lacks
-    // canCreateProposals), and a creator locked out of their own community's governance
-    // actions is a real, previously-reproducible bug.
-    await db.insert(memberships).values({
-      walletAddress: data.creatorAddress,
-      communityId: community.id,
-      tierId: creatorTierId,
-      joinedAt: now,
+    const { community } = await createCommunityRow({
+      id: data.id,
+      displayName: data.displayName,
+      description: data.description,
+      logo: data.logo,
+      creatorAddress: data.creatorAddress,
+      parentCommunityId: data.parentCommunityId,
+      membershipPolicy: data.membershipPolicy,
+      category: data.category,
+      tierChangesRequireVote: data.tierChangesRequireVote,
+      tiers: data.tiers,
+      defaultTierLabel: data.defaultTierLabel,
     });
-
-    return { community: parseRecord(withDefaultTier!, null), created: true };
+    return { community: parseRecord(community, null), created: true };
   } catch (err: unknown) {
     const isUniqueViolation = err instanceof Error && err.message.includes("duplicate key");
     if (isUniqueViolation && data.id !== undefined) {
@@ -469,6 +560,10 @@ export async function createIdentity(
 export async function attachGovernance(id: string, data: GovernanceBody): Promise<CommunityRecord> {
   const identityRows = await db.select().from(communities).where(eq(communities.id, id)).limit(1);
   if (!identityRows[0]) throw new CommunityNotFoundError(id);
+  // D11 guard — "governance is deferred for unions" must be an enforced invariant, not just a
+  // UI convention (verified during eng review: this function previously took a bare id with
+  // zero type checking, so nothing stopped a union from getting a real MACI contract attached).
+  if (identityRows[0].type === "union") throw new CommunityIsUnionError(id);
 
   // Checksum-normalize before storing (and before the unique-constraint check below runs) — a
   // bare unique index on the raw string wouldn't catch two submissions of the same contract in

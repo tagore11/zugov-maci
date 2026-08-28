@@ -58,6 +58,7 @@ const mockSiwe = {
   error: null as string | null,
   signIn: vi.fn(),
   signOut: vi.fn(),
+  connectionLost: false,
 };
 vi.mock("@/src/hooks/useSiwe", () => ({
   useSiwe: () => mockSiwe,
@@ -85,6 +86,7 @@ beforeEach(() => {
   mockSiwe.isAuthenticated = true;
   mockSiwe.isSigning = false;
   mockSiwe.error = null;
+  mockSiwe.connectionLost = false;
   mockSiwe.signIn.mockReset();
   mockSiwe.signOut.mockReset();
 });
@@ -106,6 +108,25 @@ describe("JoinSection", () => {
       );
       expect(screen.getByText(/Connect your wallet to join/)).toBeInTheDocument();
       expect(screen.getByText("Connect Wallet")).toBeInTheDocument();
+    });
+
+    // Bug fix (2026-08-28) — a mid-session permission drop (e.g. switching MetaMask to an
+    // account this site was never connected with) previously showed the exact same generic
+    // prompt as a first-time visitor, making it look like the app silently got stuck.
+    it("shows a connection-lost message instead of the generic prompt when connectionLost is true", () => {
+      mockSiwe.connectionLost = true;
+      renderWithProviders(
+        <JoinSection
+          communityId="0xabc"
+          contractAddress="0xabc"
+          connected={false}
+          status="disconnected"
+          rpcUrl="http://localhost:8545"
+          isCreator={false}
+        />,
+      );
+      expect(screen.getByText("Wallet connection lost — click Connect to resume.")).toBeInTheDocument();
+      expect(screen.queryByText(/Connect your wallet to join/)).not.toBeInTheDocument();
     });
 
     it("calls connect() with the first available connector on click", () => {
@@ -156,6 +177,41 @@ describe("JoinSection", () => {
       />,
     );
     expect(screen.getByText("Join")).toBeInTheDocument();
+  });
+
+  // Bug fix (2026-08-28) — governance being configured (contractAddress set) is independent of
+  // allowJoin; a community can deploy governance and later pause new joins. This branch used to
+  // ignore allowJoin entirely and always render a clickable Join button.
+  it("shows a not-accepting-members message instead of a Join button when allowJoin is false, governed community", () => {
+    renderWithProviders(
+      <JoinSection
+        communityId="0xabc"
+        contractAddress="0xabc"
+        connected={true}
+        status="connected"
+        rpcUrl="http://localhost:8545"
+        isCreator={false}
+        allowJoin={false}
+      />,
+    );
+    expect(screen.getByText("This community is not currently accepting new members.")).toBeInTheDocument();
+    expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+
+  it("still shows a pending request's status when allowJoin is false, governed community", async () => {
+    getMembershipStatusMock.mockResolvedValue({ status: "pending" });
+    renderWithProviders(
+      <JoinSection
+        communityId="0xabc"
+        contractAddress="0xabc"
+        connected={true}
+        status="connected"
+        rpcUrl="http://localhost:8545"
+        isCreator={false}
+        allowJoin={false}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(/pending admin review/)).toBeInTheDocument());
   });
 
   it("signs up on-chain and records backend membership after a successful join", async () => {
@@ -330,6 +386,45 @@ describe("JoinSection", () => {
     expect(screen.getByText("Join")).toBeInTheDocument();
   });
 
+  // Bug fix (2026-08-28) — allowJoin was fetched by the parent but never threaded down, so this
+  // used to say "you can still join" and render a clickable Join button even when the community
+  // had joining disabled; only a click (which then round-tripped to the backend's
+  // JoinNotAllowedError) revealed the truth. Now proactive.
+  it("shows a not-accepting-members message instead of a Join button when allowJoin is false, ungoverned community", () => {
+    renderWithProviders(
+      <JoinSection
+        communityId="0xabc"
+        contractAddress={null}
+        connected={true}
+        status="connected"
+        rpcUrl="http://localhost:8545"
+        isCreator={false}
+        allowJoin={false}
+      />,
+    );
+    expect(
+      screen.getByText("Eligibility, Governance and Join not yet configured for this community."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/but you can still join/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+
+  it("still shows an existing member's own status when allowJoin is false, ungoverned community", async () => {
+    getMembershipStatusMock.mockResolvedValue({ status: "member", tierLabel: "Regular" });
+    renderWithProviders(
+      <JoinSection
+        communityId="0xabc"
+        contractAddress={null}
+        connected={true}
+        status="connected"
+        rpcUrl="http://localhost:8545"
+        isCreator={false}
+        allowJoin={false}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText(/You're a member/)).toBeInTheDocument());
+  });
+
   it("joins via the backend only (no on-chain signup attempted) when governance isn't configured", async () => {
     joinMock.mockResolvedValue({ status: "approved", tierLabel: "Regular" });
     getMembershipStatusMock
@@ -367,6 +462,36 @@ describe("JoinSection", () => {
     );
     await waitFor(() => expect(screen.getByText(/pending admin review/)).toBeInTheDocument());
     expect(screen.queryByText("Join")).not.toBeInTheDocument();
+  });
+
+  // Bug fix (2026-08-28) — a requester waiting on approval previously only saw it reflected after
+  // a manual reload; membershipStatus now polls every 15s while pending, and stops once resolved.
+  it("polls membershipStatus while a request is pending, and stops polling once it's approved", async () => {
+    vi.useFakeTimers();
+    try {
+      getMembershipStatusMock.mockResolvedValue({ status: "pending" });
+      renderWithProviders(
+        <JoinSection
+          communityId="0xabc"
+          contractAddress={null}
+          connected={true}
+          status="connected"
+          rpcUrl="http://localhost:8545"
+          isCreator={false}
+        />,
+      );
+      await vi.waitFor(() => expect(getMembershipStatusMock).toHaveBeenCalledTimes(1));
+
+      getMembershipStatusMock.mockResolvedValue({ status: "member", tierLabel: "Regular" });
+      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.waitFor(() => expect(getMembershipStatusMock).toHaveBeenCalledTimes(2));
+
+      const callsAfterResolved = getMembershipStatusMock.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(getMembershipStatusMock).toHaveBeenCalledTimes(callsAfterResolved);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows a join error inline when the backend join call fails, ungoverned community", async () => {

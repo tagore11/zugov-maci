@@ -5,12 +5,18 @@ import * as communityApi from "@/src/services/communityApi";
 import { useSiwe } from "@/src/hooks/useSiwe";
 import { withAuthDetect } from "@/src/services/httpClient";
 import { useUnionMembershipActions } from "@/src/hooks/useUnionMembershipActions";
+import { CommunitySearchInput } from "./CommunitySearchInput";
 
 // Exported for reuse on the union's own detail page (community page redesign, /plan-eng-review
 // 2026-08-26, D6) — already fully standalone (unionId + actingCommunityId props), no changes
 // needed to make it shareable.
 export function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: string; actingCommunityId: string }) {
   const [isOpen, setIsOpen] = useState(false);
+  // Bug fix (2026-08-28) — this used to be a raw "Community ID" text field with no way to confirm
+  // what it resolved to before submitting. Reuses the wizard's parent-community combobox
+  // (CommunitySearchInput) instead: search by name, see the resolved community, then invite. No
+  // authorizedFor filter — a union invite can target any community, not just ones the inviter
+  // administers, and no noneOption — "no target" isn't a valid choice here.
   const [targetId, setTargetId] = useState("");
   const [isInviting, setIsInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,15 +62,16 @@ export function InviteToUnionForm({ unionId, actingCommunityId }: { unionId: str
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mt-1">
-      <input
-        type="text"
-        value={targetId}
-        onChange={(e) => setTargetId(e.target.value)}
-        disabled={invited}
-        placeholder="Community ID"
-        className="flex-1 min-w-[10rem] px-3 py-2 rounded-[6px] bg-gray-800 border border-gray-600 text-foreground placeholder-gray-500 font-mono text-xs focus:outline-none focus:border-accent disabled:opacity-60"
-      />
+    <div className="flex flex-wrap items-start gap-2 mt-1">
+      <div className="flex-1 min-w-[10rem]">
+        <CommunitySearchInput
+          id={`invite-community-search-${unionId}`}
+          selectedId={targetId}
+          onSelect={(community) => setTargetId(community?.id ?? "")}
+          placeholder="Search communities…"
+          disabled={invited}
+        />
+      </div>
       <button
         type="button"
         onClick={() => void handleInvite()}

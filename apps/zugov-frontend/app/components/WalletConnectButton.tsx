@@ -122,6 +122,14 @@ export function WalletConnectButton() {
           No wallet found — install MetaMask or a similar extension.
         </p>
       )}
+      {/* Bug fix (2026-08-28) — distinguishes a mid-session permission drop (e.g. switching
+          MetaMask to an account this site was never connected with) from a plain first-visit
+          disconnected state, so this doesn't look like the app silently got stuck. */}
+      {!error && siwe.connectionLost && (
+        <p className="text-xs text-gray-500 max-w-[16rem] text-right">
+          Wallet connection lost — click Connect to resume.
+        </p>
+      )}
     </div>
   );
 }

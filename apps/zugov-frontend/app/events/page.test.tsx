@@ -80,11 +80,11 @@ describe("EventsPage", () => {
     expect(screen.getByText("🏛️")).toBeInTheDocument();
   });
 
-  it("card links to the community's event list with a scroll-anchor, not a new detail route", async () => {
+  it("card links to the event's own detail page", async () => {
     renderPage();
 
     const card = await screen.findByText("Morning Yoga");
-    expect(card.closest("a")).toHaveAttribute("href", "/community/community-1/events#event-event-1");
+    expect(card.closest("a")).toHaveAttribute("href", "/community/community-1/events/event-1");
   });
 
   it("does not show an RSVP count on the card", async () => {

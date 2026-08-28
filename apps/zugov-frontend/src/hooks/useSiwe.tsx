@@ -26,6 +26,12 @@ export interface SiweContextValue {
   error: string | null;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
+  // Bug fix (2026-08-28) — true from the moment a previously-connected wallet unexpectedly drops
+  // to disconnected (e.g. switching MetaMask to an account this site was never granted permission
+  // for — MetaMask reports an empty accounts list, not the new address, until the site re-requests
+  // permission) until it reconnects. Lets the UI show "connection lost, reconnect" instead of the
+  // same generic first-visit "Connect Wallet" prompt, which otherwise looks like the app is stuck.
+  connectionLost: boolean;
 }
 
 const SiweContext = createContext<SiweContextValue | null>(null);
@@ -45,6 +51,7 @@ export function SiweProvider({ children }: { children: ReactNode }) {
   const [authAddress, setAuthAddress] = useState<string | null>(() => readStoredAuth()?.address ?? null);
   const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [connectionLost, setConnectionLost] = useState(false);
 
   const { address, chainId } = useAccount();
   const { signMessageAsync } = useSignMessage();
@@ -162,7 +169,31 @@ export function SiweProvider({ children }: { children: ReactNode }) {
     void signIn();
   }, [address, chainId, isAuthenticated, isSigning, signIn, signOut]);
 
-  const value: SiweContextValue = { isAuthenticated, address: authAddress, isSigning, error, signIn, signOut };
+  // Bug fix (2026-08-28) — a standalone effect, deliberately not folded into the auto-sign-in
+  // effect above: that effect has several early returns for its own state machine, and threading
+  // connectionLost tracking through all of them risked missing a transition. Only flips true on a
+  // was-connected-then-dropped transition (wasConnected ref guards against firing on the very
+  // first render, when nothing was ever connected yet), and clears the moment any address is seen
+  // again — whether that's a reconnect to the same address or a fresh one.
+  const wasConnected = useRef(false);
+  useEffect(() => {
+    if (address) {
+      wasConnected.current = true;
+      setConnectionLost(false);
+    } else if (wasConnected.current) {
+      setConnectionLost(true);
+    }
+  }, [address]);
+
+  const value: SiweContextValue = {
+    isAuthenticated,
+    address: authAddress,
+    isSigning,
+    error,
+    signIn,
+    signOut,
+    connectionLost,
+  };
 
   return <SiweContext.Provider value={value}>{children}</SiweContext.Provider>;
 }

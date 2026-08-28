@@ -20,6 +20,9 @@ export type Community = {
   description: string | null;
   logo: string | null;
   creatorAddress: string;
+  // Union-as-community merge (2026-08-28 /plan-eng-review, D1/D2/D7) — a union is a real
+  // communities row with type='union', not a separate entity. See Union below.
+  type: "standard" | "union";
   // Local chapters, event teams, and contributor circles nest under a parent community
   // (Lightpaper's "communities and sub-communities" building block). Null for top-level.
   parentCommunityId: string | null;
@@ -253,14 +256,12 @@ export async function update(id: string, payload: CommunityUpdatePayload): Promi
 
 export type UnionMembershipStatus = "pending" | "active" | "declined" | "left";
 
-export type Union = {
-  id: string;
-  displayName: string;
-  description: string | null;
-  logo: string | null;
-  creatorAddress: string;
-  createdAt: number;
-};
+// Union-as-community merge (2026-08-28, D7) — Union used to be a hand-maintained subset of
+// Community's fields, backed by its own table. Now that a union IS a community underneath,
+// Union is just Community narrowed by its type discriminator — any future Community field
+// automatically flows through to unions too, instead of risking silent drift between two
+// separately-maintained type definitions for what's now one entity.
+export type Union = Community & { type: "union" };
 
 export type UnionWithMemberCount = Union & { memberCount: number };
 

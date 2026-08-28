@@ -1,8 +1,12 @@
-import { randomUUID } from "node:crypto";
 import { eq, and, inArray, count } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { unions, unionMemberships, type Union, type UnionMembership } from "../db/schema.js";
-import { get as getCommunity, getAuthorizedCommunityIds } from "./communityService.js";
+import { unionMemberships, type Community, type UnionMembership } from "../db/schema.js";
+import {
+  get as getCommunity,
+  getAuthorizedCommunityIds,
+  createCommunityRow,
+  list as listCommunities,
+} from "./communityService.js";
 
 export class UnionNotFoundError extends Error {
   constructor(id: string) {
@@ -42,30 +46,47 @@ export interface CreateUnionData {
   foundingCommunityId: string;
 }
 
-// The union's own founding community joins as "active" directly — it doesn't invite itself,
-// mirroring how a community's own creator is enrolled as a member at identity-creation time
-// rather than going through a join-request flow.
-export async function create(data: CreateUnionData): Promise<Union> {
+// Union-as-community merge (2026-08-28 /plan-eng-review, D1-D3/D6/D13) — a union is a real
+// communities row with type='union'. Content authority (events/proposals/discussions) is
+// derived from membershipService.isAuthorizedForUnionContent(), never from a tier on the
+// union's own row, so skipCreatorEnrollment:true here is deliberate — enrolling the creator into
+// a tier would be dead data nothing ever checks. Still creates exactly one placeholder "Member"
+// tier (all permissions false) purely so the row has a non-null defaultTierId (D13 — the generic
+// join route 500s instead of cleanly rejecting via allowJoin if defaultTierId is null); allowJoin
+// stays at its schema default (false), so the tier is practically unreachable either way. The
+// union's own founding community joins as "active" directly — it doesn't invite itself, mirroring
+// how a community's own creator is enrolled as a member at identity-creation time rather than
+// going through a join-request flow.
+export async function create(data: CreateUnionData): Promise<Community> {
   const foundingCommunity = await getCommunity(data.foundingCommunityId);
   if (!foundingCommunity) throw new CommunityNotFoundError(data.foundingCommunityId);
 
   const now = Math.floor(Date.now() / 1000);
-  const id = randomUUID();
 
-  const [union] = await db
-    .insert(unions)
-    .values({
-      id,
-      displayName: data.displayName,
-      description: data.description ?? null,
-      logo: data.logo ?? null,
-      creatorAddress: data.creatorAddress,
-      createdAt: now,
-    })
-    .returning();
+  const { community } = await createCommunityRow({
+    displayName: data.displayName,
+    description: data.description,
+    logo: data.logo,
+    creatorAddress: data.creatorAddress,
+    type: "union",
+    skipCreatorEnrollment: true,
+    defaultTierLabel: "Member",
+    tiers: [
+      {
+        label: "Member",
+        canCreateProposals: false,
+        canVote: false,
+        canManageMembership: false,
+        canDelegate: false,
+        canBeDelegatedTo: false,
+        canCreateEvents: false,
+        canPostDiscussions: false,
+      },
+    ],
+  });
 
   await db.insert(unionMemberships).values({
-    unionId: id,
+    unionId: community.id,
     communityId: data.foundingCommunityId,
     status: "active",
     invitedByAddress: data.creatorAddress,
@@ -73,15 +94,17 @@ export async function create(data: CreateUnionData): Promise<Union> {
     respondedAt: now,
   });
 
-  return union!;
+  return community;
 }
 
-export async function get(id: string): Promise<Union | null> {
-  const rows = await db.select().from(unions).where(eq(unions.id, id)).limit(1);
-  return rows[0] ?? null;
+// Union-as-community merge — queries communities WHERE type='union' via the shared get(),
+// rather than a raw table lookup, so a regular community's id can never resolve as a union.
+export async function get(id: string): Promise<Community | null> {
+  const community = await getCommunity(id);
+  return community && community.type === "union" ? community : null;
 }
 
-export interface UnionWithMemberCount extends Union {
+export interface UnionWithMemberCount extends Community {
   memberCount: number;
 }
 
@@ -89,18 +112,28 @@ export interface UnionWithMemberCount extends Union {
 // just the ones a given community belongs to") — no auth required, same posture as
 // communityService.list(). memberCount is active-only, matching listMembers()'s public default;
 // pending/declined/left member counts aren't exposed here.
+//
+// Union-as-community merge (2026-08-28, D5 — corrected during implementation) — queries
+// communities WHERE type='union' directly rather than delegating to the generic
+// communityService.list(): this listing needs the active-unionMemberships member-count
+// enrichment below, which is a union-specific concept the generic community list has no reason
+// to know about. Kept as its own dedicated endpoint/query rather than bolting union-specific
+// fields onto the generic list.
 export async function listAll(
   page: number,
   limit: number,
 ): Promise<{ unions: UnionWithMemberCount[]; total: number; hasMore: boolean }> {
   const offset = (page - 1) * limit;
+  const { communities: rows, total } = await listCommunities(
+    page,
+    limit,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "union",
+  );
 
-  const [rows, totalRows] = await Promise.all([
-    db.select().from(unions).orderBy(unions.createdAt).limit(limit).offset(offset),
-    db.select({ value: count() }).from(unions),
-  ]);
-
-  const total = Number(totalRows[0]?.value ?? 0);
   if (rows.length === 0) return { unions: [], total, hasMore: false };
 
   const memberCounts = await db
@@ -244,6 +277,9 @@ export interface MyPendingUnionInvite {
 // another wallet's pending invites (unlike the query-param design this replaced during review).
 // Powers both the /unions listing page's per-row badge and manage-profile's "Awaiting Your
 // Action" card (replacing that page's own N+1 loop + page-1-only pagination bug).
+//
+// Union-as-community merge (2026-08-28) — resolves union display data via getCommunity() (the
+// shared communities lookup) instead of a raw `unions` table query.
 export async function listMyPendingInvites(address: string): Promise<MyPendingUnionInvite[]> {
   const authorizedIds = await getAuthorizedCommunityIds(address);
   if (authorizedIds.length === 0) return [];
@@ -254,23 +290,12 @@ export async function listMyPendingInvites(address: string): Promise<MyPendingUn
     .where(and(inArray(unionMemberships.communityId, authorizedIds), eq(unionMemberships.status, "pending")));
   if (rows.length === 0) return [];
 
-  const [unionRows, communityRecords] = await Promise.all([
-    db
-      .select()
-      .from(unions)
-      .where(
-        inArray(
-          unions.id,
-          rows.map((r) => r.unionId),
-        ),
-      ),
-    Promise.all(rows.map((r) => getCommunity(r.communityId))),
-  ]);
-  const unionsById = new Map(unionRows.map((u) => [u.id, u]));
+  const unionRecords = await Promise.all(rows.map((r) => getCommunity(r.unionId)));
+  const communityRecords = await Promise.all(rows.map((r) => getCommunity(r.communityId)));
 
   return rows
     .map((row, i) => {
-      const union = unionsById.get(row.unionId);
+      const union = unionRecords[i];
       const community = communityRecords[i];
       if (!union || !community) return null;
       return {
@@ -296,9 +321,10 @@ export interface UnionForCommunity {
 //
 // includePending defaults to false and must be gated by the route (isAuthorized(communityId,
 // caller)) before passing true — pending invites aren't public, same posture as
-// listMembers()'s includePending. Fixed 2026-08-26: this previously always included pending
-// status with no gating at all, letting any unauthenticated caller see a community's pending
-// union invites via GET /api/communities/:id/unions.
+// listMembers()'s includePending.
+//
+// Union-as-community merge (2026-08-28) — resolves union display data via getCommunity()
+// instead of a raw `unions` table query.
 export async function listForCommunity(communityId: string, includePending = false): Promise<UnionForCommunity[]> {
   const statuses: ("pending" | "active")[] = includePending ? ["pending", "active"] : ["active"];
   const membershipRows = await db
@@ -308,20 +334,11 @@ export async function listForCommunity(communityId: string, includePending = fal
 
   if (membershipRows.length === 0) return [];
 
-  const unionRows = await db
-    .select()
-    .from(unions)
-    .where(
-      inArray(
-        unions.id,
-        membershipRows.map((row) => row.unionId),
-      ),
-    );
-  const unionsById = new Map(unionRows.map((u) => [u.id, u]));
+  const unionRecords = await Promise.all(membershipRows.map((row) => getCommunity(row.unionId)));
 
   return membershipRows
-    .map((row) => {
-      const union = unionsById.get(row.unionId);
+    .map((row, i) => {
+      const union = unionRecords[i];
       if (!union) return null;
       return {
         id: union.id,

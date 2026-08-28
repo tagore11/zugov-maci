@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { EventsSection } from "./EventsSection";
 import { HttpError } from "@/src/services/httpClient";
@@ -62,7 +63,11 @@ const EVENT = {
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>{ui}</MemoryRouter>
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
@@ -92,7 +97,9 @@ describe("EventsSection", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
-        <EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />
+        <MemoryRouter>
+          <EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
     await screen.findByText("Morning Yoga");
@@ -102,11 +109,22 @@ describe("EventsSection", () => {
     // a fresh cache, is what forces the refetch.
     rerender(
       <QueryClientProvider client={queryClient}>
-        <EventsSection communityId="0xabc" connected={true} walletAddress={OTHER_WALLET} />
+        <MemoryRouter>
+          <EventsSection communityId="0xabc" connected={true} walletAddress={OTHER_WALLET} />
+        </MemoryRouter>
       </QueryClientProvider>,
     );
 
     await waitFor(() => expect(listEventsMock).toHaveBeenCalledTimes(2));
+  });
+
+  // Event detail page (2026-08-28 /plan-eng-review, T5) — a row's title now links through to its
+  // own detail page instead of doing nothing beyond expand/collapse.
+  it("links the event title to its detail page", async () => {
+    renderWithProviders(<EventsSection communityId="0xabc" connected={true} walletAddress={WALLET_ADDRESS} />);
+
+    const titleLink = await screen.findByRole("link", { name: "Morning Yoga" });
+    expect(titleLink).toHaveAttribute("href", "/community/0xabc/events/event-1");
   });
 
   it("RSVPs successfully", async () => {

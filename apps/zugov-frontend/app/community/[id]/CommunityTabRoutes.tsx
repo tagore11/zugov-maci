@@ -238,3 +238,67 @@ export function DiscussionsTab() {
     />
   );
 }
+
+// Union-as-community merge (2026-08-28 /plan-eng-review D5 + /plan-design-review D15) — only
+// rendered for type==='union' communities (CommunityLayout.tsx gates the tab-nav link itself).
+// Redistributes UnionDetailPage's old member-communities grid + pending-invites section, not a
+// rewrite. Pending invites section is omitted entirely when empty (D15 — matches
+// UnionsSection.tsx's own established zero-state convention: an empty heading with nothing under
+// it is worse than no heading).
+export function MemberCommunitiesTab() {
+  const { community } = useOutletContext<CommunityOutletContext>();
+  const { data } = useQuery({
+    queryKey: ["union", community.id],
+    queryFn: () => communityApi.getUnion(community.id),
+    enabled: !!community.id,
+  });
+
+  const members = data?.members ?? [];
+  const activeMembers = members.filter((m) => m.status === "active");
+  const pendingMembers = members.filter((m) => m.status === "pending");
+
+  return (
+    <div className="rounded-xl border border-gray-700 bg-gray-900 p-6">
+      <h2 className="text-lg font-semibold text-foreground mb-4">
+        Member communities <span className="text-gray-500 font-normal">({activeMembers.length})</span>
+      </h2>
+
+      {activeMembers.length === 0 ? (
+        <p className="text-sm text-gray-500">No active member communities.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {activeMembers.map((member) => (
+            <Link
+              key={member.communityId}
+              to={`/community/${member.communityId}`}
+              className="flex items-center gap-3 p-3 rounded-lg border border-gray-700 hover:border-accent transition-colors"
+            >
+              <span className="text-2xl">{member.logo || "🏛️"}</span>
+              <span className="font-medium text-foreground">{member.displayName}</span>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      {/* Only present at all when the caller is authorized on an active member — the backend
+          gates includePending, so an empty array here is indistinguishable from "not authorized
+          to see pending invites," which is the correct default either way. */}
+      {pendingMembers.length > 0 && (
+        <div className="mt-6 pt-6 border-t border-gray-700">
+          <h3 className="text-sm font-medium text-gray-400 mb-3">Pending invites</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {pendingMembers.map((member) => (
+              <div
+                key={member.communityId}
+                className="flex items-center gap-3 p-3 rounded-lg border border-gray-800 bg-gray-800/40"
+              >
+                <span className="text-2xl opacity-60">{member.logo || "🏛️"}</span>
+                <span className="text-gray-400">{member.displayName}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

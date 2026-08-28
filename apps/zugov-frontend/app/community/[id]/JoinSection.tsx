@@ -18,6 +18,7 @@ export function JoinSection({
   status,
   rpcUrl,
   isCreator,
+  allowJoin = true,
 }: {
   communityId: string;
   // The deployed MACI contract's address — distinct from communityId (Architecture 1C).
@@ -39,9 +40,16 @@ export function JoinSection({
   // memberships row, so leaving would silently strip their tier permissions while they keep
   // admin access — a confusing half-state, not a real "left" state).
   isCreator: boolean;
+  // Bug fix (2026-08-28) — community.allowJoin was fetched by the parent but never threaded down
+  // here, so this component had no way to know joining was disabled until AFTER a click round-
+  // tripped to the backend's JoinNotAllowedError. Defaults to true so the ~30 existing call sites
+  // in JoinSection.test.tsx (all pre-dating allowJoin) keep their current, correct behavior
+  // without needing to pass it explicitly; the one real production call site (CommunityLayout.tsx)
+  // always passes the community's actual value.
+  allowJoin?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const { signOut } = useSiwe();
+  const { signOut, connectionLost } = useSiwe();
   const { connectors, connect, isPending: isConnecting } = useConnect();
   // Investigation fix (2026-08-21) — this page never previously established a SIWE session at
   // all, so clicking Join here could hit a bare "Authentication required" from the backend with
@@ -65,6 +73,11 @@ export function JoinSection({
     queryKey: ["membershipStatus", communityId],
     queryFn: () => membershipApi.getMembershipStatus(communityId),
     enabled: connected,
+    // Bug fix (2026-08-28) — a requester waiting on admin review previously only saw the approval
+    // land after a manual reload/renavigation; there's no notification infrastructure anywhere in
+    // this codebase (TODOS.md) to push it instead, so poll while pending and stop once resolved
+    // (member/none/rejected) to avoid indefinite background traffic for a settled request.
+    refetchInterval: (query) => (query.state.data?.status === "pending" ? 15_000 : false),
   });
 
   // The MACI contract's state index is the ground truth for on-chain registration — it's
@@ -158,7 +171,14 @@ export function JoinSection({
   if (!connected) {
     return (
       <div className="space-y-2 text-center">
-        <p className="text-sm text-gray-400">Connect your wallet to join this community.</p>
+        {/* Bug fix (2026-08-28) — distinguishes a mid-session permission drop (e.g. switching
+            MetaMask to an account this site was never connected with) from a plain first-visit
+            disconnected state, so this doesn't look like the app silently got stuck. */}
+        <p className="text-sm text-gray-400">
+          {connectionLost
+            ? "Wallet connection lost — click Connect to resume."
+            : "Connect your wallet to join this community."}
+        </p>
         <button
           type="button"
           onClick={() => connect({ connector: connectors[0]! })}
@@ -172,12 +192,21 @@ export function JoinSection({
   }
 
   if (!contractAddress) {
+    // Bug fix (2026-08-28) — this used to say "but you can still join" unconditionally, which is
+    // actively wrong when allowJoin is false: the Join button below would still render and fail
+    // only after a round trip to the backend's JoinNotAllowedError. An existing member/pending
+    // request still needs to see their own status regardless of allowJoin — it only gates NEW
+    // joins, not people already in.
+    const joinDisabled =
+      !allowJoin && !(justJoined || membership?.status === "member" || membership?.status === "pending");
     return (
       <div className="space-y-2">
         <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
-          Governance not yet configured for this community — voting isn&apos;t available yet, but you can still join.
+          {joinDisabled
+            ? "Eligibility, Governance and Join not yet configured for this community."
+            : "Governance not yet configured for this community — voting isn't available yet, but you can still join."}
         </div>
-        {justJoined || membership?.status === "member" ? (
+        {joinDisabled ? null : justJoined || membership?.status === "member" ? (
           <div className="space-y-1">
             <p className="text-xs text-gray-500">
               You&apos;re a member
@@ -252,6 +281,21 @@ export function JoinSection({
             failure recording membership (e.g. an expired session) surfaces here rather than
             being silently swallowed alongside a true success. */}
         {error && <p className="text-xs text-red-400">{error}</p>}
+      </div>
+    );
+  }
+
+  if (!allowJoin && membership?.status !== "pending") {
+    // Bug fix (2026-08-28) — governance can be fully configured while allowJoin is toggled off
+    // (e.g. paused after launch), so this can't reuse the !contractAddress branch's "Governance
+    // not yet configured" copy — governance IS configured here. Matches the backend's own
+    // JoinNotAllowedError message for consistency with the reactive error a stale client would
+    // otherwise still show after a round trip.
+    return (
+      <div className="space-y-2">
+        <div className="rounded-lg border border-gray-700 bg-gray-800/40 p-3 text-sm text-gray-500">
+          This community is not currently accepting new members.
+        </div>
       </div>
     );
   }

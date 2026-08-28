@@ -51,6 +51,11 @@ communitiesRouter.get("/", async (c) => {
   const limit = Math.min(50, Math.max(1, Number(limitStr)));
   const chainId = chainIdStr !== undefined ? Number(chainIdStr) : undefined;
 
+  // Union-as-community merge (2026-08-28, D12) — no caller of this route needs to see unions
+  // today (the /unions listing has its own dedicated endpoint with union-specific member-count
+  // enrichment; see unionService.listAll()), so this route doesn't expose a type override at
+  // all — it always gets list()'s 'standard' default, which is exactly what every real caller
+  // (the community explorer, manage-communities, manage-profile, AwaitingActions) needs.
   const result = await communityService.list(page, limit, chainId, creatorAddress, search, authorizedFor);
   return c.json(result);
 });
@@ -154,6 +159,7 @@ communitiesRouter.post("/", requireAuth, async (c) => {
     if (
       err instanceof communityService.SelfParentError ||
       err instanceof communityService.ParentCommunityNotFoundError ||
+      err instanceof communityService.ParentIsUnionError ||
       err instanceof communityService.GovernanceAlreadyConfiguredError ||
       err instanceof communityService.CategoryNotFoundError
     ) {
@@ -213,6 +219,9 @@ communitiesRouter.post("/:id/governance", requireAuth, async (c) => {
   } catch (err) {
     if (err instanceof communityService.CommunityNotFoundError) {
       return c.json({ error: err.message }, 404);
+    }
+    if (err instanceof communityService.CommunityIsUnionError) {
+      return c.json({ error: err.message }, 422);
     }
     if (err instanceof communityService.GovernanceAlreadyConfiguredError) {
       return c.json({ error: err.message }, 409);

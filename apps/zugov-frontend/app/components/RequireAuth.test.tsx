@@ -13,8 +13,16 @@ vi.mock("wagmi", () => ({
   useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 
+const mockSiwe = {
+  isAuthenticated: false,
+  isSigning: false,
+  error: null as string | null,
+  signIn: vi.fn(),
+  signOut: vi.fn(),
+  connectionLost: false,
+};
 vi.mock("@/src/hooks/useSiwe", () => ({
-  useSiwe: () => ({ isAuthenticated: false, isSigning: false, error: null, signIn: vi.fn(), signOut: vi.fn() }),
+  useSiwe: () => mockSiwe,
 }));
 
 const CONNECTOR = { id: "injected", name: "Injected" };
@@ -36,6 +44,7 @@ beforeEach(() => {
   useAccountMock.mockReset();
   useConnectMock.mockReset();
   useConnectMock.mockReturnValue({ connectors: [CONNECTOR], connect: connectMock, isPending: false, error: null });
+  mockSiwe.connectionLost = false;
 });
 
 describe("RequireAuth", () => {
@@ -52,6 +61,20 @@ describe("RequireAuth", () => {
 
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
     expect(screen.getByText("Connect your wallet to view this page.")).toBeInTheDocument();
+  });
+
+  // Bug fix (2026-08-28) — a mid-session permission drop (e.g. switching MetaMask to an account
+  // this site was never connected with) previously showed the exact same generic prompt as a
+  // first-time visitor, making it look like the app silently got stuck. Header's own
+  // WalletConnectButton shares the same connectionLost state and shows the same message too — use
+  // getAllByText (not getByText) since both legitimately render it at once.
+  it("shows a connection-lost message instead of the generic prompt when connectionLost is true", () => {
+    mockSiwe.connectionLost = true;
+    useAccountMock.mockReturnValue({ address: undefined, status: "disconnected" });
+    renderGuardedRoute();
+
+    expect(screen.getAllByText("Wallet connection lost — click Connect to resume.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Connect your wallet to view this page.")).not.toBeInTheDocument();
   });
 
   it("connects with the registered connector when the prompt's Connect Wallet button is clicked", () => {

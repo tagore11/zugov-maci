@@ -108,7 +108,7 @@ function ParentWithContext({ context }: { context: CommunityOutletContext }) {
 
 function renderPage(context: CommunityOutletContext = baseContext()) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const result = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/community/community-1/settings"]}>
         <Routes>
@@ -119,6 +119,7 @@ function renderPage(context: CommunityOutletContext = baseContext()) {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...result, queryClient };
 }
 
 beforeEach(() => {
@@ -243,6 +244,20 @@ describe("CommunitySettingsPage save flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => expect(updateMock).toHaveBeenCalledTimes(1));
+  });
+
+  // Bug fix (2026-08-28) — CommunityLayout.tsx caches the community under
+  // queryKey ["community", communityId]; without invalidating it here, navigating back after a
+  // save previously kept rendering the stale pre-save object until a full page reload.
+  it("invalidates the cached community query after a successful save", async () => {
+    updateMock.mockResolvedValue(undefined);
+    const { queryClient } = renderPage();
+    const invalidateSpy = vi.spyOn(queryClient, "invalidateQueries");
+
+    await screen.findByText("Community Settings");
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ["community", "community-1"] }));
   });
 
   it("includes allowJoin in the save payload", async () => {
