@@ -211,6 +211,7 @@ export default function CommunitySettingsPage() {
                 canCreateProposals: tier.canCreateProposals,
                 canVote: tier.canVote,
                 canManageMembership: tier.canManageMembership,
+                canCreateEvents: tier.canCreateEvents,
               });
             } else {
               await membershipApi.createTier(communityId, tier);

@@ -34,7 +34,15 @@ describe("StepCommunitySetup — restores state across Back navigation", () => {
   it("restores creator-edited tiers when initialTiers is provided", () => {
     render(
       <StepCommunitySetup
-        initialTiers={[{ label: "Neighbor", canVote: true, canCreateProposals: false, canManageMembership: false }]}
+        initialTiers={[
+          {
+            label: "Neighbor",
+            canVote: true,
+            canCreateProposals: false,
+            canManageMembership: false,
+            canCreateEvents: true,
+          },
+        ]}
         isSubmitting={false}
         setCommunitySetup={vi.fn()}
         goBack={vi.fn()}

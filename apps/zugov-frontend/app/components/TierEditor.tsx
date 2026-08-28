@@ -33,6 +33,9 @@ export function TierEditor({ tiers, onChange, locked = false }: Props) {
         canCreateProposals: false,
         canVote: false,
         canManageMembership: false,
+        // Matches the backend's own tierBodySchema default (canCreateEvents: true) so a
+        // blank tier added here behaves the same as one created without this field set at all.
+        canCreateEvents: true,
       },
     ]);
   }
@@ -93,6 +96,15 @@ export function TierEditor({ tiers, onChange, locked = false }: Props) {
                   onChange={(e) => updateTierField(i, { canManageMembership: e.target.checked })}
                 />
                 Can manage membership
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-gray-300">
+                <input
+                  type="checkbox"
+                  disabled={locked}
+                  checked={tier.canCreateEvents}
+                  onChange={(e) => updateTierField(i, { canCreateEvents: e.target.checked })}
+                />
+                Can create events
               </label>
             </div>
           </div>

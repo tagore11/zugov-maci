@@ -11,6 +11,7 @@ export interface TierDraft {
   canCreateProposals: boolean;
   canVote: boolean;
   canManageMembership: boolean;
+  canCreateEvents: boolean;
 }
 
 export interface MACIDeploymentConfig {

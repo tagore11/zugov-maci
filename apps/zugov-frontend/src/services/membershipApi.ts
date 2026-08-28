@@ -3,13 +3,13 @@ import { parseErrorOr } from "@/src/services/httpClient";
 
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? "http://localhost:3001";
 
-// canCreateEvents isn't part of TierDraft (no create/edit UI exists for it — TierEditor.tsx has no
-// toggle), but the backend's GET /tiers response includes it (a full `select()` over membershipTiers),
-// so the read type declares it separately rather than widening TierDraft's create/update shape.
+// canPostDiscussions isn't part of TierDraft (no create/edit UI exists for it — TierEditor.tsx has
+// no toggle), but the backend's GET /tiers response includes it (a full `select()` over
+// membershipTiers), so the read type declares it separately rather than widening TierDraft's
+// create/update shape.
 export type Tier = TierDraft & {
   id: string;
   isDefault: boolean;
-  canCreateEvents: boolean;
   canPostDiscussions: boolean;
 };
 
