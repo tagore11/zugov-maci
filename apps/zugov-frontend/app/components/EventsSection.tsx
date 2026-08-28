@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, MapPin, MoreVertical, Pencil, Ban, Copy, ChevronDown, ChevronRight } from "lucide-react";
 import * as eventApi from "@/src/services/eventApi";
 import type { Event } from "@/src/services/eventApi";
 import { useIsCommunityAdmin, useHasTierPermission } from "@/src/hooks/useMembershipPermission";
+import { useEventRowActions } from "@/src/hooks/useEventRowActions";
 import { CreateEventModal } from "./CreateEventModal";
 import { RepeatFields } from "./RepeatFields";
 import { KIND_META, formatTimeRange, groupEventsByDate } from "./eventDisplay";
@@ -95,49 +97,27 @@ function EventRow({
   const [showMenu, setShowMenu] = useState(false);
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [showDuplicate, setShowDuplicate] = useState(false);
-  const [rsvpPending, setRsvpPending] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const { signOut } = useSiwe();
 
-  const { data: rsvps = [] } = useQuery({
-    queryKey: ["eventRsvps", event.id],
-    queryFn: () => eventApi.listRsvps(communityId, event.id),
-  });
+  const { rsvps, hasRsvped, rsvpPending, actionError, handleRsvpToggle } = useEventRowActions(
+    communityId,
+    event,
+    walletAddress,
+  );
 
   const canManage =
     isCommunityAdmin || (!!walletAddress && event.creatorAddress.toLowerCase() === walletAddress.toLowerCase());
-  const hasRsvped = !!walletAddress && rsvps.some((r) => r.walletAddress.toLowerCase() === walletAddress.toLowerCase());
 
   const { label: kindLabel, Icon: KindIcon } = KIND_META[event.kind];
 
-  const invalidate = () =>
-    Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["events", communityId] }),
-      queryClient.invalidateQueries({ queryKey: ["eventRsvps", event.id] }),
-    ]);
-
-  const handleRsvpToggle = async () => {
-    setRsvpPending(true);
-    setActionError(null);
-    try {
-      await withAuthDetect(() => {
-        return hasRsvped ? eventApi.cancelRsvp(communityId, event.id) : eventApi.rsvp(communityId, event.id);
-      }, signOut);
-      await invalidate();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to update RSVP");
-    } finally {
-      setRsvpPending(false);
-    }
-  };
-
   const handleCancelConfirm = async () => {
-    setActionError(null);
+    setCancelError(null);
     try {
       await withAuthDetect(() => eventApi.cancelEvent(communityId, event.id), signOut);
       await queryClient.invalidateQueries({ queryKey: ["events", communityId] });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Failed to cancel event");
+      setCancelError(err instanceof Error ? err.message : "Failed to cancel event");
     } finally {
       setConfirmingCancel(false);
       setShowMenu(false);
@@ -159,7 +139,12 @@ function EventRow({
               {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
             </button>
           )}
-          <p className="font-medium text-foreground">{event.title}</p>
+          <Link
+            to={`/community/${communityId}/events/${event.id}`}
+            className="font-medium text-foreground hover:underline"
+          >
+            {event.title}
+          </Link>
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-sm text-gray-400">
           <span className="flex items-center gap-1">
@@ -175,7 +160,7 @@ function EventRow({
           )}
           <span>{rsvps.length === 1 ? "1 going" : `${rsvps.length} going`}</span>
         </div>
-        {actionError && <p className="text-xs text-error mt-1">{actionError}</p>}
+        {(actionError ?? cancelError) && <p className="text-xs text-error mt-1">{actionError ?? cancelError}</p>}
         {showDuplicate && (
           <DuplicateForm communityId={communityId} eventId={event.id} onDone={() => setShowDuplicate(false)} />
         )}
@@ -410,10 +395,7 @@ export function EventsSection({ communityId, connected, walletAddress }: EventsS
               const sideEvents = sideEventsByParent.get(event.id);
               const isExpanded = expandedParentIds.has(event.id);
               return (
-                // Events expansion (2026-08-26, Decision 1) — scroll-anchor id: the global
-                // /events page's cards link here (/community/:id/events#event-<id>) rather than
-                // a new per-event detail route.
-                <div key={event.id} id={`event-${event.id}`}>
+                <div key={event.id}>
                   <EventRow
                     communityId={communityId}
                     event={event}

@@ -1313,3 +1313,67 @@ than something that silently works today in a half-broken way.
 **Effort:** L (needs its own product/architecture design pass before implementation sizing is
 even possible — the voter-model question above is the crux of it)
 **Priority:** P2
+
+## Event detail page follow-ups (from 2026-08-28 `/office-hours` + `/plan-eng-review`)
+
+### Side-event eligibility doesn't re-propagate from its parent
+
+**What:** `Event.eligibleTierIds` is copied at creation time only (`eventService.ts`'s `create()`)
+and never re-checked or cascaded when a parent event's own eligibility changes afterward.
+
+**Why:** Found while designing the event detail page's "Part of: {parent}" link (side-event →
+parent) — a viewer could see a side-event whose parent has since become invisible to them, since
+the side-event's own snapshot never updates. A real, if rare, data-integrity gap in the tier-gating
+model, not something this feature caused.
+
+**Context:** The event detail page (see the design doc and eng review from 2026-08-28) works
+around this by simply omitting the parent link if the parent fetch 404s for the viewer — it does
+not fix the underlying drift. A real fix means either re-checking the parent's current eligibility
+at read time (an extra query per side-event view) or cascading eligibility changes from a parent
+to its side-events on update (more invasive, touches `eventService.ts`'s `update()`).
+
+**Effort:** M (the read-time re-check is the cheaper option; the cascade-on-update option is
+larger and touches event-update semantics more broadly)
+**Priority:** P3
+**Depends on:** None
+
+### Full sola.day parity on the event detail page
+
+**What:** Map/venue embed, host profile, a related/side-events section beyond the simple parent/
+child links, and social share preview cards (Open Graph tags).
+
+**Why:** Explicitly named as the deferred scope in the 2026-08-28 `/office-hours` design doc's
+narrowest-wedge decision — the shipped v1 wedge is "a real URL + full details + who's going," not
+full parity with the sola.day reference the founder pointed at.
+
+**Context:** These are several genuinely separate features bundled under one name, not one unit of
+work — OG tags alone likely need SSR/meta-tag infrastructure this SPA may not currently have,
+which would need its own scoping pass before sizing. Revisit once real usage at Zukas 2026 (Sept
+9-20, 2026) shows which of these (if any) people actually want, rather than building speculatively.
+
+**Effort:** L (multiple distinct sub-features, at least one — OG tags — likely needs new
+infrastructure this app doesn't have yet)
+**Priority:** P3
+**Depends on:** Event detail page (2026-08-28) landing first; real usage data from Zukas 2026
+
+### Edit/cancel/duplicate management actions on the event detail page
+
+**What:** Let a creator/admin edit, cancel, or duplicate an event directly from its own detail
+page, not just from the community's events list.
+
+**Why:** The 2026-08-28 eng review deliberately scoped the detail page to read-only + RSVP for v1
+— `EventRow`'s RSVP/menu hook extraction only covers state (RSVP mutation, menu open/close), not
+the ~110 lines of menu/`DuplicateForm` JSX or the `CreateEventModal`/`editingEvent` wiring, which
+lives in `EventsSection` (the parent), not `EventRow` itself. Building management actions on the
+detail page today would mean duplicating that JSX a second time.
+
+**Context:** Real friction for a creator/admin who lands on their own event's shared link and
+wants to manage it in place, but the underlying components aren't currently structured for reuse
+across both surfaces. Whoever picks this up needs to either accept the JSX duplication or finally
+do the fuller shared-component extraction (Approach B from the design doc) that this session
+explicitly deferred as premature for the read-only wedge.
+
+**Effort:** M (JSX duplication route) to L (proper shared-component extraction route) — sizing
+depends on which path is chosen when this is picked up
+**Priority:** P3
+**Depends on:** Event detail page (2026-08-28) landing first

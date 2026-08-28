@@ -12,6 +12,7 @@ import {
   DiscussionsTab,
   MemberCommunitiesTab,
 } from "../app/community/[id]/CommunityTabRoutes";
+import { EventDetailPage } from "../app/community/[id]/EventDetailPage";
 import CommunitySettingsPage from "../app/community/[id]/settings/page";
 import DelegatesPage from "../app/delegates/page";
 import KnowledgeBasePage from "../app/knowledge-base/page";
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/community/:id" element={<CommunityLayout />}>
               <Route index element={<OverviewTab />} />
               <Route path="events" element={<EventsTab />} />
+              <Route path="events/:eventId" element={<EventDetailPage />} />
               <Route path="proposals" element={<ProposalsTab />} />
               <Route path="discussions" element={<DiscussionsTab />} />
               <Route path="members" element={<MemberCommunitiesTab />} />

@@ -11,8 +11,9 @@ import { KIND_META, CollectionToggle, formatTimeRange } from "../components/Even
 // no-auth browse pattern exactly (page title + description, card grid, Previous/Next pagination).
 // Cards show top-level events ONLY (parentEventId IS NULL, locked backend contract) — side-events
 // are visible exclusively via their parent's community event list, never their own card here.
-// Clicking a card links to /community/:id/events#event-<id> (Decision 1) — no per-event detail
-// route exists in this app, so the existing per-community list is the landing target.
+// Clicking a card links straight to the event's own detail page (event detail page, 2026-08-28
+// /plan-eng-review) — previously a scroll-to-anchor into the per-community list before that page
+// existed.
 export default function EventsPage() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -83,7 +84,7 @@ export default function EventsPage() {
               return (
                 <Link
                   key={event.id}
-                  to={`/community/${event.communityId}/events#event-${event.id}`}
+                  to={`/community/${event.communityId}/events/${event.id}`}
                   className="bg-gray-900 rounded-lg border border-gray-700 p-6 hover:border-accent transition-colors"
                 >
                   <div className="flex items-center gap-2 text-sm text-gray-500 mb-3">
