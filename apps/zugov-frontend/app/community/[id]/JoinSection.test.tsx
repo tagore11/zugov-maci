@@ -58,6 +58,7 @@ const mockSiwe = {
   error: null as string | null,
   signIn: vi.fn(),
   signOut: vi.fn(),
+  connectionLost: false,
 };
 vi.mock("@/src/hooks/useSiwe", () => ({
   useSiwe: () => mockSiwe,
@@ -85,6 +86,7 @@ beforeEach(() => {
   mockSiwe.isAuthenticated = true;
   mockSiwe.isSigning = false;
   mockSiwe.error = null;
+  mockSiwe.connectionLost = false;
   mockSiwe.signIn.mockReset();
   mockSiwe.signOut.mockReset();
 });
@@ -106,6 +108,25 @@ describe("JoinSection", () => {
       );
       expect(screen.getByText(/Connect your wallet to join/)).toBeInTheDocument();
       expect(screen.getByText("Connect Wallet")).toBeInTheDocument();
+    });
+
+    // Bug fix (2026-08-28) — a mid-session permission drop (e.g. switching MetaMask to an
+    // account this site was never connected with) previously showed the exact same generic
+    // prompt as a first-time visitor, making it look like the app silently got stuck.
+    it("shows a connection-lost message instead of the generic prompt when connectionLost is true", () => {
+      mockSiwe.connectionLost = true;
+      renderWithProviders(
+        <JoinSection
+          communityId="0xabc"
+          contractAddress="0xabc"
+          connected={false}
+          status="disconnected"
+          rpcUrl="http://localhost:8545"
+          isCreator={false}
+        />,
+      );
+      expect(screen.getByText("Wallet connection lost — click Connect to resume.")).toBeInTheDocument();
+      expect(screen.queryByText(/Connect your wallet to join/)).not.toBeInTheDocument();
     });
 
     it("calls connect() with the first available connector on click", () => {

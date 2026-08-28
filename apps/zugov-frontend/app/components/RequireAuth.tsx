@@ -1,6 +1,7 @@
 import { Outlet } from "react-router-dom";
 import { useAccount, useConnect } from "wagmi";
 import { Header } from "./Header";
+import { useSiwe } from "@/src/hooks/useSiwe";
 
 // /plan-eng-review Phase B (2026-08-23) — a route-level guard, applied to exactly the 2 routes
 // with a genuine UX case for it: /manage-communities and /manage-profile. A full 14-route audit
@@ -14,6 +15,7 @@ import { Header } from "./Header";
 export function RequireAuth() {
   const { address, status } = useAccount();
   const { connectors, connect } = useConnect();
+  const { connectionLost } = useSiwe();
 
   // Covers wagmi's reconnect-on-mount window (matches WalletConnectButton's same check) — without
   // it, a returning user with an already-connected wallet would see a false "Connect your wallet"
@@ -34,7 +36,14 @@ export function RequireAuth() {
       <div className="min-h-screen bg-gray-950 text-foreground">
         <Header />
         <main className="max-w-4xl mx-auto px-4 py-24 flex flex-col items-center justify-center gap-4 text-center">
-          <p className="text-gray-400">Connect your wallet to view this page.</p>
+          {/* Bug fix (2026-08-28) — distinguishes a mid-session permission drop (e.g. switching
+              MetaMask to an account this site was never connected with) from a plain first-visit
+              disconnected state, so this doesn't look like the app silently got stuck. */}
+          <p className="text-gray-400">
+            {connectionLost
+              ? "Wallet connection lost — click Connect to resume."
+              : "Connect your wallet to view this page."}
+          </p>
           <button
             type="button"
             onClick={() => connect({ connector: connectors[0]! })}

@@ -44,6 +44,7 @@ function makeMockSiwe() {
     error: null,
     signIn: vi.fn(),
     signOut: vi.fn(),
+    connectionLost: false,
   };
 }
 

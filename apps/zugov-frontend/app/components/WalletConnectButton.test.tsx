@@ -18,14 +18,16 @@ vi.mock("wagmi", () => ({
 // (previously only the wallet connection was torn down, leaving the httpOnly cookie valid for
 // 24h).
 const siweSignOutMock = vi.fn();
+const mockSiwe = {
+  isAuthenticated: true,
+  isSigning: false,
+  error: null as string | null,
+  signIn: vi.fn(),
+  signOut: siweSignOutMock,
+  connectionLost: false,
+};
 vi.mock("@/src/hooks/useSiwe", () => ({
-  useSiwe: () => ({
-    isAuthenticated: true,
-    isSigning: false,
-    error: null,
-    signIn: vi.fn(),
-    signOut: siweSignOutMock,
-  }),
+  useSiwe: () => mockSiwe,
 }));
 
 Object.assign(navigator, { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
@@ -63,6 +65,7 @@ beforeEach(() => {
   useAccountMock.mockReset();
   useConnectMock.mockReset();
   siweSignOutMock.mockReset();
+  mockSiwe.connectionLost = false;
 });
 
 describe("WalletConnectButton", () => {
@@ -98,6 +101,17 @@ describe("WalletConnectButton", () => {
     renderWithProviders();
 
     expect(screen.getByText(/install metamask/i)).toBeInTheDocument();
+  });
+
+  // Bug fix (2026-08-28) — a mid-session permission drop (e.g. switching MetaMask to an account
+  // this site was never connected with) previously looked identical to a plain disconnected
+  // state, with no signal that the app didn't just silently break.
+  it("shows a connection-lost message when connectionLost is true", () => {
+    mockSiwe.connectionLost = true;
+    mockDisconnected();
+    renderWithProviders();
+
+    expect(screen.getByText("Wallet connection lost — click Connect to resume.")).toBeInTheDocument();
   });
 
   it("clicking the address does NOT sign out — it opens a menu instead", () => {

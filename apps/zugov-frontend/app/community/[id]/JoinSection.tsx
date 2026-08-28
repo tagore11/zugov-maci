@@ -49,7 +49,7 @@ export function JoinSection({
   allowJoin?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const { signOut } = useSiwe();
+  const { signOut, connectionLost } = useSiwe();
   const { connectors, connect, isPending: isConnecting } = useConnect();
   // Investigation fix (2026-08-21) — this page never previously established a SIWE session at
   // all, so clicking Join here could hit a bare "Authentication required" from the backend with
@@ -171,7 +171,14 @@ export function JoinSection({
   if (!connected) {
     return (
       <div className="space-y-2 text-center">
-        <p className="text-sm text-gray-400">Connect your wallet to join this community.</p>
+        {/* Bug fix (2026-08-28) — distinguishes a mid-session permission drop (e.g. switching
+            MetaMask to an account this site was never connected with) from a plain first-visit
+            disconnected state, so this doesn't look like the app silently got stuck. */}
+        <p className="text-sm text-gray-400">
+          {connectionLost
+            ? "Wallet connection lost — click Connect to resume."
+            : "Connect your wallet to join this community."}
+        </p>
         <button
           type="button"
           onClick={() => connect({ connector: connectors[0]! })}
