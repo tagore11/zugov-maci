@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useOutletContext } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import * as membershipApi from "@/src/services/membershipApi";
@@ -99,6 +100,7 @@ export default function CommunitySettingsPage() {
   const communityId = community.id;
   const navigate = useNavigate();
   const { signOut } = useSiwe();
+  const queryClient = useQueryClient();
 
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -219,6 +221,12 @@ export default function CommunitySettingsPage() {
         await eligibilityApi.replaceRuleset(communityId, eligibilityRules);
       }, signOut);
 
+      // Bug fix (2026-08-28) — CommunityLayout.tsx caches the community under queryKey
+      // ["community", communityId] with React Query's default staleTime; without invalidating it
+      // here, navigate() below returns to a page still rendering the pre-save cached object (the
+      // header, JoinSection, and every other tab all read from it), and only a full reload
+      // (bypassing the cache entirely) previously showed the new values.
+      queryClient.invalidateQueries({ queryKey: ["community", communityId] });
       navigate(`/community/${communityId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save changes");

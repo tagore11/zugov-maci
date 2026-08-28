@@ -182,6 +182,7 @@ export default function CommunityLayout() {
             status={status}
             rpcUrl={rpcUrl}
             isCreator={isCreator}
+            allowJoin={dc.allowJoin}
           />
         </div>
 

@@ -7,6 +7,11 @@ const listUnionsForCommunityMock = vi.fn();
 const inviteToUnionMock = vi.fn();
 const respondToUnionInviteMock = vi.fn();
 const leaveUnionMock = vi.fn();
+// Bug fix (2026-08-28) — InviteToUnionForm now searches by name via CommunitySearchInput instead
+// of a raw ID field, so tests need list()/get() mocked too (matching StepCommunityInfo.test.tsx's
+// convention for the same shared component).
+const listMock = vi.fn();
+const getMock = vi.fn();
 
 vi.mock("@/src/services/communityApi", async () => {
   const actual = await vi.importActual<typeof import("@/src/services/communityApi")>("@/src/services/communityApi");
@@ -16,8 +21,22 @@ vi.mock("@/src/services/communityApi", async () => {
     inviteToUnion: (...args: unknown[]) => inviteToUnionMock(...args),
     respondToUnionInvite: (...args: unknown[]) => respondToUnionInviteMock(...args),
     leaveUnion: (...args: unknown[]) => leaveUnionMock(...args),
+    list: (...args: unknown[]) => listMock(...args),
+    get: (...args: unknown[]) => getMock(...args),
   };
 });
+
+const TARGET_COMMUNITY = { id: "community-2", displayName: "Zukas Pop-up" };
+
+// Bug fix (2026-08-28) — types+clicks the resolved search result, replacing the old
+// fireEvent.change(getByPlaceholderText("Community ID"), ...) raw-ID interaction.
+async function selectInviteTarget() {
+  listMock.mockResolvedValue({ communities: [TARGET_COMMUNITY], total: 1, hasMore: false });
+  const input = screen.getByPlaceholderText("Search communities…");
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: "Zukas Pop-up" } });
+  fireEvent.click(await screen.findByText("Zukas Pop-up"));
+}
 
 // /plan-eng-review (2026-08-23) Batch 1 — InviteToUnionForm/UnionMembershipSection call useSiwe()
 // to get signOut for withAuthDetect. Mocking the module directly (matching JoinSection.test.tsx's
@@ -41,6 +60,8 @@ beforeEach(() => {
   respondToUnionInviteMock.mockReset();
   leaveUnionMock.mockReset();
   mockSignOut.mockReset();
+  listMock.mockReset();
+  getMock.mockReset();
 });
 
 // Child D (formalize-communities epic), /plan-eng-review 2026-08-25 — relocated from
@@ -56,6 +77,38 @@ describe("UnionMembershipSection", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  // Bug fix (2026-08-28) — replaces the raw "Community ID" text field with a search-by-name
+  // combobox (CommunitySearchInput) so the inviter can see and confirm which community they're
+  // about to invite before submitting, instead of typing an opaque ID with no feedback.
+  it("shows the resolved community's name (not a raw id) once selected from search results", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
+
+    fireEvent.click(await screen.findByText("Invite a community"));
+    await selectInviteTarget();
+
+    expect((screen.getByPlaceholderText("Search communities…") as HTMLInputElement).value).toBe("Zukas Pop-up");
+  });
+
+  it("keeps the Invite button disabled when typing without selecting a real search result", async () => {
+    listUnionsForCommunityMock.mockResolvedValue([
+      { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
+    ]);
+    listMock.mockResolvedValue({ communities: [TARGET_COMMUNITY], total: 1, hasMore: false });
+    renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
+
+    fireEvent.click(await screen.findByText("Invite a community"));
+    const input = screen.getByPlaceholderText("Search communities…");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "some unresolved text" } });
+    await waitFor(() => expect(listMock).toHaveBeenCalled());
+
+    expect(screen.getByText("Invite").closest("button")).toBeDisabled();
+    expect(inviteToUnionMock).not.toHaveBeenCalled();
+  });
+
   it("shows a loading spinner on the invite button while submitting, disabled during submit", async () => {
     listUnionsForCommunityMock.mockResolvedValue([
       { id: "union-1", displayName: "Alliance", logo: null, status: "active" },
@@ -66,7 +119,7 @@ describe("UnionMembershipSection", () => {
     renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
 
     fireEvent.click(await screen.findByText("Invite a community"));
-    fireEvent.change(screen.getByPlaceholderText("Community ID"), { target: { value: "community-2" } });
+    await selectInviteTarget();
     fireEvent.click(screen.getByText("Invite"));
 
     await waitFor(() => expect(screen.getByText("Inviting…")).toBeInTheDocument());
@@ -99,7 +152,7 @@ describe("UnionMembershipSection", () => {
     renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
 
     fireEvent.click(await screen.findByText("Invite a community"));
-    fireEvent.change(screen.getByPlaceholderText("Community ID"), { target: { value: "community-2" } });
+    await selectInviteTarget();
     fireEvent.click(screen.getByText("Invite"));
 
     await waitFor(() =>
@@ -121,7 +174,7 @@ describe("UnionMembershipSection", () => {
     renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
 
     fireEvent.click(await screen.findByText("Invite a community"));
-    fireEvent.change(screen.getByPlaceholderText("Community ID"), { target: { value: "community-2" } });
+    await selectInviteTarget();
     fireEvent.click(screen.getByText("Invite"));
 
     await waitFor(() => expect(screen.getByText("Already invited")).toBeInTheDocument());
@@ -138,7 +191,7 @@ describe("UnionMembershipSection", () => {
     renderWithProviders(<UnionMembershipSection communityId={COMMUNITY_ID} />);
 
     fireEvent.click(await screen.findByText("Invite a community"));
-    fireEvent.change(screen.getByPlaceholderText("Community ID"), { target: { value: "community-2" } });
+    await selectInviteTarget();
     fireEvent.click(screen.getByText("Invite"));
 
     await waitFor(() =>
