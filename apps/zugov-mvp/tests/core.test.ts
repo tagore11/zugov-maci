@@ -210,3 +210,50 @@ describe("elicitation", () => {
     expect(result.vector.confirmed).toBe(false);
   });
 });
+
+describe("question selection", () => {
+  const base = {
+    decisionId: "k1",
+    title: "Ortak alan",
+    options: [
+      { id: "s1", label: "Mutfak" },
+      { id: "s2", label: "Oda" },
+    ],
+  };
+
+  it("asks only what a plain proposal earns", async () => {
+    const { questionsFor } = await import("../lib/llm/grounding");
+    const asked = questionsFor({ ...base, body: "Ne yapalım bilmiyoruz." });
+    expect(asked).toEqual(["assumptions", "counterarguments", "precedents"]);
+    expect(asked.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("adds base rates when the text makes a numeric claim", async () => {
+    const { questionsFor } = await import("../lib/llm/grounding");
+    expect(questionsFor({ ...base, body: "40 bin lira var." })).toContain("baseRates");
+  });
+
+  it("adds reversibility when the text describes committing to something", async () => {
+    const { questionsFor } = await import("../lib/llm/grounding");
+    expect(questionsFor({ ...base, body: "Bir yer kiralayacağız." })).toContain("reversibility");
+  });
+
+  it("does not ask for precedents when the text already cites one", async () => {
+    const { questionsFor } = await import("../lib/llm/grounding");
+    const asked = questionsFor({ ...base, body: "Geçen yıl da denedik." });
+    expect(asked).not.toContain("precedents");
+    // Dropping a question must not take the audit below its floor.
+    expect(asked.length).toBe(3);
+  });
+
+  it("never asks more than six or fewer than three", async () => {
+    const { questionsFor } = await import("../lib/llm/grounding");
+    const busy = questionsFor({
+      ...base,
+      options: [...base.options, { id: "s3", label: "Atölye" }],
+      body: "40 bin lira ile bir yer kiralayacağız, esnaf ve çalışanlar etkilenecek.",
+    });
+    expect(busy.length).toBeLessThanOrEqual(6);
+    expect(busy.length).toBeGreaterThanOrEqual(3);
+  });
+});

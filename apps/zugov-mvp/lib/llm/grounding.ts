@@ -216,14 +216,66 @@ function sentencesAbout(label: string, body: string): string[] {
 }
 
 /**
+ * Which questions this particular proposal earns.
+ *
+ * Six questions asked of every proposal is six questions asked because the list
+ * has six entries. Two of them apply to anything anyone proposes; the other four
+ * are asked only when the text gives a reason to ask them. A proposal that cites
+ * last year's attempt does not need to be asked for precedents, and one that
+ * makes no numeric claim has no base rate to check.
+ *
+ * The selection is made from the text, not by a model, so a reader can be told
+ * why a question was asked.
+ */
+export function questionsFor(input: GroundingInput): EpistemicQuestionKey[] {
+  const text = `${input.title} ${input.body}`.toLocaleLowerCase("tr");
+
+  // These two hold for any proposal: something has to be true for it to work,
+  // and someone can argue against it.
+  const chosen: EpistemicQuestionKey[] = ["assumptions", "counterarguments"];
+
+  // A numeric claim invites the question of what the usual figure is.
+  if (/\d/.test(text)) chosen.push("baseRates");
+
+  // Words that describe committing to something make the cost of undoing it
+  // worth asking about.
+  if (/(kur|inşa|satın|kirala|sözleşme|anlaşma|imzala|taşın|yatırım|bütçe|maliyet|ücret)/.test(text)) {
+    chosen.push("reversibility");
+  }
+
+  // More than two options, or a text that already names groups, means the
+  // question of who is affected has something to bite on.
+  if (input.options.length > 2 || /(çalışan|sakin|esnaf|komşu|üye|misafir|aile|çocuk|gönüllü|ekip)/.test(text)) {
+    chosen.push("affectedParties");
+  }
+
+  // Asked only when the text points at no prior attempt of its own.
+  if (!/(geçen (yıl|sene|sefer)|daha önce|geçmişte|önceki|ilk kez değil|deneme)/.test(text)) {
+    chosen.push("precedents");
+  }
+
+  // A floor of three. A proposal that trips none of the conditions above still
+  // deserves more than two questions, and reversibility is the one that applies
+  // to anything: every decision either can be undone or cannot.
+  const FLOOR = 3;
+  for (const filler of ["reversibility", "affectedParties", "baseRates"] as EpistemicQuestionKey[]) {
+    if (chosen.length >= FLOOR) break;
+    if (!chosen.includes(filler)) chosen.push(filler);
+  }
+
+  return chosen;
+}
+
+/**
  * The six-question audit, run only when someone opens it.
  */
 export async function auditProposal(input: GroundingInput, base: GroundingReport): Promise<GroundingReport> {
   const context = contextOf(input);
+  const asked = questionsFor(input);
   const raw: RawGrounding = {};
   let failures = 0;
 
-  for (const key of EPISTEMIC_QUESTIONS) {
+  for (const key of asked) {
     const spec = QUESTIONS[key];
     try {
       const answer = await completeJson<{ observations?: string[] }>(
@@ -247,17 +299,17 @@ export async function auditProposal(input: GroundingInput, base: GroundingReport
   );
 
   const sections = Object.fromEntries(
-    EPISTEMIC_QUESTIONS.map((key) => [
+    asked.map((key) => [
       key,
       {
         question: QUESTIONS[key].question,
         observations:
-          failures === EPISTEMIC_QUESTIONS.length
+          failures === asked.length
             ? cleanObservations(fallback[key], source, exampleLines)
             : cleanObservations(raw[key], source, exampleLines),
       },
     ]),
-  ) as Record<EpistemicQuestionKey, { question: string; observations: string[] }>;
+  ) as Partial<Record<EpistemicQuestionKey, { question: string; observations: string[] }>>;
 
   return assemble(input, {
     crux: base.crux,
@@ -272,7 +324,7 @@ function assemble(
   parts: {
     crux: string;
     tradeoffs: Record<Id, string>;
-    sections: Record<EpistemicQuestionKey, { question: string; observations: string[] }> | null;
+    sections: Partial<Record<EpistemicQuestionKey, { question: string; observations: string[] }>> | null;
     producedBy: string;
   },
 ): GroundingReport {

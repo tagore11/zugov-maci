@@ -142,7 +142,11 @@ export interface GroundingReport {
   crux: string;
   /** Per option, one sentence: what choosing it costs. */
   tradeoffs: Record<Id, string>;
-  sections: Record<EpistemicQuestionKey, GroundingSection> | null;
+  /**
+   * Only the questions this proposal earned. Partial on purpose: asking all six
+   * of everything is asking because the list has six entries.
+   */
+  sections: Partial<Record<EpistemicQuestionKey, GroundingSection>> | null;
   /** sha256 of the normalised report body, so two people can compare runs. */
   digest: string;
 }
