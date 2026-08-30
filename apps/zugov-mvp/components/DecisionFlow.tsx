@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { GroundingReport, MechanismId, Option, PreferenceVector, Stance } from "@/lib/core/types";
 import { getMechanism } from "@/lib/core/mechanisms";
-import { Button, Card, Eyebrow, Hint, Steps, Title } from "./ui";
+import { Button, Hint, Panel, Steps, Title } from "./ui";
 import { GroundingPanel } from "./GroundingPanel";
 
 /**
@@ -141,23 +141,23 @@ export function DecisionFlow({
       <Steps labels={STEP_LABELS} current={step} />
 
       {step === 0 ? (
-        <Card>
+        <Panel>
           <Title as="h1">{title}</Title>
           {body ? <p className="prose-read mt-5 max-w-[62ch]">{body}</p> : null}
 
           <div className="mt-8 border-t border-line pt-6">
-            <Eyebrow>Karar verilmeden önce</Eyebrow>
+            <h2 className="mb-3 text-[17px] font-semibold">Karar verilmeden önce</h2>
             <GroundingPanel decisionId={decisionId} initial={grounding} />
           </div>
 
           <div className="mt-8">
             <Button onClick={() => setStep(1)}>Okudum, devam</Button>
           </div>
-        </Card>
+        </Panel>
       ) : null}
 
       {step === 1 ? (
-        <Card>
+        <Panel>
           <Title>Sen ne düşünüyorsun?</Title>
 
           <label className="mt-6 block">
@@ -167,10 +167,10 @@ export function DecisionFlow({
               onChange={(e) => setSubjectId(e.target.value)}
               placeholder="deniz"
               autoComplete="off"
-              className="w-full max-w-xs rounded-[10px] border border-line bg-sunk px-4 py-3 text-[16px] placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              className="w-full max-w-xs rounded-[2px] border border-line bg-sunk px-4 py-3 text-[16px] placeholder:text-ink-faint focus:border-ink focus:outline-none"
             />
             {nameTaken ? (
-              <span className="mt-2 block text-[14px] text-accent-ink">
+              <span className="mt-2 block text-[14px] text-ink-soft">
                 Bu isimle bir kayıt var. Devam edersen onun yerine geçer.
               </span>
             ) : null}
@@ -183,7 +183,7 @@ export function DecisionFlow({
               onChange={(e) => setText(e.target.value)}
               rows={6}
               placeholder="Neyi istiyorsun, neyi istemiyorsun, senin için kritik olan ne."
-              className="w-full rounded-[10px] border border-line bg-sunk px-4 py-3 text-[16px] leading-relaxed placeholder:text-ink-faint focus:border-accent focus:outline-none"
+              className="w-full rounded-[2px] border border-line bg-sunk px-4 py-3 text-[16px] leading-relaxed placeholder:text-ink-faint focus:border-ink focus:outline-none"
             />
           </label>
           <Hint>
@@ -191,7 +191,7 @@ export function DecisionFlow({
             değiştirebilirsin.
           </Hint>
 
-          {error ? <p className="mt-4 text-[14px] text-no">{error}</p> : null}
+          {error ? <p className="mt-4 text-[14px] text-alarm">{error}</p> : null}
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Button onClick={draftFromText} disabled={busy || text.trim().length < 10}>
@@ -204,7 +204,7 @@ export function DecisionFlow({
               Geri
             </Button>
           </div>
-        </Card>
+        </Panel>
       ) : null}
 
       {step === 2 ? (
@@ -224,9 +224,8 @@ export function DecisionFlow({
       ) : null}
 
       {step === 3 ? (
-        <Card>
-          <Eyebrow>{mechanism.name} kuralına göre</Eyebrow>
-          <Title>Oyun şunu söylüyor</Title>
+        <Panel>
+          <Title>{mechanism.name} kuralında oyun şunu söylüyor</Title>
 
           <ul className="mt-6 space-y-3">
             {readBack.map((line, index) => (
@@ -236,14 +235,14 @@ export function DecisionFlow({
             ))}
           </ul>
 
-          <div className="mt-8 rounded-[12px] bg-sunk px-5 py-4">
+          <div className="mt-8 rounded-[2px] bg-sunk px-5 py-4">
             <Hint>
               Bu, senin yazdıklarının bu topluluğun seçtiği sayım kuralına çevrilmiş hali. Kural
               sonradan değişirse tercihin korunur, yeniden oy vermen gerekmez.
             </Hint>
           </div>
 
-          {error ? <p className="mt-4 text-[14px] text-no">{error}</p> : null}
+          {error ? <p className="mt-4 text-[14px] text-alarm">{error}</p> : null}
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Button onClick={submit} disabled={busy}>
@@ -253,7 +252,7 @@ export function DecisionFlow({
               Seçeneklere dön
             </Button>
           </div>
-        </Card>
+        </Panel>
       ) : null}
     </div>
   );
@@ -281,22 +280,22 @@ function OptionStep({
   onNext: () => void;
 }) {
   return (
-    <Card>
-      <Eyebrow>
+    <Panel>
+      <p className="mb-2 font-mono text-[12px] tabular-nums text-ink-faint">
         Seçenek {index + 1} / {total}
-      </Eyebrow>
+      </p>
       <Title>{option.label}</Title>
       {option.detail ? <Hint>{option.detail}</Hint> : null}
 
       {stance.rationale ? (
-        <figure className="mt-5 border-l-2 border-accent pl-4">
+        <figure className="mt-5 border-l-2 border-line-strong pl-4">
           <blockquote className="prose-read text-ink-soft">{stance.rationale}</blockquote>
           <figcaption className="mt-1 text-[13px] text-ink-faint">senin yazdığın cümle</figcaption>
         </figure>
       ) : null}
 
       {flagged ? (
-        <p className="mt-5 rounded-[12px] bg-accent-soft px-4 py-3 text-[14px] leading-relaxed text-accent-ink">
+        <p className="mt-5 rounded-[2px] border-l-2 border-alarm bg-sunk px-4 py-3 text-[14px] leading-relaxed">
           Bunun hakkında bir şey yazmışsın ama taslak nötr kaldı. Buraya bakman iyi olur.
         </p>
       ) : null}
@@ -307,22 +306,20 @@ function OptionStep({
           steps={SUPPORT_STEPS}
           value={nearest(SUPPORT_STEPS, stance.support)}
           onChange={(value) => onChange({ support: value })}
-          tone="direction"
         />
         <Choice
           legend="Bu konu senin için ne kadar önemli?"
           steps={SALIENCE_STEPS}
           value={nearest(SALIENCE_STEPS, stance.salience)}
           onChange={(value) => onChange({ salience: value })}
-          tone="degree"
         />
 
-        <label className="flex items-start gap-3 rounded-[12px] border border-line bg-sunk px-4 py-3">
+        <label className="flex items-start gap-3 rounded-[2px] border border-line bg-sunk px-4 py-3">
           <input
             type="checkbox"
             checked={stance.redLine}
             onChange={(e) => onChange({ redLine: e.target.checked })}
-            className="mt-0.5 size-5 accent-[color:var(--no)]"
+            className="mt-0.5 size-5 accent-[color:var(--alarm)]"
           />
           <span className="text-[15px] leading-relaxed">
             Bu benim kırmızı çizgim. Bu çıkarsa kabul edemem.
@@ -342,32 +339,23 @@ function OptionStep({
           {producedBy === "elle" ? "boş tablo" : producedBy.startsWith("heuristic") ? "kaba taslak" : "taslak"}
         </span>
       </div>
-    </Card>
+    </Panel>
   );
 }
 
 /**
- * Colour carries meaning here, so it is spent carefully.
- *
- * "direction" questions use green for support and red for opposition, and
- * nothing for indifference, because indifference is not a warning. "degree"
- * questions have no direction at all, so they never borrow the green or the
- * red; they use the accent. An earlier version painted "quite important" green
- * and "makes no difference" red, which told the reader the opposite of what
- * they had chosen.
+ * One control, one shape, no hue. See selectionStyle below.
  */
 function Choice({
   legend,
   steps,
   value,
   onChange,
-  tone,
 }: {
   legend: string;
   steps: Array<{ value: number; label: string }>;
   value: number;
   onChange: (value: number) => void;
-  tone: "direction" | "degree";
 }) {
   return (
     <fieldset>
@@ -375,20 +363,14 @@ function Choice({
       <div className="grid gap-2">
         {steps.map((step) => {
           const active = step.value === value;
-          const colour = colourFor(tone, step.value);
           return (
             <button
               key={step.value}
               type="button"
               onClick={() => onChange(step.value)}
               aria-pressed={active}
-              className="tap rounded-[10px] border px-4 py-3 text-left text-[16px]"
-              style={{
-                borderColor: active ? colour.line : "var(--line)",
-                background: active ? colour.fill : "var(--card)",
-                color: active ? colour.text : "var(--ink)",
-                fontWeight: active ? 600 : 400,
-              }}
+              className="tap min-h-[44px] rounded-[2px] border px-4 py-3 text-left text-[16px]"
+              style={selectionStyle(active)}
             >
               {step.label}
             </button>
@@ -399,13 +381,22 @@ function Choice({
   );
 }
 
-function colourFor(tone: "direction" | "degree", value: number) {
-  if (tone === "degree") {
-    return { line: "var(--accent)", fill: "var(--accent-soft)", text: "var(--accent-ink)" };
-  }
-  if (value > 0) return { line: "var(--yes)", fill: "var(--yes-soft)", text: "var(--yes)" };
-  if (value < 0) return { line: "var(--no)", fill: "var(--no-soft)", text: "var(--no)" };
-  return { line: "var(--line-strong)", fill: "var(--sunk)", text: "var(--ink-soft)" };
+/**
+ * Selection is shown with ink, not with hue.
+ *
+ * An earlier pass gave support a green and opposition a red, then had to give
+ * "quite important" a colour too and painted it green, which told the reader
+ * the opposite of what they had chosen. The direction of a choice is already
+ * written in its label, so colour was carrying nothing that the words were not
+ * already carrying better.
+ */
+function selectionStyle(active: boolean) {
+  return {
+    borderColor: active ? "var(--ink)" : "var(--line)",
+    background: active ? "var(--ink)" : "var(--card)",
+    color: active ? "var(--on-ink)" : "var(--ink)",
+    fontWeight: active ? 600 : 400,
+  };
 }
 
 function blankStances(options: Option[]): Stance[] {

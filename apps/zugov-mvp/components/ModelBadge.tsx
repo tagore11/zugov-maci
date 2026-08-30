@@ -36,7 +36,7 @@ export function ModelBadge() {
     <span className="font-mono text-[11px] text-ink-faint">
       {status.available ? (
         <>
-          <span style={{ color: "var(--yes)" }}>{status.model}</span> bu cihazda çalışıyor
+          <span className="font-medium">{status.model}</span> bu cihazda çalışıyor
         </>
       ) : (
         <>model kapalı, kural tabanlı yedek devrede ({status.detail})</>

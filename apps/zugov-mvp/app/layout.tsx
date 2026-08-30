@@ -1,12 +1,24 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, Outfit, Source_Serif_4 } from "next/font/google";
+import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
 import "./globals.css";
 
-/* Self-hosted at build time. A local-first app should not phone a font CDN.
-   All three carry the Turkish diacritics, which is why latin-ext is loaded. */
-const outfit = Outfit({ subsets: ["latin", "latin-ext"], weight: ["400", "500", "600"], variable: "--font-outfit" });
-const sourceSerif = Source_Serif_4({ subsets: ["latin", "latin-ext"], weight: ["400", "600"], variable: "--font-source-serif" });
-const plexMono = IBM_Plex_Mono({ subsets: ["latin", "latin-ext"], weight: ["400", "500"], variable: "--font-plex-mono" });
+/* One superfamily, three voices. Self-hosted at build time: a local-first app
+   should not phone a font CDN. latin-ext carries the Turkish diacritics. */
+const plexSans = IBM_Plex_Sans({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500", "600"],
+  variable: "--font-plex-sans",
+});
+const plexSerif = IBM_Plex_Serif({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "600"],
+  variable: "--font-plex-serif",
+});
+const plexMono = IBM_Plex_Mono({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "500"],
+  variable: "--font-plex-mono",
+});
 
 export const metadata: Metadata = {
   title: "ZuGov",
@@ -15,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="tr" className={`${outfit.variable} ${sourceSerif.variable} ${plexMono.variable}`}>
+    <html lang="tr" className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}>
       <body className="min-h-[100dvh]">{children}</body>
     </html>
   );

@@ -1,67 +1,85 @@
 @import "tailwindcss";
 
 /*
- * A decision tool for people who did not come here for software.
+ * Achromatic by rule. See DESIGN-RULES.md, enforced by tests/design.test.ts.
  *
- * Light ground by default. The earlier dark base came from the team's app,
- * where it was inherited rather than chosen; for a form that a resident opens
- * once on a phone in daylight, paper reads friendlier than a console. Dark mode
- * is supported for people whose systems ask for it.
+ * The grey ramp is IBM Carbon's, used as published. Borrowing a published
+ * corporate ramp rather than inventing one is the point: an invented palette is
+ * how a generated interface announces itself.
  *
- * Terracotta stays. It is the one thing worth keeping from the previous system:
- * it reads as a place (clay, courtyard walls) rather than as a product, and it
- * is not a colour any DAO tool uses.
+ * Exactly one chromatic value exists in the whole system, a red, and it is
+ * spent on two things only: a red line declaration and an error. Selection is
+ * shown with ink, not colour, because the direction of a choice is already
+ * written in its label.
+ *
+ * Three grounds are defined. Set data-tema on <html> to compare them.
  */
 
 @theme {
-  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
-  --font-read: var(--font-source-serif), Georgia, serif;
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-read: var(--font-plex-serif), Georgia, serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
-
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
 }
 
-:root {
-  --paper: #faf6f0;
+/* A. Beyaz. Pure white ground, no cards, structure carried by rules alone. */
+:root,
+:root[data-tema="beyaz"] {
+  --paper: #ffffff;
   --card: #ffffff;
-  --sunk: #f2ebe1;
-  --line: #e4d9c9;
-  --line-strong: #cdbca5;
-  --ink: #241d16;
-  --ink-soft: #5d5145;
-  --ink-faint: #8b7c6b;
+  --sunk: #f4f4f4;
+  --line: #e0e0e0;
+  --line-strong: #c6c6c6;
+  --ink: #161616;
+  --ink-soft: #525252;
+  --ink-faint: #6f6f6f;
+  --on-ink: #f4f4f4;
+  --alarm: #da1e28;
+  --alarm-sunk: #f4f4f4;
+}
 
-  --accent: #b4552c;
-  --accent-soft: #f6e4da;
-  --accent-ink: #8c3f1e;
+/* B. Kagit. Grey ground, white surfaces float on it. Softer, still achromatic. */
+:root[data-tema="kagit"] {
+  --paper: #e8e8e8;
+  --card: #ffffff;
+  --sunk: #f4f4f4;
+  --line: #d0d0d0;
+  --line-strong: #a8a8a8;
+  --ink: #161616;
+  --ink-soft: #525252;
+  --ink-faint: #6f6f6f;
+  --on-ink: #f4f4f4;
+  --alarm: #da1e28;
+  --alarm-sunk: #f4f4f4;
+}
 
-  --yes: #4f7a4a;
-  --yes-soft: #e6efe2;
-  --no: #a8443f;
-  --no-soft: #f7e3e1;
+/* C. Karbon. */
+:root[data-tema="karbon"] {
+  --paper: #161616;
+  --card: #262626;
+  --sunk: #393939;
+  --line: #393939;
+  --line-strong: #525252;
+  --ink: #f4f4f4;
+  --ink-soft: #c6c6c6;
+  --ink-faint: #8d8d8d;
+  --on-ink: #161616;
+  --alarm: #fa4d56;
+  --alarm-sunk: #262626;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #17130f;
-    --card: #201a15;
-    --sunk: #2a221b;
-    --line: #3b3024;
-    --line-strong: #574636;
-    --ink: #f4ece1;
-    --ink-soft: #bdb0a0;
-    --ink-faint: #8b7c6b;
-
-    --accent: #d97845;
-    --accent-soft: #3a2419;
-    --accent-ink: #f0a37a;
-
-    --yes: #7fb377;
-    --yes-soft: #23301f;
-    --no: #d0776f;
-    --no-soft: #33211f;
+  :root:not([data-tema]) {
+    --paper: #161616;
+    --card: #262626;
+    --sunk: #393939;
+    --line: #393939;
+    --line-strong: #525252;
+    --ink: #f4f4f4;
+    --ink-soft: #c6c6c6;
+    --ink-faint: #8d8d8d;
+    --on-ink: #161616;
+    --alarm: #fa4d56;
+    --alarm-sunk: #262626;
   }
 }
 
@@ -74,11 +92,8 @@
   --color-ink: var(--ink);
   --color-ink-soft: var(--ink-soft);
   --color-ink-faint: var(--ink-faint);
-  --color-accent: var(--accent);
-  --color-accent-soft: var(--accent-soft);
-  --color-accent-ink: var(--accent-ink);
-  --color-yes: var(--yes);
-  --color-no: var(--no);
+  --color-on-ink: var(--on-ink);
+  --color-alarm: var(--alarm);
 }
 
 body {
@@ -88,17 +103,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Anything a person has to read slowly and think about is set in the serif.
-   Anything they operate is set in the sans. That is the whole type system. */
+/* Sans for what you operate, serif for what you have to read slowly.
+   One family, three voices. */
 .prose-read {
   font-family: var(--font-read);
   font-size: 1.0625rem;
-  line-height: 1.7;
-  color: var(--ink);
+  line-height: 1.65;
 }
 
 .tap {
-  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+  transition: background-color 120ms ease-out, border-color 120ms ease-out, color 120ms ease-out;
 }
 .tap:active {
   transform: translateY(1px);
@@ -111,9 +125,7 @@ body {
   }
 }
 
-/* Focus is visible everywhere. People fill this in on phones and with keyboards. */
 :where(a, button, input, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--ink);
   outline-offset: 2px;
-  border-radius: 6px;
 }

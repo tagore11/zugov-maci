@@ -44,7 +44,7 @@ export function GroundingPanel({ decisionId, initial }: { decisionId: string; in
           argüman ne, geri dönmek ne kadar kolay, kimler etkileniyor. Cevaplar bu cihazdaki
           modelden gelir. Rapor oy vermez, seçenek önermez.
         </Hint>
-        {error ? <p className="text-[14px] text-no">{error}</p> : null}
+        {error ? <p className="text-[14px] text-alarm">{error}</p> : null}
         <Button kind="quiet" onClick={run} disabled={busy}>
           {busy ? "Okunuyor" : "Öneriyi sorgula"}
         </Button>
@@ -61,7 +61,7 @@ export function GroundingPanel({ decisionId, initial }: { decisionId: string; in
         type="button"
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
-        className="tap text-[15px] font-medium text-accent-ink underline underline-offset-4"
+        className="tap text-[15px] font-medium underline underline-offset-4"
       >
         {open ? "Soruları gizle" : `Altı sorunun cevabını göster`}
       </button>
@@ -109,8 +109,8 @@ function Skeleton() {
     <div className="space-y-3" aria-hidden>
       {[0, 1, 2].map((i) => (
         <div key={i} className="space-y-2">
-          <div className="h-3 w-2/5 rounded bg-sunk" />
-          <div className="h-3 w-4/5 rounded bg-sunk" />
+          <div className="h-3 w-2/5 bg-sunk" />
+          <div className="h-3 w-4/5 bg-sunk" />
         </div>
       ))}
     </div>
