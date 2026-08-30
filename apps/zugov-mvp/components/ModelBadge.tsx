@@ -29,14 +29,14 @@ export function ModelBadge() {
   }, []);
 
   if (!status) {
-    return <span className="font-mono text-[11px] text-placeholder">model durumu okunuyor</span>;
+    return <span className="font-mono text-[11px] text-ink-faint">model durumu okunuyor</span>;
   }
 
   return (
-    <span className="font-mono text-[11px] text-muted">
+    <span className="font-mono text-[11px] text-ink-faint">
       {status.available ? (
         <>
-          <span style={{ color: "var(--success)" }}>{status.model}</span> bu cihazda çalışıyor
+          <span style={{ color: "var(--yes)" }}>{status.model}</span> bu cihazda çalışıyor
         </>
       ) : (
         <>model kapalı, kural tabanlı yedek devrede ({status.detail})</>

@@ -78,6 +78,29 @@ for (const vector of vectors) {
 
 Bu tek satır, "AI yardımcı olur ama karar vermez" iddiasının koda yazılmış hali. Test ediliyor.
 
+## Arayüz: ekranda tek soru
+
+Katılım akışı dört adım, her adım tek bir şey soruyor.
+
+1. **Öneri.** Gerekçe metni serifle, rahat okunacak ölçüde. Sorgulama raporu burada ama kapalı
+   duruyor, isteyen açar. Makine yazısı bir duvarı önerinin üstüne koymak, kimse konuşmadan
+   odadaki en yüksek sesi vermek olurdu.
+2. **Sen.** İsim ve kendi cümlelerin. Yazmak istemeyen doğrudan işaretlemeye geçebilir.
+3. **Seçenekler.** Her seçenek ayrı ekranda: ne diyorsun, ne kadar önemli, kırmızı çizgin mi.
+   Kendi yazdığın cümle o seçeneğin üstünde alıntılanır, taslağın nereden geldiğini görürsün.
+4. **Onay.** Tercihinin seçili sayım kuralında ne anlama geldiği düz Türkçeyle yazılır
+   (`mechanism.explain()`). Onaylamadan hiçbir şey kaydedilmez.
+
+**Sonuç ayrı sayfada, ve akışın içinde değil.** Önceki sürüm öneriyi, raporu, formu ve o anki
+sonucu tek sayfada gösteriyordu. Kişi kendi görüşünü oluşturmadan mevcut sonucu görüyordu, ki bu
+var olmayan bir mutabakatı imal etmenin en ucuz yolu.
+
+Arayüzde tek bir teori kelimesi yok. Kimse "quadratic" görmüyor, "100 kredin var, önemsediğine
+dağıt" görüyor. Sans arayüz için, serif okunacak metin için; kural bu kadar basit.
+
+Renk üç iş yapıyor: yön (yeşil destek, kırmızı itiraz), derece (accent, yönü yok), ve kırmızı
+çizgi. Kayıtsızlık uyarı değildir, o yüzden renksizdir.
+
 ## Model neden 3B
 
 Katılımcının kendi makinesinde çalışması gerekiyorsa boyut bir tasarım kısıtıdır, taviz değil.

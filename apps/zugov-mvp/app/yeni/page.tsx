@@ -41,40 +41,40 @@ export default function NewDecisionPage() {
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-16 md:px-6">
-      <Link href="/" className="font-mono text-[11px] text-muted underline underline-offset-4 hover:text-muted-strong">
+    <main className="mx-auto max-w-2xl px-4 py-12 md:py-16">
+      <Link href="/" className="tap text-[14px] text-ink-soft underline underline-offset-4">
         geri
       </Link>
 
-      <h1 className="mt-6 font-display text-[40px] font-bold leading-[1.1] tracking-tight">Karar aç</h1>
+      <h1 className="mt-6 text-[32px] font-medium leading-[1.15] tracking-[-0.02em] md:text-[38px]">Karar aç</h1>
 
       <div className="mt-10 space-y-8">
         <label className="block">
-          <span className="mb-2 block text-[13px] font-medium text-muted-strong">Karar başlığı</span>
+          <span className="mb-2 block text-[14px] font-medium">Karar başlığı</span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Ortak alanın bütçesi nereye gitsin?"
-            className="w-full rounded-[6px] border border-line bg-raised px-3 py-2 text-[15px] text-foreground placeholder:text-placeholder focus:border-accent focus:outline-none"
+            className="w-full rounded-[10px] border border-line bg-sunk px-4 py-3 text-[16px] placeholder:text-ink-faint focus:border-accent focus:outline-none"
           />
         </label>
 
         <label className="block">
-          <span className="mb-2 block text-[13px] font-medium text-muted-strong">Gerekçe metni</span>
+          <span className="mb-2 block text-[14px] font-medium">Gerekçe metni</span>
           <textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={6}
             placeholder="Neden karar veriyoruz, hangi kısıtlar var, hangi bilgi elimizde yok."
-            className="w-full rounded-[6px] border border-line bg-raised px-3 py-2 text-[15px] leading-relaxed text-foreground placeholder:text-placeholder focus:border-accent focus:outline-none"
+            className="w-full rounded-[10px] border border-line bg-sunk px-4 py-3 text-[16px] leading-relaxed placeholder:text-ink-faint focus:border-accent focus:outline-none"
           />
-          <span className="mt-2 block text-[13px] text-muted">
+          <span className="mt-2 block text-[14px] text-ink-soft">
             Sorgulama raporu bu metni okur. Ne kadar somut yazarsan rapor o kadar işe yarar.
           </span>
         </label>
 
         <fieldset>
-          <legend className="mb-2 text-[13px] font-medium text-muted-strong">Seçenekler</legend>
+          <legend className="mb-2 text-[14px] font-medium">Seçenekler</legend>
           <div className="space-y-2">
             {options.map((option, index) => (
               <input
@@ -84,22 +84,22 @@ export default function NewDecisionPage() {
                   setOptions((current) => current.map((o, i) => (i === index ? e.target.value : o)))
                 }
                 placeholder={`Seçenek ${index + 1}`}
-                className="w-full rounded-[6px] border border-line bg-raised px-3 py-2 text-[15px] text-foreground placeholder:text-placeholder focus:border-accent focus:outline-none"
+                className="w-full rounded-[10px] border border-line bg-sunk px-4 py-3 text-[16px] placeholder:text-ink-faint focus:border-accent focus:outline-none"
               />
             ))}
           </div>
           <button
             type="button"
             onClick={() => setOptions((current) => [...current, ""])}
-            className="mt-3 font-mono text-[11px] text-muted underline underline-offset-4 hover:text-muted-strong"
+            className="mt-3 tap text-[14px] text-ink-soft underline underline-offset-4"
           >
             seçenek ekle
           </button>
         </fieldset>
 
         <fieldset>
-          <legend className="mb-1 text-[13px] font-medium text-muted-strong">Sayım kuralı</legend>
-          <p className="mb-3 max-w-[60ch] text-[13px] text-muted">
+          <legend className="mb-1 text-[14px] font-medium">Sayım kuralı</legend>
+          <p className="mb-3 max-w-[60ch] text-[14px] text-ink-soft">
             Şimdi seçtiğin kural kesin değil. Herkes tercihini bir kez yazar, kuralı sonra
             değiştirirsen kimsenin yeniden oy vermesi gerekmez.
           </p>
@@ -112,27 +112,27 @@ export default function NewDecisionPage() {
                   type="button"
                   onClick={() => setMechanismId(choice.id)}
                   aria-pressed={active}
-                  className="rounded-[8px] border px-4 py-3 text-left transition-colors duration-150"
+                  className="tap rounded-[12px] border px-4 py-3 text-left"
                   style={{
-                    borderColor: active ? "var(--accent)" : "var(--gray-700)",
-                    background: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
+                    borderColor: active ? "var(--accent)" : "var(--line)",
+                    background: active ? "var(--accent-soft)" : "var(--card)",
                   }}
                 >
-                  <span className="block font-display text-[15px] font-semibold">{choice.name}</span>
-                  <span className="mt-1 block text-[13px] leading-relaxed text-muted">{choice.when}</span>
+                  <span className="block text-[16px] font-medium">{choice.name}</span>
+                  <span className="mt-1 block text-[14px] leading-relaxed text-ink-soft">{choice.when}</span>
                 </button>
               );
             })}
           </div>
         </fieldset>
 
-        {error ? <p className="text-[13px]" style={{ color: "var(--error)" }}>{error}</p> : null}
+        {error ? <p className="text-[13px]" style={{ color: "var(--no)" }}>{error}</p> : null}
 
         <button
           type="button"
           onClick={submit}
           disabled={busy}
-          className="rounded-[6px] px-4 py-2 text-[15px] font-medium text-white transition-colors duration-150 active:translate-y-[1px] disabled:opacity-40"
+          className="tap rounded-[10px] border border-accent px-5 py-2.5 text-[15px] font-medium text-white disabled:opacity-40"
           style={{ background: "var(--accent)" }}
         >
           {busy ? "Açılıyor" : "Kararı aç"}

@@ -1,88 +1,109 @@
 @import "tailwindcss";
 
 /*
- * Tokens are transcribed from the repository DESIGN.md (2026-08-18 system).
- * Warm-neutral scale, terracotta "Adobe" accent, dark-first with real system
- * light support. Values here and DESIGN.md are updated together.
+ * A decision tool for people who did not come here for software.
+ *
+ * Light ground by default. The earlier dark base came from the team's app,
+ * where it was inherited rather than chosen; for a form that a resident opens
+ * once on a phone in daylight, paper reads friendlier than a console. Dark mode
+ * is supported for people whose systems ask for it.
+ *
+ * Terracotta stays. It is the one thing worth keeping from the previous system:
+ * it reads as a place (clay, courtyard walls) rather than as a product, and it
+ * is not a colour any DAO tool uses.
  */
 
 @theme {
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+  --font-read: var(--font-source-serif), Georgia, serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
 }
 
 :root {
-  --background: #17130f;
-  --gray-900: #211a14;
-  --gray-800: #2a2118;
-  --gray-700: #3d2f21;
-  --gray-600: #55432f;
-  --gray-500: #7a6b54;
-  --gray-400: #aba08c;
-  --gray-300: #c7bea9;
-  --gray-200: #ded6c4;
-  --foreground: #f5eee4;
+  --paper: #faf6f0;
+  --card: #ffffff;
+  --sunk: #f2ebe1;
+  --line: #e4d9c9;
+  --line-strong: #cdbca5;
+  --ink: #241d16;
+  --ink-soft: #5d5145;
+  --ink-faint: #8b7c6b;
 
-  --accent: #c1633b;
-  --accent-hover: #dd8355;
-  --success: #64af8c;
-  --error: #af6467;
+  --accent: #b4552c;
+  --accent-soft: #f6e4da;
+  --accent-ink: #8c3f1e;
+
+  --yes: #4f7a4a;
+  --yes-soft: #e6efe2;
+  --no: #a8443f;
+  --no-soft: #f7e3e1;
 }
 
-@media (prefers-color-scheme: light) {
+@media (prefers-color-scheme: dark) {
   :root {
-    --background: #ede4d6;
-    --gray-900: #f7f1e7;
-    --gray-800: #ffffff;
-    --gray-700: #ddd0bc;
-    --gray-600: #c7b89e;
-    --gray-500: #8f7f65;
-    --gray-400: #6b5d48;
-    --gray-300: #4a3f30;
-    --gray-200: #3a2f22;
-    --foreground: #241a10;
+    --paper: #17130f;
+    --card: #201a15;
+    --sunk: #2a221b;
+    --line: #3b3024;
+    --line-strong: #574636;
+    --ink: #f4ece1;
+    --ink-soft: #bdb0a0;
+    --ink-faint: #8b7c6b;
 
-    --accent: #9c4a28;
-    --accent-hover: #7d3a1f;
-    --success: #3f7a5a;
-    --error: #8c3f42;
+    --accent: #d97845;
+    --accent-soft: #3a2419;
+    --accent-ink: #f0a37a;
+
+    --yes: #7fb377;
+    --yes-soft: #23301f;
+    --no: #d0776f;
+    --no-soft: #33211f;
   }
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-surface: var(--gray-900);
-  --color-raised: var(--gray-800);
-  --color-line: var(--gray-700);
-  --color-line-strong: var(--gray-600);
-  --color-muted: var(--gray-400);
-  --color-muted-strong: var(--gray-300);
-  --color-placeholder: var(--gray-500);
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-ink-faint: var(--ink-faint);
   --color-accent: var(--accent);
-  --color-accent-hover: var(--accent-hover);
-  --color-success: var(--success);
-  --color-error: var(--error);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-yes: var(--yes);
+  --color-no: var(--no);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, .font-display {
-  font-family: var(--font-display);
+/* Anything a person has to read slowly and think about is set in the serif.
+   Anything they operate is set in the sans. That is the whole type system. */
+.prose-read {
+  font-family: var(--font-read);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: var(--ink);
 }
 
-/* Every transition on this app exists to make a state change legible.
-   Nothing loops, nothing parallaxes. DESIGN.md: minimal-functional. */
+.tap {
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+.tap:active {
+  transform: translateY(1px);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -90,6 +111,9 @@ h1, h2, h3, .font-display {
   }
 }
 
-input[type="range"] {
-  accent-color: var(--accent);
+/* Focus is visible everywhere. People fill this in on phones and with keyboards. */
+:where(a, button, input, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
