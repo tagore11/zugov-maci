@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { communities, membershipTiers, proposals, proposalSponsors, type Proposal } from "../db/schema.js";
 import type {
@@ -236,10 +236,30 @@ async function getVotingTierIds(communityId: string): Promise<string[]> {
 // (no UI yet narrows it below "all voting tiers") — this only starts excluding non-members once a
 // future creator-narrowing UI drops a tier, which is the real restriction this gate exists for.
 async function canView(action: ViewableProposal, viewerAddress: string | undefined): Promise<boolean> {
+  const [tier, votingTierIds] = await Promise.all([
+    viewerAddress ? membershipService.getMemberTier(action.communityId, viewerAddress) : Promise.resolve(null),
+    getVotingTierIds(action.communityId),
+  ]);
+  return canViewWith(action, viewerAddress, tier, votingTierIds);
+}
+
+/**
+ * The visibility decision with its two lookups already made.
+ *
+ * Both of them (the viewer's tier, and the community's voting-capable tiers)
+ * depend only on the community and the viewer, never on the individual
+ * proposal. listForViewer walks a whole community's proposals for one viewer,
+ * so fetching them per row meant re-asking the database the same two questions
+ * once per proposal. They are now fetched once and passed in.
+ */
+function canViewWith(
+  action: ViewableProposal,
+  viewerAddress: string | undefined,
+  tier: { tierId: string } | null,
+  votingTierIds: string[],
+): boolean {
   if (viewerAddress && action.creatorAddress.toLowerCase() === viewerAddress.toLowerCase()) return true;
-  const tier = viewerAddress ? await membershipService.getMemberTier(action.communityId, viewerAddress) : null;
   if (tier) return action.eligibleTierIds.includes(tier.tierId);
-  const votingTierIds = await getVotingTierIds(action.communityId);
   // /ship review army (2026-08-26, security specialist) — Array.prototype.every() on an empty
   // array is vacuously true, so a community with zero voting-capable tiers (all canVote:false)
   // would make EVERY proposal look "unrestricted" to a fully anonymous caller, regardless of its
@@ -299,17 +319,36 @@ export async function listForViewer(
   communityId: string,
   viewerAddress: string | undefined,
 ): Promise<(ViewableProposal & { sponsorCount: number; thresholdMet: boolean })[]> {
-  const rows = await db.select().from(proposals).where(eq(proposals.communityId, communityId));
-  const threshold = await getCosponsorshipThreshold(communityId);
+  // Everything this listing needs from the database is fetched before the loop.
+  // Previously each proposal cost three more round trips (viewer tier, voting
+  // tiers, sponsor count), of which the first two returned the same answer every
+  // time; a community with fifty proposals issued about a hundred and fifty
+  // queries where four suffice.
+  const [rows, threshold, tier, votingTierIds] = await Promise.all([
+    db.select().from(proposals).where(eq(proposals.communityId, communityId)),
+    getCosponsorshipThreshold(communityId),
+    viewerAddress ? membershipService.getMemberTier(communityId, viewerAddress) : Promise.resolve(null),
+    getVotingTierIds(communityId),
+  ]);
 
-  const viewable: (ViewableProposal & { sponsorCount: number; thresholdMet: boolean })[] = [];
-  for (const row of rows) {
-    const action = deserialize(row);
-    if (!(await canView(action, viewerAddress))) continue;
-    const sponsorCount = await getSponsorCount(action.id);
-    viewable.push({ ...action, sponsorCount, thresholdMet: sponsorCount >= threshold });
-  }
-  return viewable;
+  const visible = rows.map(deserialize).filter((action) => canViewWith(action, viewerAddress, tier, votingTierIds));
+  const sponsorCounts = await getSponsorCounts(visible.map((action) => action.id));
+
+  return visible.map((action) => {
+    const sponsorCount = sponsorCounts.get(action.id) ?? 0;
+    return { ...action, sponsorCount, thresholdMet: sponsorCount >= threshold };
+  });
+}
+
+/** One grouped count for a set of proposals, instead of one query per proposal. */
+async function getSponsorCounts(proposalIds: string[]): Promise<Map<string, number>> {
+  if (proposalIds.length === 0) return new Map();
+  const rows = await db
+    .select({ proposalId: proposalSponsors.proposalId, count: sql<number>`count(*)::int` })
+    .from(proposalSponsors)
+    .where(inArray(proposalSponsors.proposalId, proposalIds))
+    .groupBy(proposalSponsors.proposalId);
+  return new Map(rows.map((row) => [row.proposalId, row.count]));
 }
 
 export async function getForViewer(

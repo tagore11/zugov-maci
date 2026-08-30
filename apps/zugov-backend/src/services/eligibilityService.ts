@@ -264,9 +264,14 @@ export async function evaluateEligibilityAcrossUnion(communityId: string, wallet
     .where(and(inArray(unionMemberships.unionId, unionIds), eq(unionMemberships.status, "active")));
   const siblingIds = [...new Set(siblingRows.map((row) => row.communityId))].filter((id) => id !== communityId);
 
+  // Which siblings have any rules at all is one grouped query, not one per
+  // sibling. The evaluation below stays sequential on purpose: it short-circuits
+  // on the first eligible sibling, and each evaluation can reach an external
+  // adapter, so running them all in parallel would do strictly more work.
+  const ruledSiblingIds = await getCommunityIdsWithRules(siblingIds);
+
   for (const siblingId of siblingIds) {
-    const siblingRules = await getRuleset(siblingId);
-    if (siblingRules.length === 0) continue; // Open sibling never extends trust — trust-gap fix
+    if (!ruledSiblingIds.has(siblingId)) continue; // Open sibling never extends trust, trust-gap fix
     const siblingResult = await evaluateRuleset(siblingId, wallet);
     if (siblingResult.eligible) {
       return { eligible: true, tierId: null };
@@ -334,4 +339,15 @@ export async function getRuleset(communityId: string): Promise<EligibilityRule[]
     .from(eligibilityRules)
     .where(eq(eligibilityRules.rulesetId, ruleset.id))
     .orderBy(asc(eligibilityRules.groupIndex));
+}
+
+/** The subset of the given communities that have at least one eligibility rule. */
+async function getCommunityIdsWithRules(communityIds: string[]): Promise<Set<string>> {
+  if (communityIds.length === 0) return new Set();
+  const rows = await db
+    .selectDistinct({ communityId: eligibilityRulesets.communityId })
+    .from(eligibilityRulesets)
+    .innerJoin(eligibilityRules, eq(eligibilityRules.rulesetId, eligibilityRulesets.id))
+    .where(inArray(eligibilityRulesets.communityId, communityIds));
+  return new Set(rows.map((row) => row.communityId));
 }

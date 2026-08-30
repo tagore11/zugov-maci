@@ -72,8 +72,32 @@ DATABASE_URL="postgres://postgres:password@localhost:5433/zugov_dev" pnpm exec d
 DATABASE_URL="postgres://postgres:password@localhost:5433/zugov_dev" pnpm run db:seed
 ```
 
+Docker is a convenience, not a requirement. The backend only reads `DATABASE_URL`, so a native
+install works the same (`brew install postgresql@16 && brew services start postgresql@16`, then
+`createdb zugov_dev` and the two commands above with `postgres://$USER@localhost:5432/zugov_dev`).
+
 Seeding creates two example communities (ZuKas Residency, ETH-NS) so the frontend has real data
 to render without needing a wizard walkthrough first.
+
+### A second database, for the tests
+
+**The test suite deletes rows.** Every test file clears shared tables in its own
+`beforeEach`/`afterAll`, against whatever `DATABASE_URL` is set to. Pointed at `zugov_dev`, the
+first `pnpm test` wipes the seed data this document just told you to create. Pointed at a
+deployed database, it wipes that.
+
+So the tests get their own database, and refuse to start against anything else:
+
+```bash
+createdb zugov_test
+cd apps/zugov-backend
+DATABASE_URL="postgres://$USER@localhost:5432/zugov_test" pnpm exec drizzle-kit migrate
+DATABASE_URL="postgres://$USER@localhost:5432/zugov_test" pnpm test
+```
+
+The guard lives in `tests/setup/guardDatabase.ts` and accepts any database whose name ends in
+`_test`. To run destructively somewhere else on purpose, set `ZUGOV_ALLOW_DESTRUCTIVE_TESTS=1`
+for that run.
 
 ## 5. Run the apps
 

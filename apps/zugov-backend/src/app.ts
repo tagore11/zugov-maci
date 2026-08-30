@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { requireCorsOrigins } from "./env.js";
 import { authRouter } from "./routes/auth.js";
 import { communitiesRouter } from "./routes/communities.js";
 import { credentialsRouter } from "./routes/credentials.js";
@@ -14,15 +15,13 @@ import { discussionsRouter } from "./routes/discussions.js";
 import { eligibilityRulesetRouter } from "./routes/eligibilityRuleset.js";
 import { zupollCommunityRouter, zupollProposalRouter } from "./routes/zupoll.js";
 import { categoriesRouter } from "./routes/categories.js";
+import { analyticsRouter } from "./routes/analytics.js";
 
 export const app = new Hono();
 
 // specs/002 FR-015: both the production frontend domain and its preview-deployment domains must
-// be allowed simultaneously — CORS_ORIGIN is a comma-separated list, not a single origin.
-const allowedOrigins = process.env
-  .CORS_ORIGIN!.split(",")
-  .map((origin) => origin.trim())
-  .filter((origin) => origin.length > 0);
+// be allowed simultaneously. CORS_ORIGIN is a comma-separated list, not a single origin.
+const allowedOrigins = requireCorsOrigins();
 
 app.use(
   "*",
@@ -35,6 +34,7 @@ app.use(
 
 app.get("/", (c) => c.json({ ok: true }));
 
+app.route("/api/analytics", analyticsRouter);
 app.route("/api/auth", authRouter);
 app.route("/api/communities", communitiesRouter);
 app.route("/api/communities", membershipRouter);

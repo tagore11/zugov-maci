@@ -1,4 +1,18 @@
-import { pgTable, text, integer, boolean, primaryKey, index, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
+// Timestamps are bigint, not integer. Postgres `integer` is four bytes, so a
+// unix-seconds column overflows on 19 January 2038. Event start dates and poll
+// end dates are user-supplied, so that ceiling is reachable by typing a date,
+// not only by waiting.
+import {
+  pgTable,
+  text,
+  integer,
+  bigint,
+  boolean,
+  primaryKey,
+  index,
+  uniqueIndex,
+  type AnyPgColumn,
+} from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { CredentialStatus, Protocol } from "../services/identity/IdentityProvider.js";
 
@@ -11,9 +25,9 @@ export const sessions = pgTable("sessions", {
   address: text("address"),
   chainId: integer("chain_id"),
   nonce: text("nonce"),
-  nonceExpiresAt: integer("nonce_expires_at"),
-  createdAt: integer("created_at").notNull(),
-  expiresAt: integer("expires_at").notNull(),
+  nonceExpiresAt: bigint("nonce_expires_at", { mode: "number" }),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  expiresAt: bigint("expires_at", { mode: "number" }).notNull(),
 });
 
 export type Session = typeof sessions.$inferSelect;
@@ -26,8 +40,8 @@ export const credentials = pgTable(
     protocol: text("protocol").$type<Protocol>().notNull(),
     status: text("status").$type<CredentialStatus>().notNull(),
     proofRef: text("proof_ref"),
-    lastCheckedAt: integer("last_checked_at").notNull(),
-    createdAt: integer("created_at").notNull(),
+    lastCheckedAt: bigint("last_checked_at", { mode: "number" }).notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.walletAddress, table.protocol] })],
 );
@@ -42,7 +56,7 @@ export type NewCredential = typeof credentials.$inferInsert;
 export const categories = pgTable("categories", {
   id: text("id").primaryKey(),
   label: text("label").notNull(),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export type Category = typeof categories.$inferSelect;
@@ -97,8 +111,8 @@ export const communities = pgTable(
     allowJoin: boolean("allow_join").notNull().default(false),
     cosponsorshipThreshold: integer("cosponsorship_threshold").notNull().default(0),
     directDeploymentEnabled: boolean("direct_deployment_enabled").notNull().default(false),
-    createdAt: integer("created_at").notNull(),
-    registeredAt: integer("registered_at").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    registeredAt: bigint("registered_at", { mode: "number" }).notNull(),
   },
   (table) => [
     index("communities_type_idx").on(table.type),
@@ -182,7 +196,7 @@ export const communityDecisionAdapters = pgTable(
       .notNull()
       .references(() => communities.id, { onDelete: "cascade" }),
     adapterType: text("adapter_type").$type<"maci" | "zupoll">().notNull(),
-    attachedAt: integer("attached_at").notNull(),
+    attachedAt: bigint("attached_at", { mode: "number" }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.communityId, table.adapterType] })],
 );
@@ -222,9 +236,9 @@ export const unionMemberships = pgTable(
       .references(() => communities.id, { onDelete: "cascade" }),
     status: text("status").$type<"pending" | "active" | "declined" | "left">().notNull(),
     invitedByAddress: text("invited_by_address").notNull(),
-    requestedAt: integer("requested_at").notNull(),
-    respondedAt: integer("responded_at"),
-    leftAt: integer("left_at"),
+    requestedAt: bigint("requested_at", { mode: "number" }).notNull(),
+    respondedAt: bigint("responded_at", { mode: "number" }),
+    leftAt: bigint("left_at", { mode: "number" }),
   },
   (table) => [primaryKey({ columns: [table.unionId, table.communityId] })],
 );
@@ -254,7 +268,7 @@ export const membershipTiers = pgTable("membership_tiers", {
   // of group order in the ruleset. Default 0 for every existing tier; only meaningful once a
   // community actually defines tier-targeting eligibility rules.
   rank: integer("rank").notNull().default(0),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export type MembershipTier = typeof membershipTiers.$inferSelect;
@@ -266,9 +280,15 @@ export const memberships = pgTable(
     walletAddress: text("wallet_address").notNull(),
     communityId: text("community_id").notNull(),
     tierId: text("tier_id").notNull(),
-    joinedAt: integer("joined_at").notNull(),
+    joinedAt: bigint("joined_at", { mode: "number" }).notNull(),
   },
-  (table) => [primaryKey({ columns: [table.walletAddress, table.communityId] })],
+  (table) => [
+    primaryKey({ columns: [table.walletAddress, table.communityId] }),
+    // The primary key leads with wallet_address, so it cannot serve a lookup
+    // filtered on community_id alone. That is exactly what listing a
+    // community's members does, and it was a sequential scan.
+    index("memberships_community_idx").on(table.communityId),
+  ],
 );
 
 export type Membership = typeof memberships.$inferSelect;
@@ -285,8 +305,8 @@ export const joinRequests = pgTable("join_requests", {
   // gate. Nullable: requests submitted before this column existed, or a defensive fallback to
   // defaultTierId if something upstream failed to set it.
   tierId: text("tier_id"),
-  createdAt: integer("created_at").notNull(),
-  resolvedAt: integer("resolved_at"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  resolvedAt: bigint("resolved_at", { mode: "number" }),
 });
 
 export type JoinRequest = typeof joinRequests.$inferSelect;
@@ -336,8 +356,8 @@ export const proposals = pgTable("proposals", {
   // Unix seconds. Only set once the poll is actually deployed (alongside pollAddress/pollId) —
   // needed server-side to validate "has this poll closed" before allowing a tally trigger,
   // without requiring a live on-chain/subgraph read for that one check.
-  pollStartDate: integer("poll_start_date"),
-  pollEndDate: integer("poll_end_date"),
+  pollStartDate: bigint("poll_start_date", { mode: "number" }),
+  pollEndDate: bigint("poll_end_date", { mode: "number" }),
   // JSON-stringified string[] of the poll's option labels, written alongside pollAddress/pollId
   // at deploy-confirm time. A read-optimized copy of data also sent on-chain as Poll metadata —
   // not available uniformly via the subgraph (some communities have none), so this column is the
@@ -352,8 +372,8 @@ export const proposals = pgTable("proposals", {
   // option's optionMemberAddresses entry. Stays null on a tie — an honest "no winner" state,
   // never a guessed one — and for every non-person-type proposal.
   electedWalletAddress: text("elected_wallet_address"),
-  createdAt: integer("created_at").notNull(),
-  formalizedAt: integer("formalized_at"),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  formalizedAt: bigint("formalized_at", { mode: "number" }),
   // Only meaningful once pollAddress is set (i.e. the poll has actually been deployed on-chain).
   // "not_started" until someone triggers tallying via the coordinator; "pending"/"processing"
   // while the merge → generate → submit pipeline runs as a background task (it can take minutes
@@ -363,15 +383,15 @@ export const proposals = pgTable("proposals", {
     .notNull()
     .default("not_started"),
   tallyError: text("tally_error"),
-  tallyRequestedAt: integer("tally_requested_at"),
-  tallyCompletedAt: integer("tally_completed_at"),
+  tallyRequestedAt: bigint("tally_requested_at", { mode: "number" }),
+  tallyCompletedAt: bigint("tally_completed_at", { mode: "number" }),
   // JSON-stringified ITallyData from the coordinator's submit response, once completed.
   tallyResult: text("tally_result"),
   // Zupoll decision adapter — generic across adapters, not Zupoll-namespaced, since any adapter
   // may eventually want a pre-vote withdraw capability. Set once, never cleared. Withdrawal is
   // only permitted while zero votes exist (see zupollService.withdraw); other adapters don't
   // wire up a withdraw path in this feature.
-  withdrawnAt: integer("withdrawn_at"),
+  withdrawnAt: bigint("withdrawn_at", { mode: "number" }),
 });
 
 export type Proposal = typeof proposals.$inferSelect;
@@ -382,7 +402,7 @@ export const proposalSponsors = pgTable(
   {
     proposalId: text("proposal_id").notNull(),
     walletAddress: text("wallet_address").notNull(),
-    sponsoredAt: integer("sponsored_at").notNull(),
+    sponsoredAt: bigint("sponsored_at", { mode: "number" }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.proposalId, table.walletAddress] })],
 );
@@ -407,7 +427,7 @@ export const venues = pgTable("venues", {
   name: text("name").notNull(),
   address: text("address"),
   mapUrl: text("map_url"),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export type Venue = typeof venues.$inferSelect;
@@ -445,8 +465,8 @@ export const events = pgTable(
     description: text("description"),
     venueId: text("venue_id").references(() => venues.id, { onDelete: "set null" }),
     locationText: text("location_text"),
-    startAt: integer("start_at").notNull(),
-    endAt: integer("end_at").notNull(),
+    startAt: bigint("start_at", { mode: "number" }).notNull(),
+    endAt: bigint("end_at", { mode: "number" }).notNull(),
     seriesId: text("series_id"),
     // Events expansion Approach B (/plan-eng-review + /plan-design-review 2026-08-27) —
     // widened from 5 to 17 values (Sola.day's fuller taxonomy). "meeting" is deliberately
@@ -485,8 +505,8 @@ export const events = pgTable(
     isAllDay: boolean("is_all_day").notNull().default(false),
     creatorAddress: text("creator_address").notNull(),
     status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
-    createdAt: integer("created_at").notNull(),
-    cancelledAt: integer("cancelled_at"),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
+    cancelledAt: bigint("cancelled_at", { mode: "number" }),
     // formalize-communities epic, Child I (/plan-eng-review 2026-08-25, D1) — nullable, unlike
     // proposals.eligibleTierIds (NOT NULL, always populated): null means "unrestricted, visible to
     // everyone," checked directly by canView() with no tier-list inference needed. Every existing
@@ -537,8 +557,8 @@ export const eventRsvps = pgTable(
       .references(() => events.id, { onDelete: "cascade" }),
     walletAddress: text("wallet_address").notNull(),
     status: text("status").$type<"active" | "cancelled">().notNull().default("active"),
-    rsvpedAt: integer("rsvped_at").notNull(),
-    cancelledAt: integer("cancelled_at"),
+    rsvpedAt: bigint("rsvped_at", { mode: "number" }).notNull(),
+    cancelledAt: bigint("cancelled_at", { mode: "number" }),
   },
   (table) => [primaryKey({ columns: [table.eventId, table.walletAddress] })],
 );
@@ -562,7 +582,7 @@ export const communityDiscussions = pgTable(
     // Same nullable shape as events.eligibleTierIds (Child I, D1) — null means unrestricted,
     // visible to every member (not literally everyone, per this child's own D5 membership gate).
     eligibleTierIds: text("eligible_tier_ids"),
-    createdAt: integer("created_at").notNull(),
+    createdAt: bigint("created_at", { mode: "number" }).notNull(),
   },
   // /ship review army (2026-08-26, performance specialist) — every list()/get() query filters on
   // communityId; matches the events_community_start_idx precedent already established in this
@@ -585,8 +605,8 @@ export const eligibilityRulesets = pgTable("eligibility_rulesets", {
     .notNull()
     .unique()
     .references(() => communities.id, { onDelete: "cascade" }),
-  createdAt: integer("created_at").notNull(),
-  updatedAt: integer("updated_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
+  updatedAt: bigint("updated_at", { mode: "number" }).notNull(),
 });
 
 export type EligibilityRuleset = typeof eligibilityRulesets.$inferSelect;
@@ -618,7 +638,7 @@ export const eligibilityRules = pgTable("eligibility_rules", {
   mechanism: text("mechanism").$type<"open" | "tier" | "erc20_token">().notNull(),
   config: text("config").notNull(),
   targetTierId: text("target_tier_id").references(() => membershipTiers.id),
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export type EligibilityRule = typeof eligibilityRules.$inferSelect;
@@ -647,7 +667,7 @@ export const zupollIdentityCommitments = pgTable(
     // Public Semaphore identity commitment (a Poseidon-hash public value, not a secret) —
     // generated and held client-side; this column only ever receives the public commitment.
     commitment: text("commitment").notNull(),
-    registeredAt: integer("registered_at").notNull(),
+    registeredAt: bigint("registered_at", { mode: "number" }).notNull(),
   },
   (table) => [primaryKey({ columns: [table.walletAddress, table.communityId] })],
 );
@@ -667,7 +687,7 @@ export const zupollProposalGroups = pgTable("zupoll_proposal_groups", {
     .references(() => proposals.id, { onDelete: "cascade" }),
   groupRoot: text("group_root").notNull(),
   groupCommitments: text("group_commitments").notNull(), // JSON-stringified string[]
-  createdAt: integer("created_at").notNull(),
+  createdAt: bigint("created_at", { mode: "number" }).notNull(),
 });
 
 export type ZupollProposalGroup = typeof zupollProposalGroups.$inferSelect;
@@ -688,7 +708,7 @@ export const zupollVotes = pgTable(
       .references(() => proposals.id, { onDelete: "cascade" }),
     optionIdx: integer("option_idx").notNull(),
     nullifier: text("nullifier").notNull(),
-    castAt: integer("cast_at").notNull(),
+    castAt: bigint("cast_at", { mode: "number" }).notNull(),
   },
   (table) => [uniqueIndex("zupoll_votes_proposal_nullifier_idx").on(table.proposalId, table.nullifier)],
 );

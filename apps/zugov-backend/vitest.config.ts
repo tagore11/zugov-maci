@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // Runs before anything imports the db client. See tests/setup/guardDatabase.ts:
+    // this suite deletes rows, so it refuses to start against a database that is
+    // not named like a test database.
+    setupFiles: ["tests/setup/guardDatabase.ts"],
     include: ["tests/**/*.test.ts"],
     globals: true,
     // All test files share one real Postgres DB with no per-file schema isolation; each file's
