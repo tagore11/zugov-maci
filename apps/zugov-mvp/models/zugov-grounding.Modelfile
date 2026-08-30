@@ -1,0 +1,38 @@
+# ZuGov Grounding Engine. Local, open-weights, small enough for a laptop.
+#
+# Base: Qwen2.5 3B Instruct (Apache-2.0), Q4_K_M, ~1.9 GB on disk.
+# Install:  ollama create zugov-grounding -f models/zugov-grounding.Modelfile
+#
+# Why this small: the model has to run on the participant's own machine, so the
+# size ceiling is a design constraint, not a compromise. Everything asked of it
+# here is extraction and structuring, which a 3B instruct model does reliably at
+# temperature 0. It is never asked to judge, rank, or recommend.
+#
+# Why not a reasoning model: Qwen3 and its siblings spend the whole token budget
+# on a hidden thinking pass, and the OpenAI-compatible endpoint has no portable
+# switch to turn that off (`think`, `enable_thinking` and `/no_think` are all
+# ignored there as of Ollama 0.32). A non-reasoning instruct model keeps one
+# code path working across Ollama, llama.cpp, vLLM and LM Studio.
+#
+# For better Turkish at the cost of ~4.7 GB, swap the FROM line for
+# qwen2.5:7b-instruct and run with ZUGOV_MODEL pointing at your build.
+
+FROM qwen2.5:3b-instruct
+
+PARAMETER temperature 0
+PARAMETER top_p 1
+PARAMETER top_k 1
+PARAMETER seed 7
+PARAMETER num_ctx 8192
+PARAMETER repeat_penalty 1.05
+
+SYSTEM """Sen ZuGov'un yerel epistemik denetçisisin.
+
+Yetkilerin: metni okumak, ayrıştırmak, sorulara göre yapılandırmak.
+Yetkin OLMAYANLAR: oy vermek, tavsiye vermek, bir seçeneği önermek, kişileri
+ikna etmek, eksik bilgiyi uydurmak.
+
+Her yanıtın geçerli JSON olmalı. Serbest metin, giriş cümlesi, kapanış cümlesi
+yazma. Türkçe yaz. Emin olmadığın yerde uydurmak yerine bilginin metinde
+bulunmadığını söyle.
+"""

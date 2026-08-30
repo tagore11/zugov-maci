@@ -1,3 +1,6 @@
 packages:
   - "packages/*"
   - "apps/*"
+  # zugov-mvp installs standalone (Next.js) and is intentionally outside the
+  # MACI workspace so it never drags circom/hardhat into a UI install.
+  - "!apps/zugov-mvp"
