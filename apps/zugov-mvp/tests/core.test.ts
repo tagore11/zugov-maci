@@ -138,7 +138,7 @@ describe("model-free fallbacks", () => {
       decisionId: "k1",
       title: "Ortak alan bütçesi",
       body: "Ortak alan bütçesinin yarısını mutfağa ayırmayı öneriyoruz. Atölye için yer kalmayabilir.",
-      optionLabels: options.map((o) => o.label),
+      options: options.map((o) => ({ id: o.id, label: o.label })),
     });
     expect(report.assumptions?.length).toBeGreaterThan(0);
     expect(JSON.stringify(report)).not.toMatch(/öneriyorum|en iyisi|kabul edilmeli/i);
@@ -152,16 +152,19 @@ describe("grounding guards", () => {
       decisionId: "k1",
       title: "Ortak alan bütçesi",
       body: "12 gün için 40 bin lira var ve üç talep geldi.",
-      optionLabels: options.map((o) => o.label),
+      options: options.map((o) => ({ id: o.id, label: o.label })),
     };
     // No model reachable in CI: the deterministic path runs and must stay clean.
     const report = await groundProposal({ ...input });
-    const printed = Object.values(report.sections).flatMap((s) => s.observations);
+    const printed = [report.crux, ...Object.values(report.tradeoffs)];
     for (const observation of printed) {
       for (const match of observation.match(/\d[\d.,]*/g) ?? []) {
         expect(input.body.replace(/[.,\s]/g, "")).toContain(match.replace(/[.,]/g, ""));
       }
     }
+    // The default pass says one thing, not eighteen.
+    expect(report.sections).toBeNull();
+    expect(report.crux.split(/\s+/).length).toBeLessThanOrEqual(30);
   });
 });
 

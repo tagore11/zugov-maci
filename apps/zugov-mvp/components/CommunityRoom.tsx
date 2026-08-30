@@ -155,7 +155,10 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
             <p className="text-[16px]">Bu toplulukta henüz karar yok.</p>
             {membership?.status === "member" && !membership.canCreateProposals ? (
               <div className="mt-2">
-                <Hint>Kademen karar açmaya yetkili değil.</Hint>
+                <Hint>
+                  Bu toplulukta {membership.tierLabel} kademesindesin ve bu kademe karar açamıyor.
+                  Üyelik yönetme yetkisi olan biri kademeni yükseltebilir.
+                </Hint>
               </div>
             ) : null}
           </div>

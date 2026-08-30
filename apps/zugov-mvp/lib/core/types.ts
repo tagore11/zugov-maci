@@ -121,14 +121,28 @@ export interface GroundingSection {
   observations: string[];
 }
 
+/**
+ * What the Grounding Engine puts in front of a person.
+ *
+ * The crux and the trade-offs, and nothing else by default. An earlier version
+ * printed six questions and up to eighteen observations before anyone had
+ * chosen anything, which is a research report, not help. A tool whose job is to
+ * clear the crowd in someone's head cannot begin by adding to it.
+ *
+ * `sections` holds the six-question audit and is filled only when someone asks
+ * for it. The audit is still the engine's substance; it is no longer the
+ * greeting.
+ */
 export interface GroundingReport {
   decisionId: Id;
   generatedAt: string;
   /** "local:<model>" or "heuristic", always visible in the UI. */
   producedBy: string;
-  summary: string;
-  keywords: string[];
-  sections: Record<EpistemicQuestionKey, GroundingSection>;
+  /** One sentence naming the real dilemma. This is the whole default output. */
+  crux: string;
+  /** Per option, one sentence: what choosing it costs. */
+  tradeoffs: Record<Id, string>;
+  sections: Record<EpistemicQuestionKey, GroundingSection> | null;
   /** sha256 of the normalised report body, so two people can compare runs. */
   digest: string;
 }

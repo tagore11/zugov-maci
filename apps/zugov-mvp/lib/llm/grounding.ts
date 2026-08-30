@@ -6,17 +6,47 @@ import { MODEL_NAME, ModelUnavailableError, completeJson } from "./provider";
 /**
  * The Grounding Engine.
  *
- * It has exactly one job: put the reasoning behind a proposal on the table
- * before anyone votes. It holds no vote, no weight, no veto, and no ability to
- * rank the options. It asks six questions and reports what it found. If it is
- * wrong, a participant overrules it by simply voting; nothing in the tally path
- * reads this file.
+ * Its job is to make a decision legible, which means saying less, not more. By
+ * default it produces one sentence naming the real dilemma and one sentence per
+ * option saying what choosing it costs. For three options that is four
+ * sentences.
  *
- * One question per model call, deliberately. A 3B model asked six questions in
- * a single prompt either copies the example back or collapses into fragments.
- * Asked one focused question at a time it answers well, each call fails
- * independently, and a lost question costs one section instead of the report.
+ * The six-question audit below still exists and is still the substance: what
+ * has to be true, what the base rates are, the strongest objection, how
+ * reversible it is, who is affected, what the precedents are. It runs when
+ * someone asks for it. It no longer runs at people.
+ *
+ * The engine holds no vote and cannot rank the options. Nothing in the tally
+ * path reads this file.
  */
+
+const CRUX_PROMPT = [
+  "Bir topluluk karar verecek. Metni oku ve kararın özündeki gerçek ikilemi tek cümlede söyle.",
+  "",
+  "Kurallar:",
+  "- Hangi seçeneğin kazanması gerektiğini SÖYLEME. Sadece ikilemin ne olduğunu söyle.",
+  "- Metni tekrar etme, özetleme. İnsanların aslında ne arasında seçim yaptığını adlandır.",
+  "- Tek cümle, en fazla 25 kelime. Türkçe yaz.",
+  "",
+  "Örnek (başka bir konu, kopyalama): ",
+  '{"crux":"Herkesin biraz yararlandığı bir şeyle, az kişinin çok yararlandığı bir şey arasında seçim yapılıyor."}',
+  "",
+  'Sadece şunu döndür: {"crux":"..."}',
+].join("\n");
+
+function tradeoffPrompt(label: string): string {
+  return [
+    `Bir topluluk karar verecek. "${label}" seçeneği seçilirse topluluğun neyden vazgeçtiğini`,
+    "tek cümlede söyle.",
+    "",
+    "Kurallar:",
+    "- Bu seçeneği savunma ya da eleştirme. Sadece bedelini adlandır.",
+    "- Metinde olmayan sayı uydurma.",
+    "- Tek cümle, en fazla 20 kelime. Türkçe yaz.",
+    "",
+    'Sadece şunu döndür: {"tradeoff":"..."}',
+  ].join("\n");
+}
 
 interface QuestionSpec {
   prompt: string;
@@ -83,10 +113,6 @@ const QUESTIONS: Record<EpistemicQuestionKey, QuestionSpec> = {
   },
 };
 
-const SUMMARY_PROMPT =
-  "Metnin neyi karara bağlamak istediğini ve hangi bilginin eksik bırakıldığını tek cümlede söyle. " +
-  "Metni tekrar etme, kendi cümleni kur, en fazla 30 kelime.";
-
 function systemPromptFor(instruction: string, example: string[]): string {
   return [
     "Sen bir epistemik denetçisin. Oy hakkın yok, tavsiye vermiyorsun ve hangi seçeneğin",
@@ -98,7 +124,6 @@ function systemPromptFor(instruction: string, example: string[]): string {
     "- Taraf tutma. 'Öneriyorum', 'en iyisi', 'kabul edilmeli' yasak.",
     "- Uydurma sayı verme. Bir bilgi metinde yoksa yok olduğunu söyle.",
     "- Her gözlem tam bir cümle olsun, 6 ile 25 kelime arası, yüklemi olsun.",
-    "- Tek kelime ya da kelime öbeği yazma.",
     "- İki ya da üç gözlem yaz. Türkçe yaz.",
     "",
     "Aşağıdaki örnek BAŞKA bir konuya ait. Cümleleri kopyalama, sadece uzunluğu örnek al:",
@@ -112,38 +137,91 @@ export interface GroundingInput {
   decisionId: Id;
   title: string;
   body: string;
-  optionLabels: string[];
+  options: { id: Id; label: string }[];
 }
 
-export async function groundProposal(input: GroundingInput): Promise<GroundingReport> {
-  const context = [
+function contextOf(input: GroundingInput): string {
+  return [
     `BAŞLIK: ${input.title}`,
     "",
     "METİN:",
     input.body.trim(),
     "",
-    `MASADAKİ SEÇENEKLER: ${input.optionLabels.join(" | ")}`,
+    `SEÇENEKLER: ${input.options.map((option) => option.label).join(" | ")}`,
   ].join("\n");
+}
 
-  const raw: RawGrounding = {};
-  const failures: string[] = [];
+/**
+ * The default pass. No model runs here at all.
+ *
+ * For each option it shows what the proposal itself says about it, in the
+ * author's own sentences, and names the options the proposal says nothing
+ * about. That silence is a real finding: an option nobody wrote a reason for is
+ * about to be voted on anyway.
+ *
+ * This used to ask the model to name the dilemma and write a trade-off per
+ * option. Both are synthesis, and a 3B model that classifies Turkish reliably
+ * writes it badly: it produced "S işletme bütçesini azalttı" as a trade-off and
+ * a question mark as a cost. Finding a sentence is exact, instant, needs no
+ * model, and cannot hallucinate, because every word shown was written by the
+ * person who wrote the proposal.
+ *
+ * Generation is left where the model is actually good: reading a participant's
+ * own words into stances, and the six-question audit below, which a reader opens
+ * knowing a machine wrote it.
+ */
+export async function groundProposal(input: GroundingInput): Promise<GroundingReport> {
+  const tradeoffs: Record<Id, string> = {};
+  const silent: string[] = [];
 
-  // Sequential on purpose: an 8 GB laptop running one small model does not gain
-  // from parallel requests, and Ollama queues them anyway.
-  try {
-    const summary = await completeJson<{ summary?: string }>(
-      systemPromptFor(SUMMARY_PROMPT, ["Metin hattın güzergâhını değiştirmeyi istiyor ve yolcu sayısına dayanan bir gerekçe sunmuyor."]).replace(
-        '{"observations":["...","..."]}',
-        '{"summary":"..."}',
-      ),
-      context,
-      { maxTokens: 300 },
-    );
-    raw.summary = summary.summary;
-  } catch (error) {
-    failures.push("özet");
-    if (!(error instanceof ModelUnavailableError)) throw error;
+  for (const option of input.options) {
+    const said = sentencesAbout(option.label, input.body);
+    if (said.length > 0) tradeoffs[option.id] = said.join(" ");
+    else silent.push(option.label);
   }
+
+  const crux =
+    silent.length === 0
+      ? "Gerekçe her seçenek hakkında bir şey söylüyor."
+      : silent.length === input.options.length
+        ? "Gerekçe seçeneklerin hiçbiri hakkında bir şey söylemiyor."
+        : `Gerekçede hiç geçmeyen seçenek var: ${silent.join(", ")}.`;
+
+  return assemble(input, { crux, tradeoffs, sections: null, producedBy: "metnin kendisi" });
+}
+
+/**
+ * The proposal's own sentences that name this option.
+ *
+ * Matched on stems, because Turkish agglutination turns "mutfak" into "mutfağa"
+ * in the very sentence being looked for.
+ */
+function sentencesAbout(label: string, body: string): string[] {
+  const stems = label
+    .toLocaleLowerCase("tr")
+    .split(/\s+/)
+    .filter((word) => word.length > 3)
+    .map((word) => word.slice(0, Math.max(4, word.length - 2)));
+  if (stems.length === 0) return [];
+
+  return body
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0)
+    .filter((sentence) => {
+      const lower = sentence.toLocaleLowerCase("tr");
+      return stems.some((stem) => lower.includes(stem));
+    })
+    .slice(0, 2);
+}
+
+/**
+ * The six-question audit, run only when someone opens it.
+ */
+export async function auditProposal(input: GroundingInput, base: GroundingReport): Promise<GroundingReport> {
+  const context = contextOf(input);
+  const raw: RawGrounding = {};
+  let failures = 0;
 
   for (const key of EPISTEMIC_QUESTIONS) {
     const spec = QUESTIONS[key];
@@ -155,23 +233,78 @@ export async function groundProposal(input: GroundingInput): Promise<GroundingRe
       );
       raw[key] = answer.observations;
     } catch (error) {
-      failures.push(spec.question);
       if (!(error instanceof ModelUnavailableError)) throw error;
+      failures += 1;
     }
   }
 
-  // Every question failed: the model is not reachable or not answering at all.
-  if (failures.length > EPISTEMIC_QUESTIONS.length) {
-    return assemble(input, heuristicGrounding(input), "heuristic (yerel model yanıt vermedi)");
-  }
-
-  const producedBy =
-    failures.length === 0 ? `local:${MODEL_NAME}` : `local:${MODEL_NAME} (${failures.length} soru cevapsız)`;
-
   const fallback = heuristicGrounding(input);
-  if (!raw.summary?.trim()) raw.summary = fallback.summary;
+  const source = contextOf(input);
+  const exampleLines = new Set(
+    Object.values(QUESTIONS)
+      .flatMap((spec) => spec.example)
+      .map(normalise),
+  );
 
-  return assemble(input, raw, producedBy);
+  const sections = Object.fromEntries(
+    EPISTEMIC_QUESTIONS.map((key) => [
+      key,
+      {
+        question: QUESTIONS[key].question,
+        observations:
+          failures === EPISTEMIC_QUESTIONS.length
+            ? cleanObservations(fallback[key], source, exampleLines)
+            : cleanObservations(raw[key], source, exampleLines),
+      },
+    ]),
+  ) as Record<EpistemicQuestionKey, { question: string; observations: string[] }>;
+
+  return assemble(input, {
+    crux: base.crux,
+    tradeoffs: base.tradeoffs,
+    sections,
+    producedBy: failures === 0 ? base.producedBy : `${base.producedBy} (${failures} soru cevapsız)`,
+  });
+}
+
+function assemble(
+  input: GroundingInput,
+  parts: {
+    crux: string;
+    tradeoffs: Record<Id, string>;
+    sections: Record<EpistemicQuestionKey, { question: string; observations: string[] }> | null;
+    producedBy: string;
+  },
+): GroundingReport {
+  return {
+    decisionId: input.decisionId,
+    generatedAt: new Date().toISOString(),
+    producedBy: parts.producedBy,
+    crux: parts.crux,
+    tradeoffs: parts.tradeoffs,
+    sections: parts.sections,
+    digest: createHash("sha256")
+      .update(JSON.stringify({ crux: parts.crux, tradeoffs: parts.tradeoffs, sections: parts.sections }))
+      .digest("hex")
+      .slice(0, 16),
+  };
+}
+
+/** Without a model, name the choice from the option labels rather than guess at it. */
+function heuristicCrux(input: GroundingInput): string {
+  const labels = input.options.map((option) => option.label);
+  if (labels.length === 2) return `${labels[0]} ile ${labels[1]} arasında seçim yapılıyor.`;
+  return `${labels.slice(0, -1).join(", ")} ve ${labels[labels.length - 1]} arasında seçim yapılıyor.`;
+}
+
+/** The engine may say a figure is missing. It may not supply one. */
+function groundedInSource(line: string, source: string): boolean {
+  const digits = source.replace(/[.,\s]/g, "");
+  for (const match of line.match(/\d[\d.,]*/g) ?? []) {
+    const value = match.replace(/[.,]/g, "");
+    if (value.length > 0 && !digits.includes(value)) return false;
+  }
+  return true;
 }
 
 interface RawGrounding {
@@ -197,7 +330,7 @@ export function heuristicGrounding(input: GroundingInput): RawGrounding {
   const claim = sentences[0] ?? input.title;
 
   return {
-    summary: `Metin ${sentences.length} önermeden oluşuyor ve ${input.optionLabels.length} seçenek arasında karar istiyor.`,
+    summary: `Metin ${sentences.length} önermeden oluşuyor ve ${input.options.length} seçenek arasında karar istiyor.`,
     keywords,
     assumptions: [`Şu önermenin doğru olması gerekiyor: "${truncate(claim)}"`],
     baseRates: ["Öneride sayısal bir dayanak yok. Karşılaştırma noktası dışarıdan getirilmeli."],
@@ -208,41 +341,6 @@ export function heuristicGrounding(input: GroundingInput): RawGrounding {
     reversibility: ["Geri dönüş maliyeti metinde belirtilmemiş."],
     affectedParties: keywords.slice(0, 3).map((k) => `Metinde "${k}" başlığıyla anılan taraf etkileniyor.`),
     precedents: ["Emsal metinde gösterilmemiş."],
-  };
-}
-
-function assemble(input: GroundingInput, raw: RawGrounding, producedBy: string): GroundingReport {
-  const source = `${input.title} ${input.body} ${input.optionLabels.join(" ")}`;
-  const exampleLines = new Set(
-    Object.values(QUESTIONS)
-      .flatMap((spec) => spec.example)
-      .map(normalise),
-  );
-
-  const sections = Object.fromEntries(
-    EPISTEMIC_QUESTIONS.map((key) => [
-      key,
-      {
-        question: QUESTIONS[key].question,
-        observations: cleanObservations(raw[key], source, exampleLines),
-      },
-    ]),
-  ) as Record<EpistemicQuestionKey, { question: string; observations: string[] }>;
-
-  const body = {
-    summary: (raw.summary ?? "").trim() || "Özet üretilemedi.",
-    keywords: (raw.keywords?.length ? cleanList(raw.keywords) : extractKeywords(`${input.title} ${input.body}`)).slice(0, 8),
-    sections,
-  };
-
-  return {
-    decisionId: input.decisionId,
-    generatedAt: new Date().toISOString(),
-    producedBy,
-    summary: body.summary,
-    keywords: body.keywords,
-    sections: body.sections,
-    digest: createHash("sha256").update(JSON.stringify(body)).digest("hex").slice(0, 16),
   };
 }
 

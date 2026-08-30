@@ -81,7 +81,7 @@ const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: Identity
       membershipPolicy: "open",
       tierChangesRequireVote: false,
       tiers: DEFAULT_TIERS,
-      defaultTierLabel: "Regular",
+      defaultTierLabel: "OG",
     },
     governance: {
       contractAddress: "0xFCeA194e9B7A9A785C1a7d2bCd08f9D7b123456a",
@@ -104,7 +104,7 @@ const SEED_COMMUNITIES: { id: string; creatorAddress: string; identity: Identity
       membershipPolicy: "open",
       tierChangesRequireVote: false,
       tiers: DEFAULT_TIERS,
-      defaultTierLabel: "Regular",
+      defaultTierLabel: "OG",
     },
     governance: {
       contractAddress: "0x365d6B5A48dc7D4bC83e78f31c01e4E34567890B",

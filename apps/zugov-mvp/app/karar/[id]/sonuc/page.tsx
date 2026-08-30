@@ -54,9 +54,8 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
         )}
 
         {outcome.contest > 0.7 ? (
-          <p className="mt-4 rounded-[2px] border-l-2 border-line-strong bg-sunk px-4 py-3 text-[15px] leading-relaxed">
-            İlk iki seçenek birbirine çok yakın. Bunu kesinleşmiş bir sonuç gibi sunmak, odada
-            olmayan bir mutabakatı varsaymak olur.
+          <p className="mt-4 border-l-2 border-line-strong pl-4 text-[15px]">
+            İlk iki seçenek çok yakın. Bu sonuç kesinleşmiş sayılmaz.
           </p>
         ) : null}
 
@@ -110,12 +109,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
               </li>
             ))}
           </ul>
-          <div className="mt-4">
-            <Hint>
-              Kırmızı çizgi sonucu tek başına iptal etmez. Sayımdan sonra da görünür kalması, kararı
-              alanların bunu bilerek almasını sağlar.
-            </Hint>
-          </div>
+
         </Panel>
       ) : null}
 
@@ -128,15 +122,16 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
               : "Kararı kural veriyor"}
         </Title>
 
-        <p className="prose-read mt-4 max-w-[60ch] text-ink-soft">
+        <p className="prose-read mt-3 max-w-[58ch] text-ink-soft">
           {sensitivity.verdict === "robust"
-            ? "Hangi sayım kuralını kullanırsan kullan aynı seçenek kazanıyor. Bu sonuç kuralın seçimine bağlı değil."
+            ? "Beş sayım kuralı da aynı seçeneği seçiyor."
             : sensitivity.verdict === "leaning"
-              ? "Kuralların çoğu aynı sonuca çıkıyor, biri ayrışıyor. Sonuç ayakta duruyor ama itiraz edenin dayanacağı bir yer var."
-              : "Sayım kuralını değiştirmek kazananı değiştiriyor. Bu sonucu meşru saymadan önce odanın hangi kuralla karar aldığını konuşması gerekir."}
+              ? "Kuralların çoğu aynı sonuca çıkıyor, biri ayrışıyor."
+              : "Kuralı değiştirmek kazananı değiştiriyor. Bunu konuşmadan sonucu kesinleştirme."}
         </p>
 
-        <ul className="mt-7 divide-y divide-[color:var(--line)]">
+        {sensitivity.verdict !== "robust" ? (
+        <ul className="mt-6 divide-y divide-[color:var(--line)]">
           {sensitivity.byMechanism.map((entry) => {
             const isCurrent = entry.mechanismId === decision.mechanismId;
             return (
@@ -152,13 +147,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
             );
           })}
         </ul>
-
-        <div className="mt-6">
-          <Hint>
-            Tarafsız bir oylama kuralı yok. Araçların çoğu bunu tek bir kural gösterip saklar. Bu
-            liste, kuralın sonucu ne kadar belirlediğini görünür tutmak için burada.
-          </Hint>
-        </div>
+        ) : null}
       </Panel>
     </main>
   );

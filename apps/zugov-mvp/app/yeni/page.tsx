@@ -28,6 +28,7 @@ function NewDecisionForm() {
   const [body, setBody] = useState("");
   const [options, setOptions] = useState(["", ""]);
   const [mechanismId, setMechanismId] = useState<MechanismId>("approval");
+  const [showRules, setShowRules] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -80,9 +81,7 @@ function NewDecisionForm() {
             placeholder="Neden karar veriyoruz, hangi kısıtlar var, hangi bilgi elimizde yok."
             className="w-full rounded-[2px] border border-line bg-sunk px-4 py-3 text-[16px] leading-relaxed placeholder:text-ink-faint focus:border-ink focus:outline-none"
           />
-          <span className="mt-2 block text-[14px] text-ink-soft">
-            Sorgulama raporu bu metni okur. Ne kadar somut yazarsan rapor o kadar işe yarar.
-          </span>
+
         </label>
 
         <fieldset>
