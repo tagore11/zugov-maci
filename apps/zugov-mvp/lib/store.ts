@@ -10,6 +10,8 @@ import type { GroundingReport, Id, MechanismId, Option, PreferenceVector } from 
 
 export interface Decision {
   id: Id;
+  /** The community this decision belongs to, from the governance backend. */
+  communityId: Id;
   title: string;
   body: string;
   options: Option[];
@@ -41,9 +43,11 @@ async function write(db: Database): Promise<void> {
   await fs.writeFile(DATA_FILE, `${JSON.stringify(db, null, 2)}\n`, "utf8");
 }
 
-export async function listDecisions(): Promise<Decision[]> {
+export async function listDecisions(communityId?: Id): Promise<Decision[]> {
   const db = await read();
-  return [...db.decisions].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return db.decisions
+    .filter((decision) => (communityId ? decision.communityId === communityId : true))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function getDecision(id: Id): Promise<Decision | null> {

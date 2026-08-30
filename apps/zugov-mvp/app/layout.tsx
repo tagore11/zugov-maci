@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, IBM_Plex_Sans, IBM_Plex_Serif } from "next/font/google";
 import "./globals.css";
+import { Providers } from "./providers";
 
 /* One superfamily, three voices. Self-hosted at build time: a local-first app
    should not phone a font CDN. latin-ext carries the Turkish diacritics. */
@@ -28,7 +29,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="tr" className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}>
-      <body className="min-h-[100dvh]">{children}</body>
+      <body className="min-h-[100dvh]">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

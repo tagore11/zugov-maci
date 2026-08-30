@@ -476,17 +476,43 @@ export async function deleteTier(communityId: string, tierId: string): Promise<v
     .where(and(eq(membershipTiers.id, tierId), eq(membershipTiers.communityId, communityId)));
 }
 
+export interface MembershipStatus {
+  status: "member" | "pending" | "none";
+  tierLabel?: string;
+  /** The tier's id and its permission flags, so a caller does not have to fetch
+   * every tier and match on the label. Labels are not unique. */
+  tierId?: string;
+  canVote?: boolean;
+  canCreateProposals?: boolean;
+  canManageMembership?: boolean;
+}
+
 export async function getMembershipStatus(
   communityId: string,
   walletAddress: string,
-): Promise<{ status: "member" | "pending" | "none"; tierLabel?: string }> {
+): Promise<MembershipStatus> {
   const [membership] = await db
-    .select({ label: membershipTiers.label })
+    .select({
+      id: membershipTiers.id,
+      label: membershipTiers.label,
+      canVote: membershipTiers.canVote,
+      canCreateProposals: membershipTiers.canCreateProposals,
+      canManageMembership: membershipTiers.canManageMembership,
+    })
     .from(memberships)
     .innerJoin(membershipTiers, eq(memberships.tierId, membershipTiers.id))
     .where(and(eq(memberships.walletAddress, walletAddress), eq(memberships.communityId, communityId)))
     .limit(1);
-  if (membership) return { status: "member", tierLabel: membership.label };
+  if (membership) {
+    return {
+      status: "member",
+      tierLabel: membership.label,
+      tierId: membership.id,
+      canVote: membership.canVote,
+      canCreateProposals: membership.canCreateProposals,
+      canManageMembership: membership.canManageMembership,
+    };
+  }
 
   const [pendingRequest] = await db
     .select({ id: joinRequests.id })

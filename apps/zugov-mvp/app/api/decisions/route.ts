@@ -3,17 +3,24 @@ import { listDecisions, newId, saveDecision } from "@/lib/store";
 import type { MechanismId } from "@/lib/core/types";
 import { MECHANISM_ORDER } from "@/lib/core/mechanisms";
 
-export async function GET() {
-  return NextResponse.json(await listDecisions());
+export async function GET(request: Request) {
+  const communityId = new URL(request.url).searchParams.get("topluluk") ?? undefined;
+  return NextResponse.json(await listDecisions(communityId));
 }
 
 export async function POST(request: Request) {
   const body = (await request.json()) as {
+    communityId?: string;
     title?: string;
     body?: string;
     options?: string[];
     mechanismId?: MechanismId;
   };
+
+  const communityId = (body.communityId ?? "").trim();
+  if (!communityId) {
+    return NextResponse.json({ error: "Karar bir topluluğa ait olmalı." }, { status: 400 });
+  }
 
   const title = (body.title ?? "").trim();
   const optionLabels = (body.options ?? []).map((o) => o.trim()).filter(Boolean);
@@ -31,6 +38,7 @@ export async function POST(request: Request) {
 
   const decision = await saveDecision({
     id: newId("k"),
+    communityId,
     title,
     body: (body.body ?? "").trim(),
     options: optionLabels.map((label, i) => ({ id: `s${i + 1}`, label })),

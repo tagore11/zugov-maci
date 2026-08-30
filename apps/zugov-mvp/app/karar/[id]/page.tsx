@@ -26,6 +26,7 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
       </nav>
 
       <DecisionFlow
+        communityId={decision.communityId}
         decisionId={decision.id}
         title={decision.title}
         body={decision.body}

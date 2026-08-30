@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { GroundingReport, MechanismId, Option, PreferenceVector, Stance } from "@/lib/core/types";
 import { getMechanism } from "@/lib/core/mechanisms";
 import { Button, Hint, Panel, Steps, Title } from "./ui";
+import { shortAddress, useSession } from "@/lib/session";
+import { communities } from "@/lib/ag/client";
+import { WalletBar } from "./WalletBar";
 import { GroundingPanel } from "./GroundingPanel";
 
 /**
@@ -32,6 +35,37 @@ const SALIENCE_STEPS = [
 
 const STEP_LABELS = ["Öneri", "Sen", "Seçenekler", "Onay"];
 
+/**
+ * Whether this wallet's membership tier in this community allows voting.
+ *
+ * Null while unknown, so the UI can stay quiet instead of accusing someone of
+ * having no permission before the answer has arrived.
+ */
+function useVotingPermission(communityId: string, address: string | null): boolean | null {
+  const [canVote, setCanVote] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!address) {
+      setCanVote(null);
+      return;
+    }
+    let alive = true;
+    (async () => {
+      try {
+        const membership = await communities.myMembership(communityId);
+        if (alive) setCanVote(membership.status === "member" && membership.canVote === true);
+      } catch {
+        if (alive) setCanVote(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [communityId, address]);
+
+  return canVote;
+}
+
 export function DecisionFlow({
   decisionId,
   title,
@@ -40,7 +74,9 @@ export function DecisionFlow({
   mechanismId,
   grounding,
   knownNames,
+  communityId,
 }: {
+  communityId: string;
   decisionId: string;
   title: string;
   body: string;
@@ -49,9 +85,10 @@ export function DecisionFlow({
   grounding: GroundingReport | null;
   knownNames: string[];
 }) {
+  const { address, isSignedIn } = useSession();
+  const canVote = useVotingPermission(communityId, address);
   const [step, setStep] = useState(0);
   const [optionIndex, setOptionIndex] = useState(0);
-  const [subjectId, setSubjectId] = useState("");
   const [text, setText] = useState("");
   const [stances, setStances] = useState<Stance[]>(() => blankStances(options));
   const [producedBy, setProducedBy] = useState("elle");
@@ -60,6 +97,11 @@ export function DecisionFlow({
   const [error, setError] = useState<string | null>(null);
 
   const mechanism = useMemo(() => getMechanism(mechanismId), [mechanismId]);
+
+  // Identity comes from the signed session, never from a text field. A
+  // preference is attributable or it is not counted.
+  const subjectId = address ?? "";
+  const alreadyVoted = knownNames.some((name) => name.toLowerCase() === subjectId.toLowerCase());
 
   const readBack = useMemo(() => {
     const vector: PreferenceVector = {
@@ -73,8 +115,6 @@ export function DecisionFlow({
     return mechanism.explain(mechanism.project(vector, options), options);
   }, [mechanism, stances, options, subjectId, decisionId]);
 
-  const nameTaken = knownNames.some((name) => name.toLowerCase() === subjectId.trim().toLowerCase());
-
   async function draftFromText() {
     setError(null);
     setBusy(true);
@@ -82,7 +122,7 @@ export function DecisionFlow({
       const response = await fetch(`/api/decisions/${decisionId}/elicit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subjectId: subjectId.trim() || "anonim", text }),
+        body: JSON.stringify({ subjectId, text }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Taslak çıkarılamadı.");
@@ -111,7 +151,7 @@ export function DecisionFlow({
     setBusy(true);
     try {
       const vector: PreferenceVector = {
-        subjectId: subjectId.trim() || "anonim",
+        subjectId,
         decisionId,
         stances,
         source: producedBy === "elle" ? "form" : "conversation",
@@ -160,21 +200,30 @@ export function DecisionFlow({
         <Panel>
           <Title>Sen ne düşünüyorsun?</Title>
 
-          <label className="mt-6 block">
-            <span className="mb-2 block text-[14px] font-medium">İsmin ya da rumuzun</span>
-            <input
-              value={subjectId}
-              onChange={(e) => setSubjectId(e.target.value)}
-              placeholder="deniz"
-              autoComplete="off"
-              className="w-full max-w-xs rounded-[2px] border border-line bg-sunk px-4 py-3 text-[16px] placeholder:text-ink-faint focus:border-ink focus:outline-none"
-            />
-            {nameTaken ? (
-              <span className="mt-2 block text-[14px] text-ink-soft">
-                Bu isimle bir kayıt var. Devam edersen onun yerine geçer.
-              </span>
-            ) : null}
-          </label>
+          {!isSignedIn ? (
+            <div className="mt-6 space-y-4">
+              <Hint>
+                Tercihin kimin olduğu kayda geçer, o yüzden cüzdanınla giriş yapman gerekiyor.
+                İmzalamak bir işlem değildir ve ücret ödemezsin.
+              </Hint>
+              <WalletBar />
+            </div>
+          ) : canVote === false ? (
+            <div className="mt-6 space-y-4">
+              <p className="text-[16px]">Bu toplulukta oy verme yetkin yok.</p>
+              <Hint>
+                Üyelik kademen oy vermeye açık değil. Topluluğu yönetenlerden kademeni
+                yükseltmelerini isteyebilirsin.
+              </Hint>
+            </div>
+          ) : (
+            <>
+              <p className="mt-6 font-mono text-[13px] text-ink-soft">{shortAddress(subjectId)}</p>
+              {alreadyVoted ? (
+                <p className="mt-2 text-[14px] text-ink-soft">
+                  Bu cüzdanla daha önce tercih kaydettin. Devam edersen öncekinin yerine geçer.
+                </p>
+              ) : null}
 
           <label className="mt-6 block">
             <span className="mb-2 block text-[14px] font-medium">Kendi cümlelerinle yaz</span>
@@ -203,7 +252,9 @@ export function DecisionFlow({
             <Button kind="plain" onClick={() => setStep(0)} disabled={busy}>
               Geri
             </Button>
-          </div>
+              </div>
+            </>
+          )}
         </Panel>
       ) : null}
 

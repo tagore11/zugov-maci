@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import type { MechanismId } from "@/lib/core/types";
 
 const MECHANISM_CHOICES: Array<{ id: MechanismId; name: string; when: string }> = [
@@ -14,7 +14,16 @@ const MECHANISM_CHOICES: Array<{ id: MechanismId; name: string; when: string }> 
 ];
 
 export default function NewDecisionPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewDecisionForm />
+    </Suspense>
+  );
+}
+
+function NewDecisionForm() {
   const router = useRouter();
+  const communityId = useSearchParams().get("topluluk") ?? "";
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [options, setOptions] = useState(["", ""]);
@@ -29,7 +38,7 @@ export default function NewDecisionPage() {
       const response = await fetch("/api/decisions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, body, options, mechanismId }),
+        body: JSON.stringify({ communityId, title, body, options, mechanismId }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Karar açılamadı.");
@@ -42,8 +51,11 @@ export default function NewDecisionPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-12 md:py-16">
-      <Link href="/" className="tap text-[14px] text-ink-soft underline underline-offset-4">
-        geri
+      <Link
+        href={communityId ? `/topluluk/${communityId}` : "/"}
+        className="tap text-[14px] text-ink-soft underline underline-offset-4"
+      >
+        Geri
       </Link>
 
       <h1 className="mt-6 text-[32px] font-medium leading-[1.15] tracking-[-0.02em] md:text-[38px]">Karar aç</h1>

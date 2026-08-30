@@ -9,7 +9,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
   const vector = (await request.json()) as PreferenceVector;
   if (!vector?.subjectId?.trim()) {
-    return NextResponse.json({ error: "Bir isim ya da rumuz gerekli." }, { status: 400 });
+    return NextResponse.json({ error: "Tercihi kimin verdiği belli değil." }, { status: 400 });
   }
   if (vector.confirmed !== true) {
     return NextResponse.json({ error: "Onaylanmamış tercih kaydedilmez." }, { status: 400 });
