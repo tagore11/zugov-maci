@@ -42,6 +42,7 @@ export function PreferenceComposer({
   const [text, setText] = useState("");
   const [stances, setStances] = useState<Stance[]>(() => blankStances(options));
   const [producedBy, setProducedBy] = useState<string>("");
+  const [needsReview, setNeedsReview] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +64,7 @@ export function PreferenceComposer({
       if (!response.ok) throw new Error(data.error ?? "Taslak çıkarılamadı.");
       setStances(data.vector.stances as Stance[]);
       setProducedBy(data.producedBy as string);
+      setNeedsReview((data.needsReview as string[]) ?? []);
       setPhase("review");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Bilinmeyen hata.");
@@ -73,6 +75,7 @@ export function PreferenceComposer({
 
   function skipToManual() {
     setStances(blankStances(options));
+    setNeedsReview([]);
     setProducedBy("elle");
     setPhase("review");
   }
@@ -183,6 +186,7 @@ export function PreferenceComposer({
           <div className="divide-y divide-[color:var(--gray-700)]">
             {options.map((option) => {
               const stance = stances.find((s) => s.optionId === option.id)!;
+              const flagged = needsReview.includes(option.id);
               return (
                 <div key={option.id} className="py-5 first:pt-0">
                   <h3 className="font-display text-[15px] font-semibold">{option.label}</h3>
@@ -190,6 +194,11 @@ export function PreferenceComposer({
                   {stance.rationale ? (
                     <p className="mt-2 border-l-2 border-[color:var(--accent)] pl-3 text-[13px] italic text-muted-strong">
                       {stance.rationale}
+                    </p>
+                  ) : null}
+                  {flagged ? (
+                    <p className="mt-2 text-[13px] leading-relaxed" style={{ color: "var(--accent)" }}>
+                      Bu seçenek hakkında bir şey yazmışsın ama taslak nötr kaldı. Buraya bakman iyi olur.
                     </p>
                   ) : null}
 

@@ -78,11 +78,11 @@ for (const vector of vectors) {
 
 Bu tek satır, "AI yardımcı olur ama karar vermez" iddiasının koda yazılmış hali. Test ediliyor.
 
-## Model neden 4B
+## Model neden 3B
 
 Katılımcının kendi makinesinde çalışması gerekiyorsa boyut bir tasarım kısıtıdır, taviz değil.
-Qwen3 4B (Apache-2.0), Q4_K_M, diskte ~2.5 GB, 8 GB RAM'li bir dizüstünde çalışır. Modelden
-istenen tek şey çıkarım ve yapılandırma; yargı, sıralama ve tavsiye hiç istenmiyor.
+Qwen2.5 3B Instruct (Apache-2.0), Q4_K_M, diskte ~1,9 GB, 8 GB RAM'li bir dizüstünde çalışır.
+Modelden istenen tek şey çıkarım ve sınıflandırma; yargı, sıralama ve tavsiye hiç istenmiyor.
 
 `temperature 0` ve sabit `seed` zorunlu. İki kişi aynı öneriyi kendi makinesinde çalıştırıp
 raporun imzasını (`digest`) karşılaştırabilir.
@@ -92,6 +92,39 @@ Endpoint OpenAI uyumlu, yani llama.cpp, vLLM ve LM Studio de aynı şekilde çal
 ```bash
 ZUGOV_MODEL_URL=http://127.0.0.1:8080/v1 ZUGOV_MODEL=kendi-modelin npm run dev
 ```
+
+**Düşünen model kullanılmadı.** Qwen3 4B ilk tercihti ve çalışmadı: gizli düşünme geçişi token
+bütçesinin tamamını yiyor, içerik boş dönüyor, ve OpenAI uyumlu uçta bunu kapatmanın taşınabilir
+bir yolu yok (`think`, `enable_thinking` ve `/no_think` üçü de yok sayılıyor, Ollama 0.32).
+Düşünmeyen bir instruct modeli tek kod yolunu her sunucuda çalışır tutuyor.
+
+## Küçük modelin neyi beceremediği, ve bunun nasıl kapatıldığı
+
+Bunlar tahmin değil, bu makinede ölçüldü. Üçü de prompt'a güvenmek yerine koda yazıldı.
+
+**Sayı uyduruyor.** 40 bin liralık bir bütçe metnine "Açık atölye ve mutfak birlikte 80 bin lira
+maliyetli" gözlemi ekledi. Denetçinin bir sayının eksik olduğunu söylemeye hakkı var, o sayıyı
+üretmeye hakkı yok: gözlemdeki her rakam kaynak metinde aranır, yoksa gözlem düşer.
+
+**Örneği kopyalıyor.** Prompt'taki örnek cevabı olduğu gibi geri veriyor. Bu yüzden örnek alakasız
+bir konudan (otobüs güzergâhı) seçildi ve kopyalanan satırlar çıktıdan eleniyor.
+
+**Kelime öbeğiyle cevap veriyor.** "finansal", "talepler" gibi. Dört kelimeden kısa gözlemler
+düşer; parça bir gözlem değildir, basmak raporda olmayan bir titizliği taklit eder.
+
+**İşareti ters çeviriyor.** İlk tasarımda modelden -1 ile +1 arası sayı istendi ve "bunu kesinlikle
+istiyorum" cümlesini güçlü muhalefete çevirdi. Sayı istemek bırakıldı: model sabit bir kelime
+listesinden etiket seçiyor, sayıya çevirme kodda. Etiketler birbirinden uzak kelimeler olmak
+zorunda; `kesinlikle_istiyor` ile `kesinlikle_istemiyor` iki harf farkla ayrıldığı için model
+sürekli ilkini seçiyordu, `savunuyor` ile `reddediyor` bu sorunu bitirdi.
+
+**Türkçe nüansı yarı yarıya kaçırıyor.** Etiketler ayrıldıktan sonra bile üç kişilik bir testte
+dokuz okumanın beşi doğruydu. Bu 3B'nin tavanı, ve tasarım bunu varsayıyor: taslak asla sayılmaz,
+her satır düzenlenebilir, ve kişinin metni bir seçenekten bahsettiği halde taslak nötr kaldıysa
+o satır arayüzde işaretlenir. Testte modelin kaçırdığı beş okumanın beşi de işaretlendi.
+
+Daha iyi Türkçe için `qwen2.5:7b-instruct` (~4,7 GB) tabanına geçilebilir. Yukarıdaki korumaların
+hepsi yerinde kalır; hiçbiri modelin iyi davranmasına bel bağlamıyor.
 
 ## MACI ile ilişkisi
 
@@ -106,12 +139,14 @@ bu MVP onlara dokunmuyor.
 ## Test
 
 ```bash
-npm test        # çekirdek mantık, 11 test
+npm test        # çekirdek mantık, 14 test
 npm run typecheck
 ```
 
-Testler üç davranışı koruyor: onaylanmamış tercih sayıma giremez, kırmızı çizgi hiçbir mekanizmada
-kaybolmaz, ve model kapalıyken her iki yedek de tarafsız çıktı üretir.
+Testler yerel modele bağlı değil. `vitest.config.ts` endpoint'i ulaşılamaz bir porta çeviriyor,
+model yolu ise sahte bir `fetch` ile sınanıyor. Korunan davranışlar: onaylanmamış tercih sayıma
+giremez, kırmızı çizgi hiçbir mekanizmada kaybolmaz, etiket işareti ters çevrilmez, rapor kaynakta
+olmayan rakam basmaz, ve model kapalıyken her iki yedek de çalışmaya devam eder.
 
 ## Veri
 

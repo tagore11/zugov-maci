@@ -11,32 +11,101 @@ import { MODEL_NAME, ModelUnavailableError, completeJson } from "./provider";
  * `confirmed: false`, the UI shows every number as an editable control, and
  * `decide()` refuses to count a vector no human has confirmed.
  *
- * If no model is installed the heuristic path below runs instead, so the app
- * is fully usable with the model turned off. That is deliberate. A governance
- * tool that stops working without AI has made AI load-bearing.
+ * Two shape decisions, both learned the hard way against a 3B model:
+ *
+ *  - One call per option, not one call per person. Asked about three options at
+ *    once the model answers about whichever one it read last.
+ *  - The model returns a LABEL, never a signed number. Asked for a value in
+ *    -1..+1 it reliably inverted the sign, turning "bunu kesinlikle istiyorum"
+ *    into strong opposition. Picking from a fixed vocabulary is a task a small
+ *    model does well; the arithmetic belongs in code.
+ *
+ * If no model is installed the heuristic path runs instead, so the app is fully
+ * usable with the model turned off. That is deliberate. A governance tool that
+ * stops working without AI has made AI load-bearing.
  */
 
-const SYSTEM_PROMPT = [
-  "Bir kişinin kendi cümleleriyle anlattığı tercihi sayılara çeviriyorsun.",
-  "Yorum katma, ikna etme, eksik bilgiyi tamamlama. Sadece söyleneni ölç.",
-  "",
-  "Her seçenek için dört değer üret:",
-  "- support: -1 ile 1 arası. Kişi karşıysa negatif, taraftarsa pozitif, sessizse 0.",
-  "- confidence: 0 ile 1 arası. Kişinin kendi ifadesindeki kesinlik.",
-  "- salience: 0 ile 1 arası. Kişinin bu konuya ne kadar yer ayırdığı.",
-  "- redLine: true sadece kişi 'asla', 'kabul edemem', 'çekilirim' türü bir şey dediyse.",
-  "- rationale: kişinin kendi cümlesinden alınmış kısa alıntı. Yoksa boş bırak.",
-  "",
-  "Metinde hiç değinilmemiş seçenek için hepsi 0 ve redLine false olmalı.",
-  "Sadece şu JSON'u döndür:",
-  '{"stances":[{"optionId":"...","support":0,"confidence":0,"salience":0,"redLine":false,"rationale":""}]}',
-].join("\n");
+/**
+ * Labels are chosen to be far apart as strings, not just in meaning. An earlier
+ * vocabulary used "kesinlikle_istiyor" and "kesinlikle_istemiyor", which differ
+ * by two characters, and the model returned the first one for a sentence that
+ * plainly said the opposite. Distinct words fixed it outright.
+ */
+const STANCE_LABELS = {
+  savunuyor: 1,
+  olumlu: 0.5,
+  kararsiz: 0,
+  yok: 0,
+  olumsuz: -0.5,
+  reddediyor: -1,
+} as const;
+
+const IMPORTANCE_LABELS = {
+  belirleyici: 1,
+  onemli: 0.5,
+  ikincil: 0.2,
+  deginmemis: 0,
+} as const;
+
+type StanceLabel = keyof typeof STANCE_LABELS;
+type ImportanceLabel = keyof typeof IMPORTANCE_LABELS;
+
+interface OptionAnswer {
+  /**
+   * Asked for, then discarded. Making the model quote before it labels raises
+   * label accuracy noticeably, but a 3B model paraphrases instead of quoting,
+   * so what it writes here is not fit to show anyone. The sentence the UI
+   * displays is pulled out of the person's own text in code, below.
+   */
+  alinti?: string;
+  etiket?: string;
+  onem?: string;
+  kirmizi_cizgi?: boolean;
+}
+
+function systemPromptFor(option: Option): string {
+  return [
+    "Bir kişinin yazdığı metni okuyup SADECE şu seçenek hakkında ne dediğini sınıflandıracaksın.",
+    `SEÇENEK: ${option.label}${option.detail ? ` (${option.detail})` : ""}`,
+    "",
+    "Önce kişinin bu seçenek hakkındaki cümlesini alıntıla, sonra o alıntıya bakarak etiketi seç.",
+    "Diğer seçenekler hakkında söylediklerini görmezden gel.",
+    "Yorum katma, ikna etme, eksik bilgiyi tamamlama. Sadece söyleneni ölç.",
+    "",
+    "etiket için tam olarak şu altı kelimeden birini yaz:",
+    "  savunuyor    bu seçeneği güçlü biçimde savunuyor",
+    "  olumlu       olumlu bakıyor ama vurgusu ılımlı",
+    "  kararsiz     hem olumlu hem olumsuz şey söylemiş",
+    "  olumsuz      olumsuz bakıyor",
+    "  reddediyor   açıkça karşı çıkıyor",
+    "  yok          bu seçenekten hiç bahsetmemiş",
+    "",
+    "onem için tam olarak şu dört kelimeden birini yaz:",
+    "  belirleyici  kişinin kararını bu seçenek belirliyor",
+    "  onemli       önemsiyor ama tek belirleyici değil",
+    "  ikincil      değinmiş, üstünde durmamış",
+    "  deginmemis   bu seçenekten hiç bahsetmemiş",
+    "",
+    "kirmizi_cizgi sadece kişi 'asla', 'kabul edemem', 'çekilirim', 'gelmem' gibi",
+    "bir şey söylediyse true olsun. Sadece hoşlanmamak kırmızı çizgi değildir.",
+    "",
+    'Sadece şunu döndür: {"alinti":"...","etiket":"...","onem":"...","kirmizi_cizgi":false}',
+  ].join("\n");
+}
 
 export interface ElicitResult {
   vector: PreferenceVector;
   producedBy: string;
   /** Options the model reported nothing about. The UI asks the person directly. */
   untouched: Id[];
+  /**
+   * Options where the person clearly wrote something and the draft still came
+   * back blank or neutral. A small model misses Turkish nuance often enough
+   * that this contradiction is worth catching mechanically: the text and the
+   * draft disagree, so the person is asked to settle it rather than being shown
+   * a confident zero.
+   */
+  needsReview: Id[];
 }
 
 export async function elicitPreference(args: {
@@ -45,63 +114,129 @@ export async function elicitPreference(args: {
   text: string;
   options: Option[];
 }): Promise<ElicitResult> {
-  const userPrompt = [
-    "SEÇENEKLER:",
-    ...args.options.map((o) => `- ${o.id}: ${o.label}${o.detail ? ` (${o.detail})` : ""}`),
-    "",
-    "KİŞİNİN SÖYLEDİĞİ:",
-    args.text.trim(),
-  ].join("\n");
+  const answers = new Map<Id, OptionAnswer>();
+  let failures = 0;
 
-  try {
-    const raw = await completeJson<{ stances?: Partial<Stance>[] }>(SYSTEM_PROMPT, userPrompt, { maxTokens: 1200 });
-    return build(args, raw.stances ?? [], `local:${MODEL_NAME}`);
-  } catch (error) {
-    if (error instanceof ModelUnavailableError) {
-      return build(args, heuristicStances(args.text, args.options), `heuristic (${error.message})`);
+  for (const option of args.options) {
+    try {
+      answers.set(
+        option.id,
+        await completeJson<OptionAnswer>(systemPromptFor(option), `KİŞİNİN SÖYLEDİĞİ:\n${args.text.trim()}`, {
+          maxTokens: 300,
+        }),
+      );
+    } catch (error) {
+      if (!(error instanceof ModelUnavailableError)) throw error;
+      failures += 1;
     }
-    throw error;
   }
-}
 
-function build(
-  args: { subjectId: Id; decisionId: Id; options: Option[] },
-  rawStances: Partial<Stance>[],
-  producedBy: string,
-): ElicitResult {
-  const byOption = new Map<Id, Partial<Stance>>();
-  for (const stance of rawStances) {
-    if (stance?.optionId && args.options.some((o) => o.id === stance.optionId)) {
-      byOption.set(stance.optionId, stance);
-    }
+  if (failures === args.options.length) {
+    return buildFromHeuristic(args, "heuristic (yerel model yanıt vermedi)");
   }
 
   const untouched: Id[] = [];
+  const needsReview: Id[] = [];
   const stances: Stance[] = args.options.map((option) => {
-    const raw = byOption.get(option.id);
-    if (!raw) untouched.push(option.id);
+    const answer = answers.get(option.id);
+    const stanceLabel = normaliseLabel(answer?.etiket, STANCE_LABELS, "yok") as StanceLabel;
+    const importanceLabel = normaliseLabel(answer?.onem, IMPORTANCE_LABELS, "deginmemis") as ImportanceLabel;
+
+    const quote = quoteFor(option, args.text);
+    if (!answer || stanceLabel === "yok") untouched.push(option.id);
+    if (quote && STANCE_LABELS[stanceLabel] === 0) needsReview.push(option.id);
+
     return {
       optionId: option.id,
-      support: fix(clamp(Number(raw?.support ?? 0), -1, 1)),
-      confidence: fix(clamp(Number(raw?.confidence ?? 0), 0, 1)),
-      salience: fix(clamp(Number(raw?.salience ?? 0), 0, 1)),
-      redLine: raw?.redLine === true,
-      rationale: typeof raw?.rationale === "string" ? raw.rationale.trim() || undefined : undefined,
+      support: STANCE_LABELS[stanceLabel],
+      // The model's own certainty about its reading, not the person's. Never
+      // touches weight; it only decides how loudly the UI asks for a review.
+      confidence: stanceLabel === "yok" ? 0 : 0.5,
+      salience: IMPORTANCE_LABELS[importanceLabel],
+      redLine: answer?.kirmizi_cizgi === true,
+      rationale: quote,
     };
   });
 
   return {
-    producedBy,
+    producedBy: failures === 0 ? `local:${MODEL_NAME}` : `local:${MODEL_NAME} (${failures} seçenek okunamadı)`,
     untouched,
-    vector: {
-      subjectId: args.subjectId,
-      decisionId: args.decisionId,
-      stances,
-      source: "conversation",
-      createdAt: new Date().toISOString(),
-      confirmed: false,
-    },
+    needsReview,
+    vector: draft(args, stances),
   };
+}
+
+/**
+ * The sentence the person actually wrote about this option, found by keyword.
+ * Taken from their own text rather than from the model, so what the UI shows
+ * back to them is verbatim theirs and cannot be a paraphrase or an invention.
+ */
+function quoteFor(option: Option, text: string): string | undefined {
+  // Stems, not whole words: Turkish agglutination turns "mutfak" into
+  // "mutfağa" in the very sentence we are trying to find.
+  const needles = option.label
+    .toLocaleLowerCase("tr")
+    .split(/\s+/)
+    .filter((word) => word.length > 3)
+    .map((word) => word.slice(0, Math.max(4, word.length - 2)));
+  if (needles.length === 0) return undefined;
+
+  const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
+  const hit = sentences.find((sentence) => {
+    const lower = sentence.toLocaleLowerCase("tr");
+    return needles.some((needle) => lower.includes(needle));
+  });
+  return hit && hit.length <= 240 ? hit : hit?.slice(0, 239).concat("…");
+}
+
+function draft(args: { subjectId: Id; decisionId: Id }, stances: Stance[]): PreferenceVector {
+  return {
+    subjectId: args.subjectId,
+    decisionId: args.decisionId,
+    stances,
+    source: "conversation",
+    createdAt: new Date().toISOString(),
+    // Never true here. Only a person flips this, and decide() enforces it.
+    confirmed: false,
+  };
+}
+
+function buildFromHeuristic(
+  args: { subjectId: Id; decisionId: Id; text: string; options: Option[] },
+  producedBy: string,
+): ElicitResult {
+  const raw = heuristicStances(args.text, args.options);
+  const untouched: Id[] = [];
+  const needsReview: Id[] = [];
+  const stances: Stance[] = args.options.map((option) => {
+    const given = raw.find((s) => s.optionId === option.id);
+    if (!given || given.salience === 0) untouched.push(option.id);
+    if (quoteFor(option, args.text) && (given?.support ?? 0) === 0) needsReview.push(option.id);
+    return {
+      optionId: option.id,
+      support: fix(clamp(Number(given?.support ?? 0), -1, 1)),
+      confidence: fix(clamp(Number(given?.confidence ?? 0), 0, 1)),
+      salience: fix(clamp(Number(given?.salience ?? 0), 0, 1)),
+      redLine: given?.redLine === true,
+      rationale: given?.rationale,
+    };
+  });
+  return { producedBy, untouched, needsReview, vector: draft(args, stances) };
+}
+
+function normaliseLabel(value: unknown, table: Record<string, number>, fallback: string): string {
+  if (typeof value !== "string") return fallback;
+  const key = value
+    .toLocaleLowerCase("tr")
+    .trim()
+    .replace(/[\s-]+/g, "_")
+    .replace(/ı/g, "i")
+    .replace(/ç/g, "c")
+    .replace(/ö/g, "o")
+    .replace(/ş/g, "s")
+    .replace(/ü/g, "u")
+    .replace(/ğ/g, "g");
+  return key in table ? key : fallback;
 }
 
 /** Keyword scoring. Crude on purpose: it is a starting point a person edits. */

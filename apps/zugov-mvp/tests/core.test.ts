@@ -144,3 +144,66 @@ describe("model-free fallbacks", () => {
     expect(JSON.stringify(report)).not.toMatch(/öneriyorum|en iyisi|kabul edilmeli/i);
   });
 });
+
+describe("grounding guards", () => {
+  it("drops observations carrying figures the proposal never stated", async () => {
+    const { groundProposal } = await import("../lib/llm/grounding");
+    const input = {
+      decisionId: "k1",
+      title: "Ortak alan bütçesi",
+      body: "12 gün için 40 bin lira var ve üç talep geldi.",
+      optionLabels: options.map((o) => o.label),
+    };
+    // No model reachable in CI: the deterministic path runs and must stay clean.
+    const report = await groundProposal({ ...input });
+    const printed = Object.values(report.sections).flatMap((s) => s.observations);
+    for (const observation of printed) {
+      for (const match of observation.match(/\d[\d.,]*/g) ?? []) {
+        expect(input.body.replace(/[.,\s]/g, "")).toContain(match.replace(/[.,]/g, ""));
+      }
+    }
+  });
+});
+
+describe("elicitation", () => {
+  const answer = (etiket: string, onem: string, kirmizi = false) => ({
+    ok: true,
+    json: async () => ({ choices: [{ message: { content: JSON.stringify({ alinti: "", etiket, onem, kirmizi_cizgi: kirmizi }) } }] }),
+  });
+
+  it("maps enthusiasm to support and never inverts the sign", async () => {
+    const { elicitPreference } = await import("../lib/llm/elicit");
+    const replies = [
+      answer("savunuyor", "belirleyici"),
+      answer("kararsiz", "ikincil"),
+      answer("reddediyor", "onemli", true),
+    ];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async () => replies.shift()) as unknown as typeof fetch;
+    try {
+      const result = await elicitPreference({ subjectId: "deniz", decisionId: "k1", text: "uzunca bir metin", options });
+      const [mutfak, oda, atolye] = result.vector.stances;
+      expect(mutfak.support).toBe(1);
+      expect(mutfak.salience).toBe(1);
+      expect(oda.support).toBe(0);
+      expect(atolye.support).toBe(-1);
+      expect(atolye.redLine).toBe(true);
+      // The whole point: a model may draft, only a person may confirm.
+      expect(result.vector.confirmed).toBe(false);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+
+  it("falls back to the keyword path when no model answers", async () => {
+    const { elicitPreference } = await import("../lib/llm/elicit");
+    const result = await elicitPreference({
+      subjectId: "ece",
+      decisionId: "k1",
+      text: "ortak mutfak kesinlikle olsun, sessiz oda istemiyorum",
+      options,
+    });
+    expect(result.producedBy).toContain("heuristic");
+    expect(result.vector.confirmed).toBe(false);
+  });
+});
