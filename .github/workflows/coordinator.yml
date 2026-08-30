@@ -107,7 +107,7 @@ jobs:
 
       - name: Cache zkeys
         id: cache_zkeys
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: zkeys
           key: zkeys-${{ steps.hash_circuits.outputs.CIRCUIT_HASH }}
