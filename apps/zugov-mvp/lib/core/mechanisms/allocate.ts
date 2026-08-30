@@ -50,7 +50,7 @@ export const allocate: Mechanism<AllocateShape> = {
       participantCount: ballots.length,
       contest: contestOf(scores),
       redLines: [],
-      notes: ["Sonuç bir kazanan değil, bir bölüşüm önerisidir."],
+      notes: ["Sonuç bir bölüşüm önerisidir."],
     };
   },
 };

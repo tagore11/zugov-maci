@@ -10,7 +10,7 @@ const MECHANISM_CHOICES: Array<{ id: MechanismId; name: string; when: string }> 
   { id: "ranked", name: "Sıralama", when: "Tek bir kazanan çıkacaksa ve oylar bölünecekse." },
   { id: "quadratic", name: "Ağırlık", when: "Bazıları için hayati, bazıları için önemsiz bir konuysa." },
   { id: "consent", name: "Rıza", when: "Herkesin birlikte yaşayabileceği bir sonuç arıyorsan." },
-  { id: "allocate", name: "Paylaştırma", when: "Kazanan değil, bir bütçe ya da kaynak bölüşülecekse." },
+  { id: "allocate", name: "Paylaştırma", when: "Bir bütçe ya da kaynağı bölüşeceksen." },
 ];
 
 export default function NewDecisionPage() {

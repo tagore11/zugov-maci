@@ -88,6 +88,44 @@ describe("design rules", () => {
     expect([...radii].length).toBeLessThanOrEqual(1);
   });
 
+  /**
+   * Turkish copy rules from the turkce-humanizer standard, applied to every
+   * string literal that actually carries Turkish text. These three are the
+   * clearest signatures of English syntax forced onto Turkish, and all three
+   * had crept into the interface copy.
+   */
+  describe("Turkish copy", () => {
+    const turkishStrings = CODE.filter((file) => /\.tsx?$/.test(file.path)).flatMap((file) =>
+      (file.text.match(/"[^"\n]{12,}"/g) ?? [])
+        .map((literal) => literal.slice(1, -1))
+        .filter((text) => /[çğıöşüÇĞİÖŞÜ]/.test(text))
+        .map((text) => ({ path: file.path, text })),
+    );
+
+    it("finds Turkish copy to check", () => {
+      expect(turkishStrings.length).toBeGreaterThan(20);
+    });
+
+    it("puts no comma before an adversative conjunction", () => {
+      const offenders = turkishStrings
+        .filter((s) => /,\s+(ama|ancak|fakat|lakin)\s/.test(s.text))
+        .map((s) => `${s.path}: ${s.text}`);
+      expect(offenders).toEqual([]);
+    });
+
+    it("uses no semicolon", () => {
+      const offenders = turkishStrings.filter((s) => s.text.includes(";")).map((s) => `${s.path}: ${s.text}`);
+      expect(offenders).toEqual([]);
+    });
+
+    it("does not use the \"not X, but Y\" construction", () => {
+      const offenders = turkishStrings
+        .filter((s) => /\sdeğil,\s/.test(s.text))
+        .map((s) => `${s.path}: ${s.text}`);
+      expect(offenders).toEqual([]);
+    });
+  });
+
   it("does not break a headline with <br>", () => {
     const offenders = CODE.filter((file) => /<br\s*\/?>/.test(file.text)).map((f) => f.path);
     expect(offenders).toEqual([]);

@@ -324,7 +324,7 @@ function OptionStep({
           <span className="text-[15px] leading-relaxed">
             Bu benim kırmızı çizgim. Bu çıkarsa kabul edemem.
             <span className="mt-1 block text-[13px] text-ink-soft">
-              Tek başına sonucu iptal etmez, ama sayımdan sonra da görünür kalır.
+              Tek başına sonucu iptal etmez ama sayımdan sonra da görünür kalır.
             </span>
           </span>
         </label>

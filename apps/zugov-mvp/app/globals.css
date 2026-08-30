@@ -11,8 +11,6 @@
  * spent on two things only: a red line declaration and an error. Selection is
  * shown with ink, not colour, because the direction of a choice is already
  * written in its label.
- *
- * Three grounds are defined. Set data-tema on <html> to compare them.
  */
 
 @theme {
@@ -21,9 +19,14 @@
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-/* A. Beyaz. Pure white ground, no cards, structure carried by rules alone. */
-:root,
-:root[data-tema="beyaz"] {
+/*
+ * The standard has one ground. Trials B (kagit) and C (karbon) were removed on
+ * 30 August 2026 after A was chosen; a standard with three values is not a
+ * standard. What follows below is the same standard rendered for a reader whose
+ * system asks for a dark ground, which is a legibility requirement rather than
+ * an alternative palette.
+ */
+:root {
   --paper: #ffffff;
   --card: #ffffff;
   --sunk: #f4f4f4;
@@ -34,41 +37,10 @@
   --ink-faint: #6f6f6f;
   --on-ink: #f4f4f4;
   --alarm: #da1e28;
-  --alarm-sunk: #f4f4f4;
-}
-
-/* B. Kagit. Grey ground, white surfaces float on it. Softer, still achromatic. */
-:root[data-tema="kagit"] {
-  --paper: #e8e8e8;
-  --card: #ffffff;
-  --sunk: #f4f4f4;
-  --line: #d0d0d0;
-  --line-strong: #a8a8a8;
-  --ink: #161616;
-  --ink-soft: #525252;
-  --ink-faint: #6f6f6f;
-  --on-ink: #f4f4f4;
-  --alarm: #da1e28;
-  --alarm-sunk: #f4f4f4;
-}
-
-/* C. Karbon. */
-:root[data-tema="karbon"] {
-  --paper: #161616;
-  --card: #262626;
-  --sunk: #393939;
-  --line: #393939;
-  --line-strong: #525252;
-  --ink: #f4f4f4;
-  --ink-soft: #c6c6c6;
-  --ink-faint: #8d8d8d;
-  --on-ink: #161616;
-  --alarm: #fa4d56;
-  --alarm-sunk: #262626;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-tema]) {
+  :root {
     --paper: #161616;
     --card: #262626;
     --sunk: #393939;
@@ -79,7 +51,6 @@
     --ink-faint: #8d8d8d;
     --on-ink: #161616;
     --alarm: #fa4d56;
-    --alarm-sunk: #262626;
   }
 }
 

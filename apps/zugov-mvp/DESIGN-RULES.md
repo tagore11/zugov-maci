@@ -12,6 +12,9 @@ Yeni bir kural gerektiğinde önce buraya yazılır, sonra teste eklenir, sonra 
 
 ## 2. Renk
 
+- **Zemin tektir.** 30 Ağustos 2026'da A (Beyaz) seçildi, B ve C kaldırıldı. Üç değerli
+  standart standart değildir. Karanlık sistem tercihinde aynı standart karanlık zeminde
+  render edilir, bu alternatif palet değil okunabilirlik gereğidir.
 - **Palet akromatiktir.** Zemin, yüzey, çizgi ve metin yalnızca gri skalasından seçilir.
 - **Tek kromatik renk vardır ve o kırmızıdır.** Sadece iki iş için: kırmızı çizgi beyanı ve
   hata mesajı. Başka hiçbir yerde renk kullanılmaz.
@@ -50,7 +53,14 @@ Yeni bir kural gerektiğinde önce buraya yazılır, sonra teste eklenir, sonra 
 - Kaydırma ipucu (`aşağı kaydır`), sürüm rozeti (`v0.1`, `BETA`), sahte kesinlik taşıyan
   sayılar, şehir ve saat şeritleri yasak.
 - Uydurma isim, uydurma marka, `Acme` türü yer tutucu kullanılmaz.
-- Türkçe metin `/turkce-humanizer` süzgecinden geçirilir.
+- Türkçe metin `/turkce-humanizer` süzgecinden geçirilir. Üç kalıp arayüzde hiç
+  bulunmaz ve testle engellenir:
+  - Karşıtlık bağlacından önce virgül. `Sonuç ayakta, ama tartışmalı` yanlış,
+    `Sonuç ayakta ama tartışmalı` doğru. İngilizcenin `but` öncesi virgül kuralının
+    zorla çevirisi, TDK'ya göre de yanlış.
+  - Noktalı virgül. Cümle ikiye bölünür.
+  - `X değil, Y` kalıbı. İngilizcenin `not X but Y` hamlesi. Gerçek mantıksal bağ
+    kurulur ya da yalnızca Y bırakılır.
 
 ## 6. Hareket
 

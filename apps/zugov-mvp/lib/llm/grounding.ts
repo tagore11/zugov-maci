@@ -48,7 +48,7 @@ const QUESTIONS: Record<EpistemicQuestionKey, QuestionSpec> = {
   counterarguments: {
     question: "Buna karşı çıkan en güçlü argüman ne?",
     prompt:
-      "Bu öneriye karşı çıkan en güçlü argümanı yaz. Kendi görüşünü değil, karşı tarafın en iyi haliyle argümanını kur.",
+      "Bu öneriye karşı çıkan en güçlü argümanı yaz. Karşı tarafın argümanını en iyi haliyle kur, kendi görüşünü katma.",
     example: [
       "Kısalan yürüme mesafesinin uzayan sürüş süresini telafi ettiği gösterilmemiş.",
       "Değişiklikten en çok etkilenen grup kararı alan grupla aynı değil.",
@@ -200,7 +200,7 @@ export function heuristicGrounding(input: GroundingInput): RawGrounding {
     summary: `Metin ${sentences.length} önermeden oluşuyor ve ${input.optionLabels.length} seçenek arasında karar istiyor.`,
     keywords,
     assumptions: [`Şu önermenin doğru olması gerekiyor: "${truncate(claim)}"`],
-    baseRates: ["Öneride sayısal bir dayanak yok; karşılaştırma noktası dışarıdan getirilmeli."],
+    baseRates: ["Öneride sayısal bir dayanak yok. Karşılaştırma noktası dışarıdan getirilmeli."],
     counterarguments:
       sentences.length > 1
         ? [`Karşı okuma için sınanacak cümle: "${truncate(sentences[1])}"`]

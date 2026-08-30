@@ -36,7 +36,7 @@ export const consent: Mechanism<ConsentShape> = {
     }
     if (ballot.shape.objections.length > 0) {
       lines.push(`İtiraz ettiklerin: ${ballot.shape.objections.map((id) => labelOf(options, id)).join(", ")}.`);
-      lines.push("İtirazın sonucu tek başına iptal etmez, ama kayda geçer ve görünür kalır.");
+      lines.push("İtirazın sonucu tek başına iptal etmez ama kayda geçer ve görünür kalır.");
     }
     return lines.length > 0 ? lines : ["Hiçbir seçenek hakkında beyanın yok."];
   },
@@ -62,7 +62,7 @@ export const consent: Mechanism<ConsentShape> = {
       redLines: [],
       notes:
         winnerId === null && sorted.length > 0
-          ? ["Rıza eşit dağıldı; tek bir seçenek öne çıkmadı."]
+          ? ["Rıza eşit dağıldı, tek bir seçenek öne çıkmadı."]
           : [],
     };
   },

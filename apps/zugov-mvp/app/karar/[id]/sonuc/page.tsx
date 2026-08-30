@@ -124,7 +124,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
           {sensitivity.verdict === "robust"
             ? "Kararı oda verdi"
             : sensitivity.verdict === "leaning"
-              ? "Sonuç ayakta, ama tartışmalı"
+              ? "Sonuç ayakta ama tartışmalı"
               : "Kararı kural veriyor"}
         </Title>
 
