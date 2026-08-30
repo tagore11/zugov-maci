@@ -131,3 +131,18 @@ describe("design rules", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * EIP-4361 restricts a sign-in message's statement to reserved and unreserved
+ * characters. A Turkish diacritic in there made the backend reject every login
+ * with "Invalid SIWE message format", and made the wallet drop its recognisable
+ * sign-in screen in favour of raw text. Both failures are silent until someone
+ * tries to log in, so the constraint is checked here instead.
+ */
+describe("sign-in message", () => {
+  it("keeps the SIWE statement inside the character set the spec allows", async () => {
+    const { SIWE_STATEMENT } = await import("../lib/session");
+    expect(SIWE_STATEMENT).toMatch(/^[\x20-\x7E]+$/);
+    expect(SIWE_STATEMENT).not.toContain("\n");
+  });
+});

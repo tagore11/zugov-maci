@@ -35,7 +35,22 @@ authRouter.post("/verify", async (c) => {
   try {
     siweMessage = new SiweMessage(body.message);
   } catch {
-    return c.json({ error: "Invalid SIWE message format." }, 400);
+    // EIP-4361 restricts the statement to reserved and unreserved characters,
+    // so a message carrying anything outside them fails to parse here rather
+    // than at signature verification. A statement written in a language with
+    // diacritics is the way this is usually reached, and the bare "invalid
+    // format" it used to return sent people looking at their wallet instead.
+    const statement = body.message.split("\n")[3] ?? "";
+    const offending = [...statement].filter((character) => character.charCodeAt(0) > 126);
+    return c.json(
+      {
+        error:
+          offending.length > 0
+            ? `Invalid SIWE message format. The statement contains characters EIP-4361 does not allow: ${[...new Set(offending)].join(" ")}. Statements must be ASCII.`
+            : "Invalid SIWE message format.",
+      },
+      400,
+    );
   }
 
   // siweMessage.verify() is documented to resolve { success: false, error } for verification

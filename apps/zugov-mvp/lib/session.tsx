@@ -27,6 +27,22 @@ interface SessionValue {
 const SessionContext = createContext<SessionValue | null>(null);
 const STORAGE_KEY = "zugov.session.address";
 
+/**
+ * The sentence the wallet shows while asking for a signature. ASCII only, and
+ * English, for two reasons that both point the same way.
+ *
+ * EIP-4361 restricts the statement to reserved and unreserved characters, which
+ * excludes every Turkish diacritic. A statement containing "giriş" made the
+ * backend's parser reject the message outright with "Invalid SIWE message
+ * format", and a wallet that cannot parse a sign-in message stops rendering its
+ * recognisable sign-in screen and falls back to showing raw text, which is
+ * exactly the wrong thing to show someone at the moment they are asked to sign.
+ *
+ * The Turkish explanation belongs on our own page, next to the button, where we
+ * control the typography and can spell it properly. See WalletBar.
+ */
+export const SIWE_STATEMENT = "Sign in to ZuGov. This is not a transaction and costs no gas.";
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { address, chainId, isConnecting } = useAccount();
   const { signMessageAsync } = useSignMessage();
@@ -73,7 +89,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         nonce,
         uri: window.location.origin,
         version: "1",
-        statement: "ZuGov'a giriş yapmak için imzala. Bu imza bir işlem değildir ve ücret ödemezsin.",
+        statement: SIWE_STATEMENT,
       });
       const signature = await signMessageAsync({ message });
       const verified = await auth.verify(message, signature);

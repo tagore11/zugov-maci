@@ -40,12 +40,20 @@ export function WalletBar() {
 
   if (isConnected && connected) {
     return (
-      <div className="flex flex-wrap items-center gap-3">
-        <Button onClick={() => void signIn()} disabled={isSigning}>
-          {isSigning ? "Cüzdanında onayla" : "İmzala ve gir"}
-        </Button>
-        <span className="font-mono text-[12px] text-ink-faint">{shortAddress(connected)}</span>
-        {error ? <span className="text-[14px] text-alarm">{error}</span> : null}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => void signIn()} disabled={isSigning}>
+            {isSigning ? "Cüzdanında onayla" : "İmzala ve gir"}
+          </Button>
+          <span className="font-mono text-[12px] text-ink-faint">{shortAddress(connected)}</span>
+        </div>
+        {/* The wallet's own prompt has to be English to stay a valid sign-in
+            message, so the Turkish explanation lives here instead. */}
+        <p className="max-w-[62ch] text-[14px] leading-relaxed text-ink-soft">
+          Cüzdanın bir imza isteyecek. Bu bir işlem değildir, zincire hiçbir şey yazılmaz ve
+          ücret ödemezsin. İmza yalnızca cüzdanın sana ait olduğunu kanıtlar.
+        </p>
+        {error ? <p className="text-[14px] text-alarm">{error}</p> : null}
       </div>
     );
   }
