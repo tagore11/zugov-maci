@@ -95,13 +95,25 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
       </nav>
 
       <header className="border-b border-line pb-8">
-        <Title as="h1">
-          {community?.logo ? <span className="mr-2">{community.logo}</span> : null}
-          {community?.displayName ?? "Yükleniyor"}
-        </Title>
-        {community?.description ? (
-          <p className="prose-read mt-4 max-w-[60ch] text-ink-soft">{community.description}</p>
-        ) : null}
+        {/* A bare "Yükleniyor" headline reads as a broken page rather than a slow
+            one. The skeleton keeps the shape of what is coming, so a slow load
+            looks like a slow load. */}
+        {community ? (
+          <>
+            <Title as="h1">
+              {community.logo ? <span className="mr-2">{community.logo}</span> : null}
+              {community.displayName}
+            </Title>
+            {community.description ? (
+              <p className="prose-read mt-4 max-w-[60ch] text-ink-soft">{community.description}</p>
+            ) : null}
+          </>
+        ) : (
+          <div aria-hidden className="space-y-3">
+            <div className="h-8 w-64 max-w-full bg-sunk" />
+            <div className="h-4 w-80 max-w-full bg-sunk" />
+          </div>
+        )}
 
         <div className="mt-6">
           <WalletBar />
