@@ -257,3 +257,88 @@ describe("question selection", () => {
     expect(busy.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("receipt", () => {
+  const people = [
+    vector("0xaaa", [{ optionId: "s1", support: 1, salience: 1 }, { optionId: "s3", support: -1, redLine: true }]),
+    vector("0xbbb", [{ optionId: "s1", support: 1 }, { optionId: "s2", support: 1 }]),
+    vector("0xccc", [{ optionId: "s2", support: 1, salience: 1 }]),
+  ];
+
+  const build = async () => {
+    const { buildReceipt } = await import("../lib/core/receipt");
+    return buildReceipt({
+      decisionId: "k1",
+      title: "Ortak alan bütçesi",
+      options,
+      mechanismId: "approval",
+      preferences: people,
+      salt: "tuz",
+    });
+  };
+
+  it("recomputes to the same digest and the same result", async () => {
+    const { verifyReceipt } = await import("../lib/core/receipt");
+    const receipt = await build();
+    const checked = verifyReceipt(receipt);
+    expect(checked.digestMatches).toBe(true);
+    expect(checked.tallyMatches).toBe(true);
+    expect(checked.recomputed.winnerId).toBe(receipt.outcome.winnerId);
+  });
+
+  it("is byte-identical no matter what order the ballots arrived in", async () => {
+    const { buildReceipt } = await import("../lib/core/receipt");
+    const shuffled = buildReceipt({
+      decisionId: "k1",
+      title: "Ortak alan bütçesi",
+      options: [...options].reverse(),
+      mechanismId: "approval",
+      preferences: [...people].reverse(),
+      salt: "tuz",
+    });
+    expect(shuffled.digest).toBe((await build()).digest);
+  });
+
+  it("catches a result that was edited after the fact", async () => {
+    const { verifyReceipt } = await import("../lib/core/receipt");
+    const receipt = await build();
+    const tampered = {
+      ...receipt,
+      outcome: { ...receipt.outcome, winnerId: "s3" },
+    };
+    const checked = verifyReceipt(tampered);
+    expect(checked.digestMatches).toBe(false);
+    expect(checked.tallyMatches).toBe(false);
+  });
+
+  it("catches a ballot added after the digest was taken", async () => {
+    const { verifyReceipt } = await import("../lib/core/receipt");
+    const receipt = await build();
+    const stuffed = {
+      ...receipt,
+      ballots: [
+        ...receipt.ballots,
+        { voter: "ffffffffffffffff", stances: options.map((o) => ({ optionId: o.id, support: 1, salience: 1, redLine: false })) },
+      ],
+    };
+    const checked = verifyReceipt(stuffed);
+    expect(checked.digestMatches).toBe(false);
+    expect(checked.tallyMatches).toBe(false);
+  });
+
+  it("names no voter", async () => {
+    const receipt = await build();
+    const printed = JSON.stringify(receipt);
+    for (const person of people) expect(printed).not.toContain(person.subjectId);
+  });
+
+  it("lets a person find their own ballot and nobody build the list", async () => {
+    const { createHash } = await import("node:crypto");
+    const receipt = await build();
+    const mine = createHash("sha256").update("tuz:0xaaa").digest("hex").slice(0, 16);
+    expect(receipt.ballots.some((b) => b.voter === mine)).toBe(true);
+    // The same wallet in a different decision hashes differently.
+    const elsewhere = createHash("sha256").update("baskatuz:0xaaa").digest("hex").slice(0, 16);
+    expect(receipt.ballots.some((b) => b.voter === elsewhere)).toBe(false);
+  });
+});

@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { GroundingReport, Id, MechanismId, Option, PreferenceVector } from "./core/types";
@@ -20,6 +21,12 @@ export interface Decision {
   closesAt: string | null;
   grounding: GroundingReport | null;
   preferences: PreferenceVector[];
+  /**
+   * Per-decision salt for the receipt's voter hashes. Generated when the
+   * decision is opened, so a hash from one decision cannot be tested against
+   * another. Published with the receipt; see lib/core/receipt.ts.
+   */
+  salt: string;
 }
 
 interface Database {
@@ -75,4 +82,8 @@ export async function upsertPreference(decisionId: Id, vector: PreferenceVector)
 
 export function newId(prefix: string): Id {
   return `${prefix}_${Math.random().toString(36).slice(2, 8)}${Date.now().toString(36).slice(-4)}`;
+}
+
+export function newSalt(): string {
+  return randomBytes(16).toString("hex");
 }

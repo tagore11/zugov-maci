@@ -4,6 +4,7 @@ import { getDecision } from "@/lib/store";
 import { analyseSensitivity, decide } from "@/lib/core/decide";
 import { getMechanism, labelOf } from "@/lib/core/mechanisms";
 import { Hint, Panel, Title } from "@/components/ui";
+import { buildReceipt } from "@/lib/core/receipt";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,14 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
   }
 
   const outcome = decide(decision.preferences, decision.options, decision.mechanismId);
+  const receipt = buildReceipt({
+    decisionId: decision.id,
+    title: decision.title,
+    options: decision.options,
+    mechanismId: decision.mechanismId,
+    preferences: decision.preferences,
+    salt: decision.salt ?? decision.id,
+  });
   const sensitivity = analyseSensitivity(decision.preferences, decision.options);
   const ranked = [...outcome.scores].sort((a, b) => b.score - a.score);
   const top = Math.max(1, ...ranked.map((s) => Math.abs(s.score)));
@@ -148,6 +157,30 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
           })}
         </ul>
         ) : null}
+      </Panel>
+
+      <Panel>
+        <Title>Bu sonucu kendin doğrula</Title>
+        <p className="prose-read mt-3 max-w-[58ch] text-ink-soft">
+          Makbuzda pusulaların hepsi var, isimler yok. İndir, kendi makinende say, imzayı
+          karşılaştır. Bize güvenmen gerekmiyor.
+        </p>
+
+        <div className="mt-5 overflow-x-auto">
+          <pre className="w-fit min-w-full bg-sunk px-4 py-3 font-mono text-[12px] leading-relaxed">
+            {`curl -O ${"http://localhost:3400"}/api/decisions/${decision.id}/makbuz\nnpm run dogrula -- makbuz`}
+          </pre>
+        </div>
+
+        <p className="mt-5 font-mono text-[12px] break-all text-ink-faint">imza {receipt.digest}</p>
+        <div className="mt-4">
+          <a
+            href={`/api/decisions/${decision.id}/makbuz`}
+            className="tap text-[15px] font-medium underline underline-offset-4"
+          >
+            Makbuzu aç
+          </a>
+        </div>
       </Panel>
     </main>
   );

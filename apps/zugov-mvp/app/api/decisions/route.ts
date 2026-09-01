@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listDecisions, newId, saveDecision } from "@/lib/store";
+import { listDecisions, newId, newSalt, saveDecision } from "@/lib/store";
 import type { MechanismId } from "@/lib/core/types";
 import { MECHANISM_ORDER } from "@/lib/core/mechanisms";
 
@@ -47,6 +47,7 @@ export async function POST(request: Request) {
     closesAt: null,
     grounding: null,
     preferences: [],
+    salt: newSalt(),
   });
 
   return NextResponse.json(decision, { status: 201 });
