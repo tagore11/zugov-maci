@@ -4,6 +4,7 @@ import { getDecision } from "@/lib/store";
 import { getMechanism } from "@/lib/core/mechanisms";
 import { DecisionFlow } from "@/components/DecisionFlow";
 import { ModelBadge } from "@/components/ModelBadge";
+import { copy } from "@/lib/copy";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,10 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
     <main className="mx-auto max-w-2xl px-4 py-10 md:py-16">
       <nav className="mb-8 flex flex-wrap items-center justify-between gap-3">
         <Link href="/" className="tap text-[14px] text-ink-soft underline underline-offset-4">
-          Kararlar
+          {copy.decisionPage.backToDecisions}
         </Link>
         <span className="font-mono text-[11px] text-ink-faint">
-          {mechanism.name} · {decision.preferences.length} katılımcı
+          {mechanism.name} · {decision.preferences.length} {copy.decisionPage.participantCount}
         </span>
       </nav>
 
@@ -39,7 +40,7 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
       <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6">
         <ModelBadge />
         <Link href={`/karar/${decision.id}/sonuc`} className="tap text-[14px] text-ink-soft underline underline-offset-4">
-          Sonuca bak
+          {copy.decisionPage.seeResult}
         </Link>
       </footer>
     </main>

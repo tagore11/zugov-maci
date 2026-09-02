@@ -1,6 +1,11 @@
 import type { Id, Option, PreferenceVector, Stance } from "../core/types";
 import { clamp, fix } from "../core/mechanisms";
 import { MODEL_NAME, ModelUnavailableError, completeJson } from "./provider";
+import { trLanguagePack, type LanguagePack } from "./lang/tr";
+import { elicitationSystemPrompt, elicitationUserContent } from "./lang/tr-prompts";
+
+/** The one line that changes when this app speaks a second language. */
+const LANG: LanguagePack = trLanguagePack;
 
 /**
  * Preference elicitation.
@@ -63,36 +68,6 @@ interface OptionAnswer {
   kirmizi_cizgi?: boolean;
 }
 
-function systemPromptFor(option: Option): string {
-  return [
-    "Bir kişinin yazdığı metni okuyup SADECE şu seçenek hakkında ne dediğini sınıflandıracaksın.",
-    `SEÇENEK: ${option.label}${option.detail ? ` (${option.detail})` : ""}`,
-    "",
-    "Önce kişinin bu seçenek hakkındaki cümlesini alıntıla, sonra o alıntıya bakarak etiketi seç.",
-    "Diğer seçenekler hakkında söylediklerini görmezden gel.",
-    "Yorum katma, ikna etme, eksik bilgiyi tamamlama. Sadece söyleneni ölç.",
-    "",
-    "etiket için tam olarak şu altı kelimeden birini yaz:",
-    "  savunuyor    bu seçeneği güçlü biçimde savunuyor",
-    "  olumlu       olumlu bakıyor ama vurgusu ılımlı",
-    "  kararsiz     hem olumlu hem olumsuz şey söylemiş",
-    "  olumsuz      olumsuz bakıyor",
-    "  reddediyor   açıkça karşı çıkıyor",
-    "  yok          bu seçenekten hiç bahsetmemiş",
-    "",
-    "onem için tam olarak şu dört kelimeden birini yaz:",
-    "  belirleyici  kişinin kararını bu seçenek belirliyor",
-    "  onemli       önemsiyor ama tek belirleyici değil",
-    "  ikincil      değinmiş, üstünde durmamış",
-    "  deginmemis   bu seçenekten hiç bahsetmemiş",
-    "",
-    "kirmizi_cizgi sadece kişi 'asla', 'kabul edemem', 'çekilirim', 'gelmem' gibi",
-    "bir şey söylediyse true olsun. Sadece hoşlanmamak kırmızı çizgi değildir.",
-    "",
-    'Sadece şunu döndür: {"alinti":"...","etiket":"...","onem":"...","kirmizi_cizgi":false}',
-  ].join("\n");
-}
-
 export interface ElicitResult {
   vector: PreferenceVector;
   producedBy: string;
@@ -121,9 +96,11 @@ export async function elicitPreference(args: {
     try {
       answers.set(
         option.id,
-        await completeJson<OptionAnswer>(systemPromptFor(option), `KİŞİNİN SÖYLEDİĞİ:\n${args.text.trim()}`, {
-          maxTokens: 300,
-        }),
+        await completeJson<OptionAnswer>(
+          elicitationSystemPrompt(option),
+          elicitationUserContent(args.text),
+          { maxTokens: 300 },
+        ),
       );
     } catch (error) {
       if (!(error instanceof ModelUnavailableError)) throw error;
@@ -132,7 +109,7 @@ export async function elicitPreference(args: {
   }
 
   if (failures === args.options.length) {
-    return buildFromHeuristic(args, "heuristic (yerel model yanıt vermedi)");
+    return buildFromHeuristic(args, LANG.elicitCopy.heuristicNoModelResponse);
   }
 
   const untouched: Id[] = [];
@@ -159,7 +136,10 @@ export async function elicitPreference(args: {
   });
 
   return {
-    producedBy: failures === 0 ? `local:${MODEL_NAME}` : `local:${MODEL_NAME} (${failures} seçenek okunamadı)`,
+    producedBy:
+      failures === 0
+        ? LANG.elicitCopy.producedByLocalModel(MODEL_NAME)
+        : LANG.elicitCopy.producedByLocalModelPartial(MODEL_NAME, failures),
     untouched,
     needsReview,
     vector: draft(args, stances),
@@ -172,18 +152,12 @@ export async function elicitPreference(args: {
  * back to them is verbatim theirs and cannot be a paraphrase or an invention.
  */
 function quoteFor(option: Option, text: string): string | undefined {
-  // Stems, not whole words: Turkish agglutination turns "mutfak" into
-  // "mutfağa" in the very sentence we are trying to find.
-  const needles = option.label
-    .toLocaleLowerCase("tr")
-    .split(/\s+/)
-    .filter((word) => word.length > 3)
-    .map((word) => word.slice(0, Math.max(4, word.length - 2)));
+  const needles = LANG.stemWords(option.label);
   if (needles.length === 0) return undefined;
 
-  const sentences = text.split(/(?<=[.!?])\s+|\n+/).map((sentence) => sentence.trim()).filter(Boolean);
+  const sentences = LANG.splitSentences(text);
   const hit = sentences.find((sentence) => {
-    const lower = sentence.toLocaleLowerCase("tr");
+    const lower = LANG.toLocaleLower(sentence);
     return needles.some((needle) => lower.includes(needle));
   });
   return hit && hit.length <= 240 ? hit : hit?.slice(0, 239).concat("…");
@@ -226,25 +200,14 @@ function buildFromHeuristic(
 
 function normaliseLabel(value: unknown, table: Record<string, number>, fallback: string): string {
   if (typeof value !== "string") return fallback;
-  const key = value
-    .toLocaleLowerCase("tr")
-    .trim()
-    .replace(/[\s-]+/g, "_")
-    .replace(/ı/g, "i")
-    .replace(/ç/g, "c")
-    .replace(/ö/g, "o")
-    .replace(/ş/g, "s")
-    .replace(/ü/g, "u")
-    .replace(/ğ/g, "g");
+  const key = LANG.foldDiacritics(LANG.toLocaleLower(value).trim().replace(/[\s-]+/g, "_"));
   return key in table ? key : fallback;
 }
 
 /** Keyword scoring. Crude on purpose: it is a starting point a person edits. */
 export function heuristicStances(text: string, options: Option[]): Partial<Stance>[] {
-  const clauses = splitClauses(text.toLowerCase());
-  const positive = ["istiyorum", "olsun", "destek", "taraftar", "iyi", "evet", "olmalı", "yanayım", "şart"];
-  const negative = ["istemiyorum", "olmasın", "karşıyım", "kötü", "hayır", "gereksiz", "yanlış", "olmamalı"];
-  const redline = ["asla", "kabul edemem", "çekilirim", "kırmızı çizgi", "ayrılırım"];
+  const clauses = LANG.splitClauses(text.toLowerCase());
+  const { positive, negative, redline } = LANG.heuristicVocabulary;
 
   return options.map((option) => {
     const needles = option.label.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
@@ -270,12 +233,4 @@ export function heuristicStances(text: string, options: Option[]): Partial<Stanc
       rationale: mentioning[0].trim() || undefined,
     };
   });
-}
-
-/** Turkish sentences carry direction per clause, so split on clause joiners too. */
-function splitClauses(text: string): string[] {
-  return text
-    .split(/[.!?;\n]|,| ama | fakat | ancak | ve | ile /)
-    .map((clause) => clause.trim())
-    .filter(Boolean);
 }

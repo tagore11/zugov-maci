@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { communities, type Community } from "@/lib/ag/client";
 import { Hint, Title } from "./ui";
+import { copy } from "@/lib/copy";
 
 /**
  * Communities come from the governance backend, which is the record of who
@@ -18,7 +19,7 @@ export function CommunityList() {
     communities
       .list()
       .then((data) => alive && setList(data.communities))
-      .catch((cause: unknown) => alive && setError(cause instanceof Error ? cause.message : "Yüklenemedi."));
+      .catch((cause: unknown) => alive && setError(cause instanceof Error ? cause.message : copy.communityList.loadFailedGeneric));
     return () => {
       alive = false;
     };
@@ -27,11 +28,9 @@ export function CommunityList() {
   if (error) {
     return (
       <div className="border-t border-line pt-6">
-        <p className="text-[15px] text-alarm">Topluluklar yüklenemedi.</p>
+        <p className="text-[15px] text-alarm">{copy.communityList.loadFailed}</p>
         <div className="mt-2">
-          <Hint>
-            Yönetişim arka ucu çalışmıyor olabilir. {error}
-          </Hint>
+          <Hint>{copy.communityList.backendDown(error)}</Hint>
         </div>
       </div>
     );
@@ -53,7 +52,7 @@ export function CommunityList() {
   if (list.length === 0) {
     return (
       <div className="mt-5 border-t border-line pt-6">
-        <p className="text-[16px]">Henüz topluluk yok.</p>
+        <p className="text-[16px]">{copy.communityList.empty}</p>
       </div>
     );
   }
@@ -71,9 +70,11 @@ export function CommunityList() {
               <p className="mt-1.5 max-w-[62ch] text-[14px] text-ink-soft">{community.description}</p>
             ) : null}
             <p className="mt-2 font-mono text-[12px] text-ink-faint">
-              {community.type === "union" ? "birlik" : "topluluk"}
-              {community.parentCommunityId ? ", alt topluluk" : ""}
-              {community.membershipPolicy === "approval" ? ", katılım onaya bağlı" : ", katılıma açık"}
+              {community.type === "union" ? copy.communityList.typeUnion : copy.communityList.typeCommunity}
+              {community.parentCommunityId ? copy.communityList.subCommunitySuffix : ""}
+              {community.membershipPolicy === "approval"
+                ? copy.communityList.approvalRequiredSuffix
+                : copy.communityList.openSuffix}
             </p>
           </Link>
         </li>

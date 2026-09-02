@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { copy } from "@/lib/copy";
 
 interface Status {
   available: boolean;
@@ -22,24 +23,24 @@ export function ModelBadge() {
     fetch("/api/model")
       .then((r) => r.json())
       .then((s: Status) => alive && setStatus(s))
-      .catch(() => alive && setStatus({ available: false, endpoint: "-", model: "-", detail: "kontrol edilemedi" }));
+      .catch(() => alive && setStatus({ available: false, endpoint: "-", model: "-", detail: copy.modelBadge.checkFailed }));
     return () => {
       alive = false;
     };
   }, []);
 
   if (!status) {
-    return <span className="font-mono text-[11px] text-ink-faint">model durumu okunuyor</span>;
+    return <span className="font-mono text-[11px] text-ink-faint">{copy.modelBadge.checking}</span>;
   }
 
   return (
     <span className="font-mono text-[11px] text-ink-faint">
       {status.available ? (
         <>
-          <span className="font-medium">{status.model}</span> bu cihazda çalışıyor
+          <span className="font-medium">{status.model}</span> {copy.modelBadge.localSuffix}
         </>
       ) : (
-        <>model kapalı, kural tabanlı yedek devrede ({status.detail})</>
+        <>{copy.modelBadge.fallback(status.detail)}</>
       )}
     </span>
   );

@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { GroundingReport, Option } from "@/lib/core/types";
 import { EPISTEMIC_QUESTIONS } from "@/lib/core/types";
 import { Button } from "./ui";
+import { copy } from "@/lib/copy";
 
 /**
  * What the engine says, kept to what a person can hold in their head.
@@ -33,10 +34,10 @@ export function GroundingPanel({
         method: "POST",
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Üretilemedi.");
+      if (!response.ok) throw new Error(data.error ?? copy.groundingPanel.generationFailed);
       setReport(data as GroundingReport);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Bilinmeyen hata.");
+      setError(cause instanceof Error ? cause.message : copy.groundingPanel.unknownError);
     } finally {
       setBusy(null);
     }
@@ -47,7 +48,7 @@ export function GroundingPanel({
       <div className="space-y-3">
         {error ? <p className="text-[14px] text-alarm">{error}</p> : null}
         <Button kind="quiet" onClick={() => void run(false)} disabled={busy !== null}>
-          {busy ? "Okunuyor" : "Metin ne diyor?"}
+          {busy ? copy.groundingPanel.readingText : copy.groundingPanel.whatDoesTheTextSay}
         </Button>
       </div>
     );
@@ -61,7 +62,7 @@ export function GroundingPanel({
             <dt className="text-[15px] font-medium">{option.label}</dt>
             <dd className="prose-read text-ink-soft">
               {report.tradeoffs[option.id] ?? (
-                <span className="font-sans text-[15px] text-alarm">Gerekçede geçmiyor.</span>
+                <span className="font-sans text-[15px] text-alarm">{copy.groundingPanel.notInRationale}</span>
               )}
             </dd>
           </div>
@@ -94,7 +95,7 @@ export function GroundingPanel({
           disabled={busy !== null}
           className="tap text-[14px] text-ink-soft underline underline-offset-4 hover:text-ink disabled:opacity-40"
         >
-          {busy === "audit" ? "Sorgulanıyor" : "Altı soruyla sorgula"}
+          {busy === "audit" ? copy.groundingPanel.questioning : copy.groundingPanel.auditSixQuestions}
         </button>
       )}
 

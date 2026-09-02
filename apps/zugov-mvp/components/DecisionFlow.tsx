@@ -8,6 +8,7 @@ import { shortAddress, useSession } from "@/lib/session";
 import { Button, Hint, Panel, Steps, Title } from "./ui";
 import { GroundingPanel } from "./GroundingPanel";
 import { WalletBar } from "./WalletBar";
+import { copy } from "@/lib/copy";
 
 /**
  * Taking part, with as little in the way as the decision allows.
@@ -25,12 +26,12 @@ import { WalletBar } from "./WalletBar";
  */
 
 const SUPPORT_STEPS = [
-  { value: 1, label: "Olsun" },
-  { value: 0, label: "Fark etmez" },
-  { value: -1, label: "Olmasın" },
+  { value: 1, label: copy.decisionFlow.supportSteps.for },
+  { value: 0, label: copy.decisionFlow.supportSteps.neutral },
+  { value: -1, label: copy.decisionFlow.supportSteps.against },
 ];
 
-const STEP_LABELS = ["Öneri", "Seçenekler", "Önem", "Onay"];
+const STEP_LABELS = copy.decisionFlow.stepLabels;
 
 /** The one option someone marks as mattering most carries full weight. */
 const CHOSEN_SALIENCE = 1;
@@ -106,11 +107,11 @@ export function DecisionFlow({
         body: JSON.stringify({ subjectId, text }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Okunamadı.");
+      if (!response.ok) throw new Error(data.error ?? copy.decisionFlow.readFailed);
       setStances(data.vector.stances as Stance[]);
       setWriting(false);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Bilinmeyen hata.");
+      setError(cause instanceof Error ? cause.message : copy.decisionFlow.unknownError);
     } finally {
       setBusy(false);
     }
@@ -134,10 +135,10 @@ export function DecisionFlow({
         body: JSON.stringify(vector),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Kaydedilemedi.");
+      if (!response.ok) throw new Error(data.error ?? copy.decisionFlow.saveFailed);
       window.location.href = `/karar/${decisionId}/sonuc`;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Bilinmeyen hata.");
+      setError(cause instanceof Error ? cause.message : copy.decisionFlow.unknownError);
       setBusy(false);
     }
   }
@@ -145,7 +146,7 @@ export function DecisionFlow({
   if (step > 0 && !isSignedIn) {
     return (
       <Panel>
-        <Title>Katılmak için giriş yap</Title>
+        <Title>{copy.decisionFlow.signInToParticipate}</Title>
         <div className="mt-5">
           <WalletBar />
         </div>
@@ -156,9 +157,9 @@ export function DecisionFlow({
   if (step > 0 && canVote === false) {
     return (
       <Panel>
-        <Title>Bu toplulukta oy veremezsin</Title>
+        <Title>{copy.decisionFlow.cannotVoteTitle}</Title>
         <div className="mt-3">
-          <Hint>Üyelik kademen oy vermeye açık değil.</Hint>
+          <Hint>{copy.decisionFlow.cannotVoteHint}</Hint>
         </div>
       </Panel>
     );
@@ -178,7 +179,7 @@ export function DecisionFlow({
           </div>
 
           <div className="mt-8">
-            <Button onClick={() => setStep(1)}>Başla</Button>
+            <Button onClick={() => setStep(1)}>{copy.decisionFlow.start}</Button>
           </div>
         </Panel>
       ) : null}
@@ -191,28 +192,28 @@ export function DecisionFlow({
               onClick={() => setWriting(true)}
               className="tap mb-6 text-[14px] text-ink-soft underline underline-offset-4 hover:text-ink"
             >
-              Tek tek işaretlemek yerine kendi cümlelerinle yaz
+              {copy.decisionFlow.writeInsteadOfMarking}
             </button>
           ) : null}
 
           {writing ? (
             <>
-              <Title>Ne düşünüyorsun?</Title>
+              <Title>{copy.decisionFlow.whatDoYouThink}</Title>
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={6}
                 autoFocus
                 className="mt-5 w-full rounded-[2px] border border-line bg-sunk px-4 py-3 text-[16px] leading-relaxed placeholder:text-ink-faint focus:border-ink focus:outline-none"
-                placeholder="Neyi istiyorsun, neyi istemiyorsun."
+                placeholder={copy.decisionFlow.writePlaceholder}
               />
               {error ? <p className="mt-3 text-[14px] text-alarm">{error}</p> : null}
               <div className="mt-5 flex flex-wrap gap-3">
                 <Button onClick={() => void draftFromText()} disabled={busy || text.trim().length < 10}>
-                  {busy ? "Okunuyor" : "İşaretle"}
+                  {busy ? copy.decisionFlow.reading : copy.decisionFlow.mark}
                 </Button>
                 <Button kind="plain" onClick={() => setWriting(false)} disabled={busy}>
-                  Vazgeç
+                  {copy.decisionFlow.cancel}
                 </Button>
               </div>
             </>
@@ -232,7 +233,7 @@ export function DecisionFlow({
 
       {step === 2 ? (
         <Panel>
-          <Title>Hangisi senin için en önemli?</Title>
+          <Title>{copy.decisionFlow.mostImportantQuestion}</Title>
           <div className="mt-6 grid gap-2">
             {options.map((option) => {
               const active = mostImportant === option.id;
@@ -257,10 +258,10 @@ export function DecisionFlow({
           </div>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button onClick={() => setStep(3)} disabled={mostImportant === null}>
-              Devam
+              {copy.decisionFlow.proceed}
             </Button>
             <Button kind="plain" onClick={() => { setOptionIndex(options.length - 1); setStep(1); }}>
-              Geri
+              {copy.decisionFlow.back}
             </Button>
           </div>
         </Panel>
@@ -268,7 +269,7 @@ export function DecisionFlow({
 
       {step === 3 ? (
         <Panel>
-          <Title>Oyun şunu söylüyor</Title>
+          <Title>{copy.decisionFlow.yourVoteSays}</Title>
           <ul className="mt-5 space-y-2">
             {readBack.map((line, index) => (
               <li key={index} className="prose-read max-w-[60ch]">
@@ -278,18 +279,16 @@ export function DecisionFlow({
           </ul>
 
           {alreadyVoted ? (
-            <p className="mt-5 text-[14px] text-ink-soft">
-              Bu cüzdanla daha önce oy verdin. Bu, öncekinin yerine geçer.
-            </p>
+            <p className="mt-5 text-[14px] text-ink-soft">{copy.decisionFlow.alreadyVoted}</p>
           ) : null}
           {error ? <p className="mt-4 text-[14px] text-alarm">{error}</p> : null}
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Button onClick={() => void submit()} disabled={busy}>
-              {busy ? "Kaydediliyor" : "Onaylıyorum"}
+              {busy ? copy.decisionFlow.saving : copy.decisionFlow.confirm}
             </Button>
             <Button kind="plain" onClick={() => setStep(2)}>
-              Geri
+              {copy.decisionFlow.back}
             </Button>
             <span className="ml-auto font-mono text-[12px] text-ink-faint">{shortAddress(subjectId)}</span>
           </div>
@@ -362,14 +361,14 @@ function OptionStep({
             onChange={(e) => onChange({ redLine: e.target.checked })}
             className="mt-0.5 size-5 accent-[color:var(--alarm)]"
           />
-          <span className="text-[15px] leading-relaxed">Bunu kabul edemem.</span>
+          <span className="text-[15px] leading-relaxed">{copy.decisionFlow.cannotAccept}</span>
         </label>
       ) : null}
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <Button onClick={onNext}>{index === total - 1 ? "Devam" : "Sonraki"}</Button>
+        <Button onClick={onNext}>{index === total - 1 ? copy.decisionFlow.proceed : copy.decisionFlow.next}</Button>
         <Button kind="plain" onClick={onBack}>
-          Geri
+          {copy.decisionFlow.back}
         </Button>
       </div>
     </>
