@@ -3,7 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { createSiweMessage } from "viem/siwe";
+import { scrollSepolia } from "viem/chains";
 import { auth, BackendError } from "./ag/client";
+import { getOrCreateLocalAccount } from "./localWallet";
 
 /**
  * Sign-in with Ethereum, held in one place.
@@ -16,16 +18,19 @@ import { auth, BackendError } from "./ag/client";
 
 interface SessionValue {
   address: string | null;
+  method: "wallet" | "local" | null;
   isSignedIn: boolean;
   isConnecting: boolean;
   isSigning: boolean;
   error: string | null;
   signIn: () => Promise<void>;
+  signInWithoutWallet: () => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
 const STORAGE_KEY = "zugov.session.address";
+const METHOD_STORAGE_KEY = "zugov.session.method";
 
 /**
  * The sentence the wallet shows while asking for a signature. ASCII only, and
@@ -48,12 +53,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { signMessageAsync } = useSignMessage();
 
   const [signedInAddress, setSignedInAddress] = useState<string | null>(null);
+  const [method, setMethod] = useState<"wallet" | "local" | null>(null);
   const [isSigning, setIsSigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
       setSignedInAddress(window.sessionStorage.getItem(STORAGE_KEY));
+      setMethod(window.sessionStorage.getItem(METHOD_STORAGE_KEY) as "wallet" | "local" | null);
     } catch {
       // Private browsing can refuse session storage. The session cookie is the
       // real authority; this only avoids re-prompting on a refresh.
@@ -94,8 +101,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const signature = await signMessageAsync({ message });
       const verified = await auth.verify(message, signature);
       setSignedInAddress(verified.address);
+      setMethod("wallet");
       try {
         window.sessionStorage.setItem(STORAGE_KEY, verified.address);
+        window.sessionStorage.setItem(METHOD_STORAGE_KEY, "wallet");
       } catch {
         /* see above */
       }
@@ -112,13 +121,51 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [address, chainId, signMessageAsync]);
 
+  // No wallet extension needed. A key lives only in this browser's localStorage (see
+  // localWallet.ts) and signs the same SIWE message a real wallet would, so the backend
+  // cannot tell the two apart: everything downstream (membership, credentials, votes) keys
+  // off walletAddress regardless of where the signature came from.
+  const signInWithoutWallet = useCallback(async () => {
+    setIsSigning(true);
+    setError(null);
+    try {
+      const account = getOrCreateLocalAccount();
+      const { nonce } = await auth.nonce();
+      const message = createSiweMessage({
+        address: account.address,
+        chainId: scrollSepolia.id,
+        domain: window.location.host,
+        nonce,
+        uri: window.location.origin,
+        version: "1",
+        statement: SIWE_STATEMENT,
+      });
+      const signature = await account.signMessage({ message });
+      const verified = await auth.verify(message, signature);
+      setSignedInAddress(verified.address);
+      setMethod("local");
+      try {
+        window.sessionStorage.setItem(STORAGE_KEY, verified.address);
+        window.sessionStorage.setItem(METHOD_STORAGE_KEY, "local");
+      } catch {
+        /* see above */
+      }
+    } catch (cause) {
+      setError(cause instanceof BackendError ? cause.message : "Giriş tamamlanamadı.");
+    } finally {
+      setIsSigning(false);
+    }
+  }, []);
+
   const signOut = useCallback(async () => {
     try {
       await auth.logout();
     } finally {
       setSignedInAddress(null);
+      setMethod(null);
       try {
         window.sessionStorage.removeItem(STORAGE_KEY);
+        window.sessionStorage.removeItem(METHOD_STORAGE_KEY);
       } catch {
         /* see above */
       }
@@ -128,14 +175,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const value = useMemo<SessionValue>(
     () => ({
       address: signedInAddress,
+      method,
       isSignedIn: signedInAddress !== null,
       isConnecting,
       isSigning,
       error,
       signIn,
+      signInWithoutWallet,
       signOut,
     }),
-    [signedInAddress, isConnecting, isSigning, error, signIn, signOut],
+    [signedInAddress, method, isConnecting, isSigning, error, signIn, signInWithoutWallet, signOut],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
