@@ -9,11 +9,14 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "model:install": "ollama create zugov-grounding -f models/zugov-grounding.Modelfile",
-    "dogrula": "tsx scripts/dogrula.ts"
+    "dogrula": "tsx scripts/dogrula.ts",
+    "zincire-yaz": "tsx scripts/zincire-yaz.ts",
+    "migrate:decisions": "tsx scripts/migrate-decisions-to-postgres.ts"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.102.8",
     "next": "15.5.4",
+    "pg": "^8.23.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "viem": "^2.56.0",
@@ -22,6 +25,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.13",
     "@types/node": "^22.10.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "eslint": "^9.39.5",

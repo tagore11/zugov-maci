@@ -1,6 +1,6 @@
 # Devam
 
-Bu oturumun bıraktığı yer. 1 Eylül 2026.
+Bu oturumun bıraktığı yer. 2 Eylül 2026.
 
 ## Her şeyi ayağa kaldırmak
 
@@ -12,7 +12,7 @@ brew services start postgresql@16
 
 # 2. Yerel model
 ollama serve            # zaten çalışıyorsa gerekmez
-ollama list             # zugov-grounding görünmeli
+ollama list              # zugov-grounding görünmeli
 
 # 3. Yönetişim arka ucu
 cd ~/Projects/zugov-maci/apps/zugov-backend
@@ -20,10 +20,13 @@ DATABASE_URL="postgres://$USER@localhost:5432/zugov_dev" \
 CORS_ORIGIN="http://localhost:3400" \
 PORT=3001 pnpm run dev
 
-# 4. Uygulama
+# 4. Uygulama (artık aynı Postgres'e bağlanıyor, kararlar da orada)
 cd ~/Projects/zugov-maci/apps/zugov-mvp
-npm run dev             # http://localhost:3400
+DATABASE_URL="postgres://$USER@localhost:5432/zugov_dev" npm run dev   # http://localhost:3400
 ```
+
+`DATABASE_URL` verilmezse uygulama bu makinede `zugov_dev`'i varsayılan alır
+(`lib/db.ts`), yani üstteki gibi elle vermek zorunlu değil, ama açık olması daha iyi.
 
 Testler ayrı veritabanına bakar, bu kasıtlı:
 
@@ -35,7 +38,7 @@ cd ~/Projects/zugov-maci/apps/zugov-mvp
 npm test                                                              # 37 test
 ```
 
-## Bugün ne bitti
+## Bugün ne bitti (1 Eylül)
 
 **Ürün tek parça.** Kimlik, topluluk, union, alt topluluk, üyelik ve kademe yetkileri
 Postgres'ten geliyor. Karar katmanı üstüne oturuyor. Cüzdanla giriş uçtan uca çalışıyor.
@@ -51,24 +54,36 @@ açılınca çalışıyor.
 `npm run dogrula -- makbuz.json` hiçbir yere bağlanmadan sayımı tekrarlıyor. Kazananı
 değiştirmek ve sonradan oy eklemek, ikisi de yakalanıyor.
 
-## Sıradaki üç iş
+## Bugün ne bitti (2 Eylül)
 
-**1. İmzayı zincire yaz.** Tek eksik fonlu bir anahtar. İşlemin içeriği zaten makbuzun
-imzası, kod tarafı küçük. Ağ olarak Scroll Sepolia hazır duruyor (chainId 534351,
-topluluk kayıtlarında zaten var).
+**Cüzdansız katılım.** "Cüzdansız devam et" bu tarayıcıda kalan bir anahtar üretir
+(`lib/localWallet.ts`), aynı SIWE mesajını imzalar, backend'de tek satır değişmedi çünkü
+`/auth/verify` imzanın nereden geldiğini bilmiyor. Cüzdanı olan hâlâ cüzdanla girebiliyor.
 
-**2. Cüzdansız katılım.** Bugünkü haliyle MetaMask kurmayan katılamıyor, bu katılımı
-düşürüyor. Arka uçta Zupass ve zkID adaptörleri duruyor, kullanılmıyor. Kaş'a gelen birine
-bağlantı ya da kod verilebilmeli, cüzdan isteyen için seçenek kalmalı.
+**Dil katmanı ayrıldı.** Üç dosya: `lib/copy.ts` (arayüz metni, 11 dosyanın tamamı),
+`lib/llm/lang/tr-prompts.ts` (modele giden her talimat), `lib/llm/lang/tr.ts` (gövde
+eşleştirme, cümle/madde bölme, kelime listeleri). `elicit.ts` ve `grounding.ts` artık
+Türkçe metin taşımıyor, `LANG` sabitine bakıyor. İkinci dil eklemek yeni bir dosya yazıp
+o sabiti değiştirmek.
 
-**3. Dil katmanını ayır.** Üç katman var: arayüz metni (206 kelime, kolay), model promptları
-(etiketlerin İngilizcede de birbirinden string olarak uzak olması gerekir), ve Türkçeye özel
-metin işleme (gövde eşleştirme, cümle bölme). Şimdi ucuz, on ekran sonra pahalı.
+**İmzayı zincire yazma betiği hazır**, `npm run zincire-yaz -- makbuz.json`. Makbuzu önce
+kendi kendine doğruluyor, sonra Scroll Sepolia'ya (534351) sıfır değerli bir işlemle imza
+özetini yazıyor. viem'in varsayılan RPC'si (`sepolia-rpc.scroll.io`) ölüydü,
+`scroll-sepolia-rpc.publicnode.com`'a çevrildi. **Tek eksik: fonlu bir anahtar**,
+`ZUGOV_ANCHOR_PRIVATE_KEY` olarak kendi kabuğunda tanımlanmalı, betik dosyaya yazılmasını
+istemiyor.
+
+**Kararlar Postgres'te.** `lib/store.ts` aynı imzalarla (`listDecisions`, `getDecision`,
+`saveDecision`, `upsertPreference`) `mvp_decisions` tablosuna yazıyor artık, `.data/decisions.json`
+değil. Aynı `zugov_dev` veritabanı, kimlik ve üyeliğin zaten oturduğu yer. Eski JSON dosyadaki
+14 karar `npm run migrate:decisions` ile taşındı (bir kerelik, tekrar çalıştırmak zararsız,
+`saveDecision` id üstünden upsert yapıyor). İki karar communityId'den önce yazılmıştı,
+migrasyon onları ZuKas Residency'ye bağladı. Salt'ı olmayan eski kararlar `decision.id`'yi
+salt olarak aldı, bu zaten önceki fallback'in yaptığıydı (`makbuz` route'u ve sonuç sayfası),
+davranış değişmedi, sadece artık satırda yazılı. `.data/decisions.json` silinmedi, yedek
+olarak duruyor, artık okunmuyor.
 
 ## Bilinmesi gerekenler
-
-**Kararlar hâlâ JSON dosyasında** (`.data/decisions.json`), kimlik ve üyelik Postgres'te.
-Tek üründe iki depo bir koku. Kararların da Postgres'e taşınması gerekiyor.
 
 **`apps/zugov-frontend` eski ön yüzümüz**, ayağa kaldırılmıyor ve kaldırılmasına gerek yok.
 İçindeki MACI kancaları (`useDeployPoll`, `useVote`, `useSignup`) ilerde lazım olacağı için

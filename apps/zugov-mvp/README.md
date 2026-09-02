@@ -173,5 +173,8 @@ olmayan rakam basmaz, ve model kapalıyken her iki yedek de çalışmaya devam e
 
 ## Veri
 
-`.data/decisions.json`. Tek dosya, kurulacak servis yok. Postgres'e geçmek `lib/store.ts` dışında
-hiçbir dosyaya dokunmaz.
+Postgres, `mvp_decisions` tablosu (`lib/store.ts`). Kimlik ve üyeliğin zaten oturduğu aynı
+`zugov_dev` veritabanı, `DATABASE_URL` verilmezse bu makinede o veritabanını varsayılan alır.
+Şema tek dosyada bootstrap edilir (`lib/db.ts`), ayrı bir migrasyon aracı yok. Eski JSON
+dosyadan geçiş `npm run migrate:decisions` ile yapıldı, bir kerelik betik
+(`scripts/migrate-decisions-to-postgres.ts`).

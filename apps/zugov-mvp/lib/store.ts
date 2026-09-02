@@ -1,12 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { pool, ensureSchema } from "./db";
 import type { GroundingReport, Id, MechanismId, Option, PreferenceVector } from "./core/types";
 
 /**
- * File-backed store. Deliberately boring: one JSON file, no service to run, no
- * account to create. The MVP has to be clonable and usable in one command, and
- * swapping this for Postgres later touches only this file.
+ * Postgres-backed store, same shape as the file-backed one it replaced.
+ *
+ * The exported functions are unchanged from the original JSON version on
+ * purpose: every route and page in this app calls listDecisions, getDecision,
+ * saveDecision, upsertPreference, newId, newSalt and nothing else, so swapping
+ * the file for a database touches only this file, exactly as the README said
+ * it would.
  */
 
 export interface Decision {
@@ -29,45 +32,84 @@ export interface Decision {
   salt: string;
 }
 
-interface Database {
-  decisions: Decision[];
+interface Row {
+  id: string;
+  community_id: string;
+  title: string;
+  body: string;
+  options: Option[];
+  mechanism_id: MechanismId;
+  created_at: string;
+  closes_at: string | null;
+  grounding: GroundingReport | null;
+  preferences: PreferenceVector[];
+  salt: string;
 }
 
-const DATA_DIR = process.env.ZUGOV_DATA_DIR ?? path.join(process.cwd(), ".data");
-const DATA_FILE = path.join(DATA_DIR, "decisions.json");
-
-async function read(): Promise<Database> {
-  try {
-    const raw = await fs.readFile(DATA_FILE, "utf8");
-    return JSON.parse(raw) as Database;
-  } catch {
-    return { decisions: [] };
-  }
-}
-
-async function write(db: Database): Promise<void> {
-  await fs.mkdir(DATA_DIR, { recursive: true });
-  await fs.writeFile(DATA_FILE, `${JSON.stringify(db, null, 2)}\n`, "utf8");
+function fromRow(row: Row): Decision {
+  return {
+    id: row.id,
+    communityId: row.community_id,
+    title: row.title,
+    body: row.body,
+    options: row.options,
+    mechanismId: row.mechanism_id,
+    createdAt: row.created_at,
+    closesAt: row.closes_at,
+    grounding: row.grounding,
+    preferences: row.preferences,
+    salt: row.salt,
+  };
 }
 
 export async function listDecisions(communityId?: Id): Promise<Decision[]> {
-  const db = await read();
-  return db.decisions
-    .filter((decision) => (communityId ? decision.communityId === communityId : true))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  await ensureSchema();
+  const { rows } = communityId
+    ? await pool.query<Row>(
+        "SELECT * FROM mvp_decisions WHERE community_id = $1 ORDER BY created_at DESC",
+        [communityId],
+      )
+    : await pool.query<Row>("SELECT * FROM mvp_decisions ORDER BY created_at DESC");
+  return rows.map(fromRow);
 }
 
 export async function getDecision(id: Id): Promise<Decision | null> {
-  const db = await read();
-  return db.decisions.find((d) => d.id === id) ?? null;
+  await ensureSchema();
+  const { rows } = await pool.query<Row>("SELECT * FROM mvp_decisions WHERE id = $1", [id]);
+  return rows[0] ? fromRow(rows[0]) : null;
 }
 
 export async function saveDecision(decision: Decision): Promise<Decision> {
-  const db = await read();
-  const index = db.decisions.findIndex((d) => d.id === decision.id);
-  if (index >= 0) db.decisions[index] = decision;
-  else db.decisions.push(decision);
-  await write(db);
+  await ensureSchema();
+  await pool.query(
+    `INSERT INTO mvp_decisions
+       (id, community_id, title, body, options, mechanism_id, created_at, closes_at, grounding, preferences, salt)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     ON CONFLICT (id) DO UPDATE SET
+       community_id = EXCLUDED.community_id,
+       title = EXCLUDED.title,
+       body = EXCLUDED.body,
+       options = EXCLUDED.options,
+       mechanism_id = EXCLUDED.mechanism_id,
+       created_at = EXCLUDED.created_at,
+       closes_at = EXCLUDED.closes_at,
+       grounding = EXCLUDED.grounding,
+       preferences = EXCLUDED.preferences,
+       salt = EXCLUDED.salt`,
+    [
+      decision.id,
+      decision.communityId,
+      decision.title,
+      decision.body,
+      JSON.stringify(decision.options),
+      decision.mechanismId,
+      decision.createdAt,
+      decision.closesAt,
+      decision.grounding ? JSON.stringify(decision.grounding) : null,
+      JSON.stringify(decision.preferences),
+      decision.salt,
+    ],
+  );
   return decision;
 }
 
