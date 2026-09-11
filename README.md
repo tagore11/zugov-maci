@@ -1,7 +1,43 @@
-# Minimal Anti-Collusion Infrastructure
+# ZuGov
 
 [![CI][cli-actions-badge]][cli-actions-link]
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/privacy-scaling-explorations/maci/blob/main/LICENSE)
+
+ZuGov is a fork of [MACI](https://maci.pse.dev/) that separates two things most voting software fuses into one: **what a member actually thinks** about a decision, and **the rule used to count it**. A preference is recorded once — direction, confidence, salience, and a hard veto — before any counting rule touches it. The same record can then be run through several counting rules, and if the rules disagree on a winner, that disagreement is surfaced rather than hidden. An optional local, open-weight language model can help a member draft that record from discussion; it never votes, and a tested code-level invariant makes it structurally impossible for its draft to enter a tally unconfirmed.
+
+**Live demo:** [zugov-mvp.vercel.app](https://zugov-mvp.vercel.app) · **Backend:** [zugov-backend.vercel.app](https://zugov-backend.vercel.app) · **MVP source and full write-up:** [`apps/zugov-mvp`](./apps/zugov-mvp) ([README](./apps/zugov-mvp/README.md), Turkish)
+
+## What's in this fork
+
+Everything under `apps/zugov-mvp` is new; the rest of this repository is [PSE's MACI](https://github.com/privacy-scaling-explorations/maci) monorepo, unmodified except where noted, and documented below under "Upstream."
+
+### Three ideas, in one sentence each
+
+1. **Preference recording is independent of the counting rule.** Every option gets a four-field vector — `support` (−1..+1), `confidence` (0..1, never affects weight), `salience` (0..1), `redLine` (boolean) — written once, before any rule is chosen. Five counting rules (Approval, Ranked/IRV, Weighted/quadratic, Consent, Proportional/quadratic-funding) each implement the same interface (`project`, `explain`, `tally`) over that record, so adding a sixth rule never invalidates a vote already cast.
+2. **The rule itself is audited, not assumed neutral.** `analyseSensitivity()` runs the same recorded preferences through all five rules. If all five agree, the room decided. If changing the rule changes the winner — which Arrow's impossibility theorem guarantees will happen for some profile, for any two distinct rules — that gets surfaced before the outcome is treated as final, instead of being quietly absorbed into whichever single rule the software happened to ship with.
+3. **The Grounding Engine never votes.** The local model can draft a preference vector from what someone wrote, and can generate a neutral epistemic questioning report (assumptions, base rates, counter-argument, reversibility, affected parties, precedent) that never proposes an option. Every model-drafted vector is written with `confirmed: false`; `decide()` throws on any unconfirmed vector; the tally path never reads the questioning report at all. This is enforced in code and covered by tests, not asserted in prose:
+
+   ```ts
+   for (const vector of vectors) {
+     if (!vector.confirmed) throw new UnconfirmedPreferenceError(vector.subjectId);
+   }
+   ```
+
+### Status, honestly
+
+| Claim                                                                                                    | Status                                                                                                                                               |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Preference recorded independent of rule; 5 rules computed and compared                                   | Live, `apps/zugov-mvp`                                                                                                                               |
+| Ranked-choice (IRV) voting, end-to-end through MACI                                                      | Live and tested, deployed to two pilot communities                                                                                                   |
+| Grounding Engine invariant (`confirmed: false`, `decide()` rejection, tally path never reads the report) | Implemented and covered by tests. The public demo currently runs a deterministic fallback — the local model itself is not invoked in that deployment |
+| Weighted (quadratic) voting                                                                              | Not real yet — UI exists, production vote weight is hardcoded to 1. Extension seam: `IInitialVoiceCreditProxy`                                       |
+| On-chain anchoring of a decision's outcome hash                                                          | Code complete, blocked on funding one signer key on Scroll Sepolia                                                                                   |
+
+Runs fully locally: the model, the state, and the vote all stay on the participant's machine unless a community explicitly opts into the on-chain anchor. No API key required — if `zugov-grounding` (Ollama, ~1.9GB) isn't installed, the app falls back to a rule-based path and says so in the interface; nothing stops working.
+
+---
+
+## Upstream: Minimal Anti-Collusion Infrastructure (MACI)
 
 Minimal Anti-Collusion Infrastructure (MACI) is an on-chain voting protocol which protects privacy and minimizes the risk of collusion and bribery.
 
