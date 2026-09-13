@@ -6,9 +6,9 @@ import { heuristicStances } from "../lib/llm/elicit";
 import { heuristicGrounding } from "../lib/llm/grounding";
 
 const options: Option[] = [
-  { id: "s1", label: "Ortak mutfak" },
-  { id: "s2", label: "Sessiz çalışma odası" },
-  { id: "s3", label: "Açık atölye" },
+  { id: "s1", label: "Shared kitchen" },
+  { id: "s2", label: "Quiet study room" },
+  { id: "s3", label: "Open workshop" },
 ];
 
 function vector(subjectId: string, stances: Array<Partial<Stance> & { optionId: string }>): PreferenceVector {
@@ -128,7 +128,7 @@ describe("mechanism sensitivity", () => {
 
 describe("model-free fallbacks", () => {
   it("elicits something usable without a model", () => {
-    const drafted = heuristicStances("ortak mutfak kesinlikle olsun ama sessiz oda istemiyorum", options);
+    const drafted = heuristicStances("the shared kitchen should happen, but I don't want the quiet room", options);
     expect(drafted.find((s) => s.optionId === "s1")!.support).toBeGreaterThan(0);
     expect(drafted.find((s) => s.optionId === "s2")!.support).toBeLessThan(0);
   });
@@ -136,12 +136,12 @@ describe("model-free fallbacks", () => {
   it("grounds a proposal without a model and stays neutral", () => {
     const report = heuristicGrounding({
       decisionId: "k1",
-      title: "Ortak alan bütçesi",
-      body: "Ortak alan bütçesinin yarısını mutfağa ayırmayı öneriyoruz. Atölye için yer kalmayabilir.",
+      title: "Shared space budget",
+      body: "Half of the shared space budget would go to the kitchen. There may be no room left for the workshop.",
       options: options.map((o) => ({ id: o.id, label: o.label })),
     });
     expect(report.assumptions?.length).toBeGreaterThan(0);
-    expect(JSON.stringify(report)).not.toMatch(/öneriyorum|en iyisi|kabul edilmeli/i);
+    expect(JSON.stringify(report)).not.toMatch(/i propose|the best|should be accepted/i);
   });
 });
 
@@ -150,8 +150,8 @@ describe("grounding guards", () => {
     const { groundProposal } = await import("../lib/llm/grounding");
     const input = {
       decisionId: "k1",
-      title: "Ortak alan bütçesi",
-      body: "12 gün için 40 bin lira var ve üç talep geldi.",
+      title: "Shared space budget",
+      body: "There is $40,000 for 12 days and three requests came in.",
       options: options.map((o) => ({ id: o.id, label: o.label })),
     };
     // No model reachable in CI: the deterministic path runs and must stay clean.
@@ -169,28 +169,28 @@ describe("grounding guards", () => {
 });
 
 describe("elicitation", () => {
-  const answer = (etiket: string, onem: string, kirmizi = false) => ({
+  const answer = (stance: string, importance: string, redLine = false) => ({
     ok: true,
-    json: async () => ({ choices: [{ message: { content: JSON.stringify({ alinti: "", etiket, onem, kirmizi_cizgi: kirmizi }) } }] }),
+    json: async () => ({ choices: [{ message: { content: JSON.stringify({ quote: "", stance, importance, redLine }) } }] }),
   });
 
   it("maps enthusiasm to support and never inverts the sign", async () => {
     const { elicitPreference } = await import("../lib/llm/elicit");
     const replies = [
-      answer("savunuyor", "belirleyici"),
-      answer("kararsiz", "ikincil"),
-      answer("reddediyor", "onemli", true),
+      answer("champions", "decisive"),
+      answer("mixed", "minor"),
+      answer("rejects", "important", true),
     ];
     const original = globalThis.fetch;
     globalThis.fetch = (async () => replies.shift()) as unknown as typeof fetch;
     try {
-      const result = await elicitPreference({ subjectId: "deniz", decisionId: "k1", text: "uzunca bir metin", options });
-      const [mutfak, oda, atolye] = result.vector.stances;
-      expect(mutfak.support).toBe(1);
-      expect(mutfak.salience).toBe(1);
-      expect(oda.support).toBe(0);
-      expect(atolye.support).toBe(-1);
-      expect(atolye.redLine).toBe(true);
+      const result = await elicitPreference({ subjectId: "deniz", decisionId: "k1", text: "a fairly long piece of text", options });
+      const [kitchen, room, workshop] = result.vector.stances;
+      expect(kitchen.support).toBe(1);
+      expect(kitchen.salience).toBe(1);
+      expect(room.support).toBe(0);
+      expect(workshop.support).toBe(-1);
+      expect(workshop.redLine).toBe(true);
       // The whole point: a model may draft, only a person may confirm.
       expect(result.vector.confirmed).toBe(false);
     } finally {
@@ -203,7 +203,7 @@ describe("elicitation", () => {
     const result = await elicitPreference({
       subjectId: "ece",
       decisionId: "k1",
-      text: "ortak mutfak kesinlikle olsun, sessiz oda istemiyorum",
+      text: "the shared kitchen should happen, but I don't want the quiet room",
       options,
     });
     expect(result.producedBy).toContain("heuristic");
@@ -214,33 +214,33 @@ describe("elicitation", () => {
 describe("question selection", () => {
   const base = {
     decisionId: "k1",
-    title: "Ortak alan",
+    title: "Shared space",
     options: [
-      { id: "s1", label: "Mutfak" },
-      { id: "s2", label: "Oda" },
+      { id: "s1", label: "Kitchen" },
+      { id: "s2", label: "Room" },
     ],
   };
 
   it("asks only what a plain proposal earns", async () => {
     const { questionsFor } = await import("../lib/llm/grounding");
-    const asked = questionsFor({ ...base, body: "Ne yapalım bilmiyoruz." });
+    const asked = questionsFor({ ...base, body: "We don't know what to do." });
     expect(asked).toEqual(["assumptions", "counterarguments", "precedents"]);
     expect(asked.length).toBeGreaterThanOrEqual(3);
   });
 
   it("adds base rates when the text makes a numeric claim", async () => {
     const { questionsFor } = await import("../lib/llm/grounding");
-    expect(questionsFor({ ...base, body: "40 bin lira var." })).toContain("baseRates");
+    expect(questionsFor({ ...base, body: "There is $40,000." })).toContain("baseRates");
   });
 
   it("adds reversibility when the text describes committing to something", async () => {
     const { questionsFor } = await import("../lib/llm/grounding");
-    expect(questionsFor({ ...base, body: "Bir yer kiralayacağız." })).toContain("reversibility");
+    expect(questionsFor({ ...base, body: "We will rent a place." })).toContain("reversibility");
   });
 
   it("does not ask for precedents when the text already cites one", async () => {
     const { questionsFor } = await import("../lib/llm/grounding");
-    const asked = questionsFor({ ...base, body: "Geçen yıl da denedik." });
+    const asked = questionsFor({ ...base, body: "We tried this last year too." });
     expect(asked).not.toContain("precedents");
     // Dropping a question must not take the audit below its floor.
     expect(asked.length).toBe(3);
@@ -250,8 +250,8 @@ describe("question selection", () => {
     const { questionsFor } = await import("../lib/llm/grounding");
     const busy = questionsFor({
       ...base,
-      options: [...base.options, { id: "s3", label: "Atölye" }],
-      body: "40 bin lira ile bir yer kiralayacağız, esnaf ve çalışanlar etkilenecek.",
+      options: [...base.options, { id: "s3", label: "Workshop" }],
+      body: "We will rent a place with $40,000; businesses and employees will be affected.",
     });
     expect(busy.length).toBeLessThanOrEqual(6);
     expect(busy.length).toBeGreaterThanOrEqual(3);
@@ -269,11 +269,11 @@ describe("receipt", () => {
     const { buildReceipt } = await import("../lib/core/receipt");
     return buildReceipt({
       decisionId: "k1",
-      title: "Ortak alan bütçesi",
+      title: "Shared space budget",
       options,
       mechanismId: "approval",
       preferences: people,
-      salt: "tuz",
+      salt: "salt",
     });
   };
 
@@ -290,11 +290,11 @@ describe("receipt", () => {
     const { buildReceipt } = await import("../lib/core/receipt");
     const shuffled = buildReceipt({
       decisionId: "k1",
-      title: "Ortak alan bütçesi",
+      title: "Shared space budget",
       options: [...options].reverse(),
       mechanismId: "approval",
       preferences: [...people].reverse(),
-      salt: "tuz",
+      salt: "salt",
     });
     expect(shuffled.digest).toBe((await build()).digest);
   });
@@ -335,10 +335,10 @@ describe("receipt", () => {
   it("lets a person find their own ballot and nobody build the list", async () => {
     const { createHash } = await import("node:crypto");
     const receipt = await build();
-    const mine = createHash("sha256").update("tuz:0xaaa").digest("hex").slice(0, 16);
+    const mine = createHash("sha256").update("salt:0xaaa").digest("hex").slice(0, 16);
     expect(receipt.ballots.some((b) => b.voter === mine)).toBe(true);
     // The same wallet in a different decision hashes differently.
-    const elsewhere = createHash("sha256").update("baskatuz:0xaaa").digest("hex").slice(0, 16);
+    const elsewhere = createHash("sha256").update("othersalt:0xaaa").digest("hex").slice(0, 16);
     expect(receipt.ballots.some((b) => b.voter === elsewhere)).toBe(false);
   });
 });

@@ -15,8 +15,8 @@ export interface ConsentShape {
  */
 export const consent: Mechanism<ConsentShape> = {
   id: "consent",
-  name: "Rıza",
-  question: "Hangi seçeneklerle yaşayabilirsin, hangisine itirazın var?",
+  name: "Consent",
+  question: "Which options can you live with, and which do you object to?",
 
   project(vector, options): Ballot<ConsentShape> {
     const tolerable: Id[] = [];
@@ -32,13 +32,13 @@ export const consent: Mechanism<ConsentShape> = {
   explain(ballot, options) {
     const lines: string[] = [];
     if (ballot.shape.tolerable.length > 0) {
-      lines.push(`Yaşayabileceklerin: ${ballot.shape.tolerable.map((id) => labelOf(options, id)).join(", ")}.`);
+      lines.push(`What you can live with: ${ballot.shape.tolerable.map((id) => labelOf(options, id)).join(", ")}.`);
     }
     if (ballot.shape.objections.length > 0) {
-      lines.push(`İtiraz ettiklerin: ${ballot.shape.objections.map((id) => labelOf(options, id)).join(", ")}.`);
-      lines.push("İtirazın sonucu tek başına iptal etmez ama kayda geçer ve görünür kalır.");
+      lines.push(`What you object to: ${ballot.shape.objections.map((id) => labelOf(options, id)).join(", ")}.`);
+      lines.push("Your objection does not cancel the result on its own, but it is recorded and stays visible.");
     }
-    return lines.length > 0 ? lines : ["Hiçbir seçenek hakkında beyanın yok."];
+    return lines.length > 0 ? lines : ["You made no statement about any option."];
   },
 
   tally(ballots, options) {
@@ -47,7 +47,7 @@ export const consent: Mechanism<ConsentShape> = {
       return {
         optionId: option.id,
         score: fix(ballots.length - objections),
-        unit: "rıza",
+        unit: "consent",
       };
     });
     const sorted = [...scores].sort((a, b) => b.score - a.score);
@@ -62,7 +62,7 @@ export const consent: Mechanism<ConsentShape> = {
       redLines: [],
       notes:
         winnerId === null && sorted.length > 0
-          ? ["Rıza eşit dağıldı, tek bir seçenek öne çıkmadı."]
+          ? ["Consent was split evenly, no single option stood out."]
           : [],
     };
   },

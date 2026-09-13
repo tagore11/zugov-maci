@@ -13,9 +13,9 @@ import { copy } from "@/lib/copy";
  * to see an address; signing proves the address belongs to whoever is at the
  * keyboard. The second one is what the backend accepts as a session.
  *
- * Nobody who came here without MetaMask installed has to leave. Cüzdansız devam et
- * signs the same statement with a key that stays in this browser (see localWallet.ts);
- * the wallet path is what remains for someone who already has one.
+ * Nobody who came here without MetaMask installed has to leave. "Continue without
+ * a wallet" signs the same statement with a key that stays in this browser (see
+ * localWallet.ts); the wallet path is what remains for someone who already has one.
  */
 export function WalletBar() {
   const { connect, connectors, isPending } = useConnect();
@@ -55,8 +55,8 @@ export function WalletBar() {
           </Button>
           <span className="font-mono text-[12px] text-ink-faint">{shortAddress(connected)}</span>
         </div>
-        {/* The wallet's own prompt has to be English to stay a valid sign-in
-            message, so the Turkish explanation lives here instead. */}
+        {/* The wallet's own prompt has to stay ASCII to remain a valid sign-in
+            message, so the fuller explanation lives here instead. */}
         <p className="max-w-[62ch] text-[14px] leading-relaxed text-ink-soft">{copy.wallet.walletSignatureExplanation}</p>
         {error ? <p className="text-[14px] text-alarm">{error}</p> : null}
       </div>

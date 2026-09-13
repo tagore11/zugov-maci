@@ -11,10 +11,10 @@ export const dynamic = "force-dynamic";
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const decision = await getDecision(id);
-  if (!decision) return NextResponse.json({ error: "Karar bulunamadı." }, { status: 404 });
+  if (!decision) return NextResponse.json({ error: "Decision not found." }, { status: 404 });
 
   if (decision.preferences.length === 0) {
-    return NextResponse.json({ error: "Bu kararda henüz tercih yok." }, { status: 409 });
+    return NextResponse.json({ error: "This decision has no preferences yet." }, { status: 409 });
   }
 
   const receipt = buildReceipt({
@@ -28,6 +28,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
   });
 
   return NextResponse.json(receipt, {
-    headers: { "Content-Disposition": `inline; filename="makbuz-${decision.id}.json"` },
+    headers: { "Content-Disposition": `inline; filename="receipt-${decision.id}.json"` },
   });
 }

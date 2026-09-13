@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 import { copy } from "@/lib/copy";
 
 /* One superfamily, three voices. Self-hosted at build time: a local-first app
-   should not phone a font CDN. latin-ext carries the Turkish diacritics. */
+   should not phone a font CDN. */
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin", "latin-ext"],
   weight: ["400", "500", "600"],
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="tr" className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}>
+    <html lang="en" className={`${plexSans.variable} ${plexSerif.variable} ${plexMono.variable}`}>
       <body className="min-h-[100dvh]">
         <Providers>{children}</Providers>
       </body>

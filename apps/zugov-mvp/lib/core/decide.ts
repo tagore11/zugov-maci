@@ -4,8 +4,8 @@ import type { Id, MechanismId, Option, Outcome, PreferenceVector } from "./types
 export class UnconfirmedPreferenceError extends Error {
   constructor(subjectId: Id) {
     super(
-      `${subjectId} için tercih vektörü henüz bir insan tarafından onaylanmadı. ` +
-        `Onaylanmamış tercih sayıma giremez.`,
+      `The preference vector for ${subjectId} has not been confirmed by a human yet. ` +
+        `An unconfirmed preference cannot enter the tally.`,
     );
     this.name = "UnconfirmedPreferenceError";
   }

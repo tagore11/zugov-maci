@@ -4,7 +4,7 @@ import type { MechanismId } from "@/lib/core/types";
 import { MECHANISM_ORDER } from "@/lib/core/mechanisms";
 
 export async function GET(request: Request) {
-  const communityId = new URL(request.url).searchParams.get("topluluk") ?? undefined;
+  const communityId = new URL(request.url).searchParams.get("community") ?? undefined;
   return NextResponse.json(await listDecisions(communityId));
 }
 
@@ -19,21 +19,21 @@ export async function POST(request: Request) {
 
   const communityId = (body.communityId ?? "").trim();
   if (!communityId) {
-    return NextResponse.json({ error: "Karar bir topluluğa ait olmalı." }, { status: 400 });
+    return NextResponse.json({ error: "A decision must belong to a community." }, { status: 400 });
   }
 
   const title = (body.title ?? "").trim();
   const optionLabels = (body.options ?? []).map((o) => o.trim()).filter(Boolean);
 
   if (title.length < 3) {
-    return NextResponse.json({ error: "Başlık en az 3 karakter olmalı." }, { status: 400 });
+    return NextResponse.json({ error: "The title must be at least 3 characters." }, { status: 400 });
   }
   if (optionLabels.length < 2) {
-    return NextResponse.json({ error: "En az iki seçenek gerekli." }, { status: 400 });
+    return NextResponse.json({ error: "At least two options are required." }, { status: 400 });
   }
   const mechanismId = body.mechanismId ?? "approval";
   if (!MECHANISM_ORDER.includes(mechanismId)) {
-    return NextResponse.json({ error: "Bilinmeyen mekanizma." }, { status: 400 });
+    return NextResponse.json({ error: "Unknown mechanism." }, { status: 400 });
   }
 
   const decision = await saveDecision({

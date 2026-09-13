@@ -7,7 +7,7 @@ export const maxDuration = 300;
 export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const decision = await getDecision(id);
-  if (!decision) return NextResponse.json({ error: "Karar bulunamadı." }, { status: 404 });
+  if (!decision) return NextResponse.json({ error: "Decision not found." }, { status: 404 });
 
   const input = {
     decisionId: decision.id,
@@ -17,7 +17,7 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   };
 
   // The six-question audit runs only when it is asked for by name.
-  const wantsAudit = new URL(_request.url).searchParams.get("detay") === "1";
+  const wantsAudit = new URL(_request.url).searchParams.get("detail") === "1";
   const base = decision.grounding ?? (await groundProposal(input));
   const report = wantsAudit ? await auditProposal(input, base) : base;
 

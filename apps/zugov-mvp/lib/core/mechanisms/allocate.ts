@@ -13,8 +13,8 @@ export interface AllocateShape {
  */
 export const allocate: Mechanism<AllocateShape> = {
   id: "allocate",
-  name: "Paylaştırma",
-  question: "Kaynağı seçenekler arasında nasıl bölerdin?",
+  name: "Allocation",
+  question: "How would you split the resource across the options?",
 
   project(vector, options): Ballot<AllocateShape> {
     const weights = options.map((o) => {
@@ -31,17 +31,17 @@ export const allocate: Mechanism<AllocateShape> = {
     const given = Object.entries(ballot.shape.shares)
       .filter(([, v]) => v >= 1)
       .sort((a, b) => b[1] - a[1]);
-    if (given.length === 0) return ["Payını hiçbir seçeneğe ayırmadın."];
+    if (given.length === 0) return ["You gave no share to any option."];
     return [
-      ...given.map(([id, v]) => `${labelOf(options, id)}: %${Math.round(v)}`),
-      "Bir seçeneğe çok kişinin az vermesi, tek kişinin çok vermesinden daha ağır basar.",
+      ...given.map(([id, v]) => `${labelOf(options, id)}: ${Math.round(v)}%`),
+      "Many people giving a little to one option outweighs one person giving a lot.",
     ];
   },
 
   tally(ballots, options) {
     const scores = options.map((option) => {
       const roots = ballots.reduce((acc, b) => acc + Math.sqrt(Math.max(0, b.shape.shares[option.id] ?? 0)), 0);
-      return { optionId: option.id, score: fix(roots * roots), unit: "eşleşen pay" };
+      return { optionId: option.id, score: fix(roots * roots), unit: "matched share" };
     });
     return {
       mechanismId: "allocate",
@@ -50,7 +50,7 @@ export const allocate: Mechanism<AllocateShape> = {
       participantCount: ballots.length,
       contest: contestOf(scores),
       redLines: [],
-      notes: ["Sonuç bir bölüşüm önerisidir."],
+      notes: ["The result is a proposed split, not a single winner."],
     };
   },
 };

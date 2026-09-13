@@ -7,16 +7,16 @@ export const maxDuration = 300;
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const decision = await getDecision(id);
-  if (!decision) return NextResponse.json({ error: "Karar bulunamadı." }, { status: 404 });
+  if (!decision) return NextResponse.json({ error: "Decision not found." }, { status: 404 });
 
   const body = (await request.json()) as { subjectId?: string; text?: string };
   const text = (body.text ?? "").trim();
   if (text.length < 10) {
-    return NextResponse.json({ error: "Birkaç cümle yaz, tek kelime yetmiyor." }, { status: 400 });
+    return NextResponse.json({ error: "Write a few sentences, a single word isn't enough." }, { status: 400 });
   }
 
   const result = await elicitPreference({
-    subjectId: (body.subjectId ?? "").trim() || "anonim",
+    subjectId: (body.subjectId ?? "").trim() || "anonymous",
     decisionId: decision.id,
     text,
     options: decision.options,

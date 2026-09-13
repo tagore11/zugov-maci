@@ -2,12 +2,12 @@ import { createHash } from "node:crypto";
 import { EPISTEMIC_QUESTIONS } from "../core/types";
 import type { EpistemicQuestionKey, GroundingReport, Id } from "../core/types";
 import { MODEL_NAME, ModelUnavailableError, completeJson } from "./provider";
-import { trLanguagePack, type LanguagePack } from "./lang/tr";
-import { AUDIT_QUESTION_PROMPTS, auditContextBlock, auditQuestionSystemPrompt } from "./lang/tr-prompts";
+import { enLanguagePack, type LanguagePack } from "./lang/en";
+import { AUDIT_QUESTION_PROMPTS, auditContextBlock, auditQuestionSystemPrompt } from "./lang/en-prompts";
 import { copy } from "../copy";
 
 /** The one line that changes when this app speaks a second language. */
-const LANG: LanguagePack = trLanguagePack;
+const LANG: LanguagePack = enLanguagePack;
 
 /**
  * The Grounding Engine.
@@ -42,11 +42,11 @@ export interface GroundingInput {
  * about to be voted on anyway.
  *
  * This used to ask the model to name the dilemma and write a trade-off per
- * option. Both are synthesis, and a 3B model that classifies Turkish reliably
- * writes it badly: it produced "S işletme bütçesini azalttı" as a trade-off and
- * a question mark as a cost. Finding a sentence is exact, instant, needs no
- * model, and cannot hallucinate, because every word shown was written by the
- * person who wrote the proposal.
+ * option. Both are synthesis, and a 3B model that classifies reliably writes
+ * it badly: it produced a vague clause as a trade-off and a question mark as
+ * a cost. Finding a sentence is exact, instant, needs no model, and cannot
+ * hallucinate, because every word shown was written by the person who wrote
+ * the proposal.
  *
  * Generation is left where the model is actually good: reading a participant's
  * own words into stances, and the six-question audit below, which a reader opens
@@ -76,8 +76,8 @@ export async function groundProposal(input: GroundingInput): Promise<GroundingRe
 /**
  * The proposal's own sentences that name this option.
  *
- * Matched on stems, because Turkish agglutination turns "mutfak" into "mutfağa"
- * in the very sentence being looked for.
+ * Matched on stems, so "kitchen" and "kitchens" match the same needle without
+ * needing a real stemmer.
  */
 function sentencesAbout(label: string, body: string): string[] {
   const stems = LANG.stemWords(label);

@@ -33,18 +33,17 @@ const STORAGE_KEY = "zugov.session.address";
 const METHOD_STORAGE_KEY = "zugov.session.method";
 
 /**
- * The sentence the wallet shows while asking for a signature. ASCII only, and
- * English, for two reasons that both point the same way.
+ * The sentence the wallet shows while asking for a signature. ASCII only.
  *
  * EIP-4361 restricts the statement to reserved and unreserved characters, which
- * excludes every Turkish diacritic. A statement containing "giriş" made the
- * backend's parser reject the message outright with "Invalid SIWE message
- * format", and a wallet that cannot parse a sign-in message stops rendering its
- * recognisable sign-in screen and falls back to showing raw text, which is
- * exactly the wrong thing to show someone at the moment they are asked to sign.
+ * excludes any accented letter. A statement with one made the backend's parser
+ * reject the message outright with "Invalid SIWE message format", and a wallet
+ * that cannot parse a sign-in message stops rendering its recognisable sign-in
+ * screen and falls back to showing raw text, which is exactly the wrong thing
+ * to show someone at the moment they are asked to sign.
  *
- * The Turkish explanation belongs on our own page, next to the button, where we
- * control the typography and can spell it properly. See WalletBar.
+ * The longer explanation belongs on our own page, next to the button, where we
+ * control the typography and can word it properly. See WalletBar.
  */
 export const SIWE_STATEMENT = "Sign in to ZuGov. This is not a transaction and costs no gas.";
 
@@ -82,7 +81,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(async () => {
     if (!address || !chainId) {
-      setError("Önce cüzdanını bağla.");
+      setError("Connect your wallet first.");
       return;
     }
     setIsSigning(true);
@@ -113,8 +112,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         cause instanceof BackendError
           ? cause.message
           : cause instanceof Error && cause.message.includes("User rejected")
-            ? "İmzayı reddettin."
-            : "Giriş tamamlanamadı.",
+            ? "You declined the signature."
+            : "Sign-in could not be completed.",
       );
     } finally {
       setIsSigning(false);
@@ -151,7 +150,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         /* see above */
       }
     } catch (cause) {
-      setError(cause instanceof BackendError ? cause.message : "Giriş tamamlanamadı.");
+      setError(cause instanceof BackendError ? cause.message : "Sign-in could not be completed.");
     } finally {
       setIsSigning(false);
     }

@@ -26,11 +26,11 @@ export function GroundingPanel({
   const [busy, setBusy] = useState<"crux" | "audit" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(detay: boolean) {
-    setBusy(detay ? "audit" : "crux");
+  async function run(detail: boolean) {
+    setBusy(detail ? "audit" : "crux");
     setError(null);
     try {
-      const response = await fetch(`/api/decisions/${decisionId}/grounding${detay ? "?detay=1" : ""}`, {
+      const response = await fetch(`/api/decisions/${decisionId}/grounding${detail ? "?detail=1" : ""}`, {
         method: "POST",
       });
       const data = await response.json();

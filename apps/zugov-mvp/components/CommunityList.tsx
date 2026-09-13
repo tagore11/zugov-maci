@@ -61,7 +61,7 @@ export function CommunityList() {
     <ul className="mt-5 divide-y divide-[color:var(--line)] border-y border-line">
       {list.map((community) => (
         <li key={community.id}>
-          <Link href={`/topluluk/${community.id}`} className="tap block py-5 hover:bg-sunk">
+          <Link href={`/community/${community.id}`} className="tap block py-5 hover:bg-sunk">
             <h3 className="text-[17px] font-medium leading-snug">
               {community.logo ? <span className="mr-2">{community.logo}</span> : null}
               {community.displayName}

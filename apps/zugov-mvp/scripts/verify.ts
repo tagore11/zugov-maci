@@ -1,7 +1,7 @@
 /**
  * Check a published receipt without trusting whoever published it.
  *
- * Usage:  npm run dogrula -- makbuz.json
+ * Usage:  npm run verify -- receipt.json
  *
  * Reads the file, recomputes the digest over its own contents, and re-runs the
  * stated counting rule over the stated ballots. Nothing here contacts the
@@ -15,7 +15,7 @@ import { verifyReceipt, type Receipt } from "../lib/core/receipt";
 
 const path = process.argv[2];
 if (!path) {
-  console.error("Kullanım: npm run dogrula -- makbuz.json");
+  console.error("Usage: npm run verify -- receipt.json");
   process.exit(2);
 }
 
@@ -23,32 +23,32 @@ let receipt: Receipt;
 try {
   receipt = JSON.parse(readFileSync(path, "utf8")) as Receipt;
 } catch (error) {
-  console.error(`Dosya okunamadı: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`Could not read the file: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(2);
 }
 
 const { digestMatches, tallyMatches, recomputed } = verifyReceipt(receipt);
 const label = (id: string | null) =>
-  id === null ? "kazanan çıkmadı" : (receipt.options.find((o) => o.id === id)?.label ?? id);
+  id === null ? "no winner" : (receipt.options.find((o) => o.id === id)?.label ?? id);
 
 console.log("");
-console.log(`Karar        ${receipt.title}`);
-console.log(`Kural        ${receipt.mechanismName}`);
-console.log(`Katılımcı    ${receipt.outcome.participantCount}`);
-console.log(`Pusula       ${receipt.ballots.length}`);
+console.log(`Decision      ${receipt.title}`);
+console.log(`Rule          ${receipt.mechanismName}`);
+console.log(`Participants  ${receipt.outcome.participantCount}`);
+console.log(`Ballots       ${receipt.ballots.length}`);
 console.log("");
-console.log(`İmza         ${digestMatches ? "tutuyor" : "TUTMUYOR, dosya değiştirilmiş"}`);
+console.log(`Signature     ${digestMatches ? "matches" : "DOES NOT MATCH, the file was altered"}`);
 console.log(
-  `Sayım        ${tallyMatches ? "tutuyor" : "TUTMUYOR, açıklanan sonuç pusulalardan çıkmıyor"}`,
+  `Tally         ${tallyMatches ? "matches" : "DOES NOT MATCH, the stated result does not follow from the ballots"}`,
 );
 console.log("");
-console.log(`Açıklanan    ${label(receipt.outcome.winnerId)}`);
-console.log(`Hesaplanan   ${label(recomputed.winnerId)}`);
+console.log(`Stated        ${label(receipt.outcome.winnerId)}`);
+console.log(`Recomputed    ${label(recomputed.winnerId)}`);
 
 if (receipt.outcome.redLines.length > 0) {
   console.log("");
   for (const entry of receipt.outcome.redLines) {
-    console.log(`Kırmızı çizgi  ${label(entry.optionId)}: ${entry.count} kişi`);
+    console.log(`Red line      ${label(entry.optionId)}: ${entry.count} people`);
   }
 }
 

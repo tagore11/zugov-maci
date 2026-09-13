@@ -14,8 +14,8 @@ const AGAINST = -0.34;
  */
 export const ranked: Mechanism<RankedShape> = {
   id: "ranked",
-  name: "Sıralama",
-  question: "Seçenekleri en çok istediğinden en aza doğru sırala.",
+  name: "Ranked",
+  question: "Order the options from what you want most to what you want least.",
 
   project(vector, options): Ballot<RankedShape> {
     const order = options
@@ -33,11 +33,11 @@ export const ranked: Mechanism<RankedShape> = {
   },
 
   explain(ballot, options) {
-    if (ballot.shape.order.length === 0) return ["Sıralamana hiçbir seçenek girmedi."];
+    if (ballot.shape.order.length === 0) return ["No option made it into your order."];
     const named = ballot.shape.order.map((id, i) => `${i + 1}. ${labelOf(options, id)}`);
     return [
-      `Sıran: ${named.join("  ·  ")}`,
-      "İlk tercihin elenirse oyun sıradaki seçeneğine geçer, boşa gitmez.",
+      `Your order: ${named.join("  ·  ")}`,
+      "If your first choice is eliminated, your vote moves to your next one. It is never wasted.",
     ];
   },
 
@@ -50,24 +50,24 @@ export const ranked: Mechanism<RankedShape> = {
       const counts = countFirst(ballots, alive);
       const cast = sum(Object.values(counts));
       if (cast === 0) {
-        notes.push("Hiçbir geçerli oy kalmadı.");
+        notes.push("No valid votes remain.");
         break;
       }
       const leader = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
       if (leader[1] * 2 > cast) {
-        notes.push(`${labelOf(options, leader[0])} ${alive.size} seçenek arasında salt çoğunluğa ulaştı.`);
+        notes.push(`${labelOf(options, leader[0])} reached an absolute majority among ${alive.size} remaining options.`);
         break;
       }
       const weakest = Object.entries(counts).sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0]))[0];
       alive.delete(weakest[0]);
-      notes.push(`${labelOf(options, weakest[0])} elendi, oyları sonraki tercihlere aktarıldı.`);
+      notes.push(`${labelOf(options, weakest[0])} was eliminated, its votes moved to the next preference.`);
     }
 
     const finalCounts = countFirst(ballots, alive);
     const scores = options.map((o) => ({
       optionId: o.id,
       score: alive.has(o.id) ? finalCounts[o.id] ?? 0 : fix((firstRoundCounts[o.id] ?? 0) * 0.001),
-      unit: "oy",
+      unit: "votes",
     }));
 
     const survivors = scores.filter((s) => alive.has(s.optionId)).sort((a, b) => b.score - a.score);

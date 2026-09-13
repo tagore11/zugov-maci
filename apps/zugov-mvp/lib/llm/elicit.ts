@@ -1,11 +1,11 @@
 import type { Id, Option, PreferenceVector, Stance } from "../core/types";
 import { clamp, fix } from "../core/mechanisms";
 import { MODEL_NAME, ModelUnavailableError, completeJson } from "./provider";
-import { trLanguagePack, type LanguagePack } from "./lang/tr";
-import { elicitationSystemPrompt, elicitationUserContent } from "./lang/tr-prompts";
+import { enLanguagePack, type LanguagePack } from "./lang/en";
+import { elicitationSystemPrompt, elicitationUserContent } from "./lang/en-prompts";
 
 /** The one line that changes when this app speaks a second language. */
-const LANG: LanguagePack = trLanguagePack;
+const LANG: LanguagePack = enLanguagePack;
 
 /**
  * Preference elicitation.
@@ -21,7 +21,7 @@ const LANG: LanguagePack = trLanguagePack;
  *  - One call per option, not one call per person. Asked about three options at
  *    once the model answers about whichever one it read last.
  *  - The model returns a LABEL, never a signed number. Asked for a value in
- *    -1..+1 it reliably inverted the sign, turning "bunu kesinlikle istiyorum"
+ *    -1..+1 it reliably inverted the sign, turning "I definitely want this"
  *    into strong opposition. Picking from a fixed vocabulary is a task a small
  *    model does well; the arithmetic belongs in code.
  *
@@ -32,24 +32,24 @@ const LANG: LanguagePack = trLanguagePack;
 
 /**
  * Labels are chosen to be far apart as strings, not just in meaning. An earlier
- * vocabulary used "kesinlikle_istiyor" and "kesinlikle_istemiyor", which differ
- * by two characters, and the model returned the first one for a sentence that
+ * vocabulary used "strongly_wants" and "strongly_does_not_want", which differ
+ * by one word, and the model returned the first one for a sentence that
  * plainly said the opposite. Distinct words fixed it outright.
  */
 const STANCE_LABELS = {
-  savunuyor: 1,
-  olumlu: 0.5,
-  kararsiz: 0,
-  yok: 0,
-  olumsuz: -0.5,
-  reddediyor: -1,
+  champions: 1,
+  favorable: 0.5,
+  mixed: 0,
+  silent: 0,
+  unfavorable: -0.5,
+  rejects: -1,
 } as const;
 
 const IMPORTANCE_LABELS = {
-  belirleyici: 1,
-  onemli: 0.5,
-  ikincil: 0.2,
-  deginmemis: 0,
+  decisive: 1,
+  important: 0.5,
+  minor: 0.2,
+  untouched: 0,
 } as const;
 
 type StanceLabel = keyof typeof STANCE_LABELS;
@@ -62,10 +62,10 @@ interface OptionAnswer {
    * so what it writes here is not fit to show anyone. The sentence the UI
    * displays is pulled out of the person's own text in code, below.
    */
-  alinti?: string;
-  etiket?: string;
-  onem?: string;
-  kirmizi_cizgi?: boolean;
+  quote?: string;
+  stance?: string;
+  importance?: string;
+  redLine?: boolean;
 }
 
 export interface ElicitResult {
@@ -75,10 +75,10 @@ export interface ElicitResult {
   untouched: Id[];
   /**
    * Options where the person clearly wrote something and the draft still came
-   * back blank or neutral. A small model misses Turkish nuance often enough
-   * that this contradiction is worth catching mechanically: the text and the
-   * draft disagree, so the person is asked to settle it rather than being shown
-   * a confident zero.
+   * back blank or neutral. A small model misses nuance often enough that this
+   * contradiction is worth catching mechanically: the text and the draft
+   * disagree, so the person is asked to settle it rather than being shown a
+   * confident zero.
    */
   needsReview: Id[];
 }
@@ -116,11 +116,11 @@ export async function elicitPreference(args: {
   const needsReview: Id[] = [];
   const stances: Stance[] = args.options.map((option) => {
     const answer = answers.get(option.id);
-    const stanceLabel = normaliseLabel(answer?.etiket, STANCE_LABELS, "yok") as StanceLabel;
-    const importanceLabel = normaliseLabel(answer?.onem, IMPORTANCE_LABELS, "deginmemis") as ImportanceLabel;
+    const stanceLabel = normaliseLabel(answer?.stance, STANCE_LABELS, "silent") as StanceLabel;
+    const importanceLabel = normaliseLabel(answer?.importance, IMPORTANCE_LABELS, "untouched") as ImportanceLabel;
 
     const quote = quoteFor(option, args.text);
-    if (!answer || stanceLabel === "yok") untouched.push(option.id);
+    if (!answer || stanceLabel === "silent") untouched.push(option.id);
     if (quote && STANCE_LABELS[stanceLabel] === 0) needsReview.push(option.id);
 
     return {
@@ -128,9 +128,9 @@ export async function elicitPreference(args: {
       support: STANCE_LABELS[stanceLabel],
       // The model's own certainty about its reading, not the person's. Never
       // touches weight; it only decides how loudly the UI asks for a review.
-      confidence: stanceLabel === "yok" ? 0 : 0.5,
+      confidence: stanceLabel === "silent" ? 0 : 0.5,
       salience: IMPORTANCE_LABELS[importanceLabel],
-      redLine: answer?.kirmizi_cizgi === true,
+      redLine: answer?.redLine === true,
       rationale: quote,
     };
   });

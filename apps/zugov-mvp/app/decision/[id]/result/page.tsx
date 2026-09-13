@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { getDecision } from "@/lib/store";
 import { analyseSensitivity, decide } from "@/lib/core/decide";
@@ -14,9 +15,16 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
   const decision = await getDecision(id);
   if (!decision) notFound();
 
+  // The curl example below has to name a real, reachable host. This app runs behind Vercel's own
+  // proxy (and behind a friend's tunnel in a demo), so a hardcoded localhost:3400 is only ever
+  // right when developing on this machine; everywhere else it would hand someone a dead command.
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("host") ?? "localhost:3400";
+  const origin = `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
+
   const mechanism = getMechanism(decision.mechanismId);
   const back = (
-    <Link href={`/karar/${decision.id}`} className="tap text-[14px] text-ink-soft underline underline-offset-4">
+    <Link href={`/decision/${decision.id}`} className="tap text-[14px] text-ink-soft underline underline-offset-4">
       {copy.result.backToDecision}
     </Link>
   );
@@ -161,7 +169,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
 
         <div className="mt-5 overflow-x-auto">
           <pre className="w-fit min-w-full bg-sunk px-4 py-3 font-mono text-[12px] leading-relaxed">
-            {`curl -O ${"http://localhost:3400"}/api/decisions/${decision.id}/makbuz\nnpm run dogrula -- makbuz`}
+            {`curl -O ${origin}/api/decisions/${decision.id}/receipt\nnpm run verify -- receipt.json`}
           </pre>
         </div>
 
@@ -170,7 +178,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
         </p>
         <div className="mt-4">
           <a
-            href={`/api/decisions/${decision.id}/makbuz`}
+            href={`/api/decisions/${decision.id}/receipt`}
             className="tap text-[15px] font-medium underline underline-offset-4"
           >
             {copy.result.openReceipt}

@@ -39,7 +39,7 @@ export default async function DecisionPage({ params }: { params: Promise<{ id: s
 
       <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-6">
         <ModelBadge />
-        <Link href={`/karar/${decision.id}/sonuc`} className="tap text-[14px] text-ink-soft underline underline-offset-4">
+        <Link href={`/decision/${decision.id}/result`} className="tap text-[14px] text-ink-soft underline underline-offset-4">
           {copy.decisionPage.seeResult}
         </Link>
       </footer>

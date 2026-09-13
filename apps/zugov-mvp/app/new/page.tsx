@@ -20,7 +20,7 @@ export default function NewDecisionPage() {
 
 function NewDecisionForm() {
   const router = useRouter();
-  const communityId = useSearchParams().get("topluluk") ?? "";
+  const communityId = useSearchParams().get("community") ?? "";
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [options, setOptions] = useState(["", ""]);
@@ -40,7 +40,7 @@ function NewDecisionForm() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? copy.newDecision.openFailed);
-      router.push(`/karar/${data.id}`);
+      router.push(`/decision/${data.id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.newDecision.unknownError);
       setBusy(false);
@@ -50,7 +50,7 @@ function NewDecisionForm() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-12 md:py-16">
       <Link
-        href={communityId ? `/topluluk/${communityId}` : "/"}
+        href={communityId ? `/community/${communityId}` : "/"}
         className="tap text-[14px] text-ink-soft underline underline-offset-4"
       >
         {copy.newDecision.back}

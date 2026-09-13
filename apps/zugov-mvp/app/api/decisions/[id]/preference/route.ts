@@ -5,14 +5,14 @@ import type { PreferenceVector } from "@/lib/core/types";
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   const decision = await getDecision(id);
-  if (!decision) return NextResponse.json({ error: "Karar bulunamadı." }, { status: 404 });
+  if (!decision) return NextResponse.json({ error: "Decision not found." }, { status: 404 });
 
   const vector = (await request.json()) as PreferenceVector;
   if (!vector?.subjectId?.trim()) {
-    return NextResponse.json({ error: "Tercihi kimin verdiği belli değil." }, { status: 400 });
+    return NextResponse.json({ error: "It's not clear who this preference belongs to." }, { status: 400 });
   }
   if (vector.confirmed !== true) {
-    return NextResponse.json({ error: "Onaylanmamış tercih kaydedilmez." }, { status: 400 });
+    return NextResponse.json({ error: "An unconfirmed preference is not saved." }, { status: 400 });
   }
 
   const known = new Set(decision.options.map((o) => o.id));

@@ -12,8 +12,8 @@ export interface ApprovalShape {
  */
 export const approval: Mechanism<ApprovalShape> = {
   id: "approval",
-  name: "Onay",
-  question: "Hangi seçenekleri kabul edebilirsin?",
+  name: "Approval",
+  question: "Which options can you accept?",
 
   project(vector: PreferenceVector, options: Option[]): Ballot<ApprovalShape> {
     const approved = options
@@ -24,11 +24,11 @@ export const approval: Mechanism<ApprovalShape> = {
 
   explain(ballot, options) {
     if (ballot.shape.approved.length === 0) {
-      return ["Hiçbir seçeneği onaylamıyorsun. Oyun sayıma girmez."];
+      return ["You approve of no option. Your vote does not enter the tally."];
     }
     return [
-      `Onayladıkların: ${ballot.shape.approved.map((id) => labelOf(options, id)).join(", ")}.`,
-      "Onayladıkların arasında sıralama yok, hepsi eşit sayılır.",
+      `What you approve: ${ballot.shape.approved.map((id) => labelOf(options, id)).join(", ")}.`,
+      "There is no ranking among what you approve, all of it counts equally.",
     ];
   },
 
@@ -36,7 +36,7 @@ export const approval: Mechanism<ApprovalShape> = {
     const scores = options.map((option) => ({
       optionId: option.id,
       score: ballots.filter((b) => b.shape.approved.includes(option.id)).length,
-      unit: "onay",
+      unit: "approvals",
     }));
     return {
       mechanismId: "approval",

@@ -13,8 +13,8 @@ export interface QuadraticShape {
  */
 export const quadratic: Mechanism<QuadraticShape> = {
   id: "quadratic",
-  name: "Ağırlık",
-  question: "100 kredin var. Önemsediğin seçeneklere dağıt.",
+  name: "Weighted",
+  question: "You have 100 credits. Spread them across the options you care about.",
 
   project(vector, options): Ballot<QuadraticShape> {
     const weights = options.map((o) => {
@@ -33,13 +33,13 @@ export const quadratic: Mechanism<QuadraticShape> = {
     const spent = Object.entries(ballot.shape.credits)
       .filter(([, c]) => Math.abs(c) >= 1)
       .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
-    if (spent.length === 0) return ["Kredilerini hiçbir seçeneğe yüklemedin."];
+    if (spent.length === 0) return ["You put no credits behind any option."];
     return [
       ...spent.map(
         ([id, c]) =>
-          `${labelOf(options, id)}: ${Math.abs(Math.round(c))} kredi ${c >= 0 ? "destek" : "itiraz"} → ${votesOf(c).toFixed(1)} oy`,
+          `${labelOf(options, id)}: ${Math.abs(Math.round(c))} credits ${c >= 0 ? "in support" : "in objection"} -> ${votesOf(c).toFixed(1)} votes`,
       ),
-      "Kredi ikiye katlandığında oy sadece 1,41 katına çıkar. Şiddetli tercih pahalıdır.",
+      "Doubling your credits only raises your votes by a factor of 1.41. Intense preference is expensive.",
     ];
   },
 
@@ -47,7 +47,7 @@ export const quadratic: Mechanism<QuadraticShape> = {
     const scores = options.map((option) => ({
       optionId: option.id,
       score: fix(ballots.reduce((acc, b) => acc + votesOf(b.shape.credits[option.id] ?? 0), 0)),
-      unit: "oy",
+      unit: "votes",
     }));
     return {
       mechanismId: "quadratic",

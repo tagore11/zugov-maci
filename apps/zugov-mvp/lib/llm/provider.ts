@@ -42,14 +42,14 @@ export async function checkModel(): Promise<ModelStatus> {
       available: present,
       endpoint: MODEL_ENDPOINT,
       model: MODEL_NAME,
-      detail: present ? "hazır" : `sunucu açık, ${MODEL_NAME} kurulu değil`,
+      detail: present ? "ready" : `server is up, ${MODEL_NAME} is not installed`,
     };
   } catch (error) {
     return {
       available: false,
       endpoint: MODEL_ENDPOINT,
       model: MODEL_NAME,
-      detail: error instanceof Error ? error.message : "bağlanılamadı",
+      detail: error instanceof Error ? error.message : "could not connect",
     };
   }
 }
@@ -79,11 +79,11 @@ export async function completeJson<T>(
       }),
     });
   } catch (error) {
-    throw new ModelUnavailableError(error instanceof Error ? error.message : "yerel modele ulaşılamadı");
+    throw new ModelUnavailableError(error instanceof Error ? error.message : "could not reach the local model");
   }
 
   if (!response.ok) {
-    throw new ModelUnavailableError(`yerel model ${response.status} döndü`);
+    throw new ModelUnavailableError(`local model returned ${response.status}`);
   }
 
   const payload = (await response.json()) as {
@@ -97,8 +97,8 @@ export async function completeJson<T>(
     // Say so plainly rather than reporting the model as offline.
     throw new ModelUnavailableError(
       choice?.finish_reason === "length"
-        ? "yerel model token bütçesini tüketti ve içerik döndürmedi (düşünme modlu bir model olabilir)"
-        : "yerel model boş yanıt verdi",
+        ? "the local model used its whole token budget and returned nothing (it may be a reasoning model)"
+        : "the local model returned an empty response",
     );
   }
 
@@ -116,6 +116,6 @@ export function parseJsonLoosely<T>(text: string): T {
   try {
     return JSON.parse(slice) as T;
   } catch {
-    throw new ModelUnavailableError("yerel model geçerli JSON üretmedi");
+    throw new ModelUnavailableError("the local model did not produce valid JSON");
   }
 }

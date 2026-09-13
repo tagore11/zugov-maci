@@ -24,7 +24,7 @@ export async function ag<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    let message = `İstek başarısız oldu (${response.status})`;
+    let message = `Request failed (${response.status})`;
     try {
       const body = (await response.json()) as { error?: string };
       if (body.error) message = body.error;

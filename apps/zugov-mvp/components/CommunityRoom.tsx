@@ -50,7 +50,7 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
       .get(communityId)
       .then((data) => alive && setCommunity(data))
       .catch(() => alive && setError(copy.communityRoom.notFound));
-    fetch(`/api/decisions?topluluk=${encodeURIComponent(communityId)}`)
+    fetch(`/api/decisions?community=${encodeURIComponent(communityId)}`)
       .then((r) => r.json())
       .then((data: Decision[]) => alive && setDecisions(data))
       .catch(() => undefined);
@@ -96,7 +96,7 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
       </nav>
 
       <header className="border-b border-line pb-8">
-        {/* A bare "Yükleniyor" headline reads as a broken page rather than a slow
+        {/* A bare "Loading" headline reads as a broken page rather than a slow
             one. The skeleton keeps the shape of what is coming, so a slow load
             looks like a slow load. */}
         {community ? (
@@ -156,7 +156,7 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
           <Title as="h2">{copy.communityRoom.decisionsTitle}</Title>
           {membership?.canCreateProposals ? (
             <Link
-              href={`/yeni?topluluk=${encodeURIComponent(communityId)}`}
+              href={`/new?community=${encodeURIComponent(communityId)}`}
               className="tap text-[15px] font-medium underline underline-offset-4"
             >
               {copy.communityRoom.openDecision}
@@ -177,7 +177,7 @@ export function CommunityRoom({ communityId }: { communityId: string }) {
           <ul className="mt-5 divide-y divide-[color:var(--line)] border-y border-line">
             {decisions.map((decision) => (
               <li key={decision.id}>
-                <Link href={`/karar/${decision.id}`} className="tap block py-5 hover:bg-sunk">
+                <Link href={`/decision/${decision.id}`} className="tap block py-5 hover:bg-sunk">
                   <h3 className="text-[17px] font-medium leading-snug">{decision.title}</h3>
                   <p className="mt-1.5 text-[14px] text-ink-soft">
                     {decision.options.map((o) => o.label).join(", ")}

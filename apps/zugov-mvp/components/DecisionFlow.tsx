@@ -83,7 +83,7 @@ export function DecisionFlow({
 
   const readBack = useMemo(() => {
     const vector: PreferenceVector = {
-      subjectId: subjectId || "sen",
+      subjectId: subjectId || "you",
       decisionId,
       stances: weighted,
       source: "form",
@@ -136,7 +136,7 @@ export function DecisionFlow({
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? copy.decisionFlow.saveFailed);
-      window.location.href = `/karar/${decisionId}/sonuc`;
+      window.location.href = `/decision/${decisionId}/result`;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : copy.decisionFlow.unknownError);
       setBusy(false);

@@ -115,7 +115,7 @@ export async function saveDecision(decision: Decision): Promise<Decision> {
 
 export async function upsertPreference(decisionId: Id, vector: PreferenceVector): Promise<Decision> {
   const decision = await getDecision(decisionId);
-  if (!decision) throw new Error(`Karar bulunamadı: ${decisionId}`);
+  if (!decision) throw new Error(`Decision not found: ${decisionId}`);
   const index = decision.preferences.findIndex((p) => p.subjectId === vector.subjectId);
   if (index >= 0) decision.preferences[index] = vector;
   else decision.preferences.push(vector);
