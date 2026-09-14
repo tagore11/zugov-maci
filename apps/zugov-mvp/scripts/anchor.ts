@@ -1,7 +1,7 @@
 /**
  * Anchor a published receipt's digest on Scroll Sepolia.
  *
- * Usage:  npm run zincire-yaz -- makbuz.json
+ * Usage:  npm run anchor -- receipt.json
  *
  * The receipt's digest (lib/core/receipt.ts) already is the thing worth signing: a sha256
  * over the decision, the rule, and every anonymous ballot. This does not invent a second
@@ -26,14 +26,14 @@ import { verifyReceipt, type Receipt } from "../lib/core/receipt";
 
 const path = process.argv[2];
 if (!path) {
-  console.error("Kullanım: npm run zincire-yaz -- makbuz.json");
+  console.error("Usage: npm run anchor -- receipt.json");
   process.exit(2);
 }
 
 const privateKey = process.env.ZUGOV_ANCHOR_PRIVATE_KEY;
 if (!privateKey) {
-  console.error("ZUGOV_ANCHOR_PRIVATE_KEY tanımlı değil.");
-  console.error("Kendi kabuğunda tanımla, buraya ya da bir dosyaya yapıştırma:");
+  console.error("ZUGOV_ANCHOR_PRIVATE_KEY is not set.");
+  console.error("Set it in your own shell, don't paste it here or into a file:");
   console.error('  export ZUGOV_ANCHOR_PRIVATE_KEY="0x..."');
   process.exit(2);
 }
@@ -42,15 +42,15 @@ let receipt: Receipt;
 try {
   receipt = JSON.parse(readFileSync(path, "utf8")) as Receipt;
 } catch (error) {
-  console.error(`Dosya okunamadı: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`Could not read the file: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(2);
 }
 
 const { digestMatches, tallyMatches } = verifyReceipt(receipt);
 if (!digestMatches || !tallyMatches) {
-  console.error("Bu makbuz kendi doğrulamasından geçmiyor, zincire yazılmıyor.");
-  console.error(`  İmza    ${digestMatches ? "tutuyor" : "TUTMUYOR"}`);
-  console.error(`  Sayım   ${tallyMatches ? "tutuyor" : "TUTMUYOR"}`);
+  console.error("This receipt does not pass its own verification, not anchoring it.");
+  console.error(`  Signature   ${digestMatches ? "matches" : "DOES NOT MATCH"}`);
+  console.error(`  Tally       ${tallyMatches ? "matches" : "DOES NOT MATCH"}`);
   process.exit(1);
 }
 
@@ -68,25 +68,25 @@ async function main() {
 
   const balance = await publicClient.getBalance({ address: account.address });
   if (balance === 0n) {
-    console.error(`${account.address} bakiyesi sıfır, Scroll Sepolia'da gaz gerekiyor.`);
+    console.error(`${account.address} has a zero balance, needs gas on Scroll Sepolia.`);
     console.error("Faucet: https://docs.scroll.io/en/user-guide/faucet/");
     process.exit(1);
   }
 
   const data = `0x${receipt.digest}` as Hex;
-  console.log(`Karar        ${receipt.title}`);
-  console.log(`İmza         ${receipt.digest}`);
-  console.log(`Gönderen     ${account.address}`);
-  console.log("İşlem gönderiliyor...");
+  console.log(`Decision     ${receipt.title}`);
+  console.log(`Signature    ${receipt.digest}`);
+  console.log(`Sender       ${account.address}`);
+  console.log("Sending transaction...");
 
   const hash = await walletClient.sendTransaction({ to: account.address, value: 0n, data });
-  console.log(`İşlem        ${hash}`);
+  console.log(`Transaction  ${hash}`);
   console.log(`             https://sepolia.scrollscan.com/tx/${hash}`);
-  console.log("Onay bekleniyor...");
+  console.log("Waiting for confirmation...");
 
   const txReceipt = await publicClient.waitForTransactionReceipt({ hash });
-  console.log(`Blok         ${txReceipt.blockNumber}`);
-  console.log(txReceipt.status === "success" ? "Zincire yazıldı." : "İşlem başarısız döndü.");
+  console.log(`Block        ${txReceipt.blockNumber}`);
+  console.log(txReceipt.status === "success" ? "Anchored on chain." : "Transaction returned failed.");
   process.exit(txReceipt.status === "success" ? 0 : 1);
 }
 

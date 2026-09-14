@@ -72,7 +72,7 @@ export type MechanismId =
 export interface OptionScore {
   optionId: Id;
   score: number;
-  /** Mechanism-specific unit, shown to humans: "onay", "puan", "kredi"… */
+  /** Mechanism-specific unit, shown to humans: "approvals", "votes", "credits"... */
   unit: string;
 }
 

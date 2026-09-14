@@ -216,8 +216,9 @@ export function heuristicStances(text: string, options: Option[]): Partial<Stanc
       return { optionId: option.id, support: 0, confidence: 0, salience: 0, redLine: false };
     }
 
-    // Scoring only the clauses that name the option keeps "mutfak olsun ama
-    // sessiz oda istemiyorum" from cancelling itself out into indifference.
+    // Scoring only the clauses that name the option keeps "the kitchen should
+    // happen but I don't want the quiet room" from cancelling itself out into
+    // indifference.
     let score = 0;
     for (const clause of mentioning) {
       score += positive.filter((w) => clause.includes(w)).length;

@@ -95,6 +95,21 @@ describe("design rules", () => {
     ).map((f) => f.path);
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * The app was translated to English on 2026-09-13. This guards against the
+   * translation eroding one file at a time: any source file that carries a
+   * Turkish diacritic is a regression, not a style choice. Scoped to .ts/.tsx/
+   * Modelfile, the app's actual runtime and prompt surface; .md files are left
+   * out because DEVAM.md and this app's own README.md are dated dev journals,
+   * kept in the language they were written in on purpose.
+   */
+  it("carries no Turkish text in application source", () => {
+    const offenders = CODE.filter(
+      (file) => /\.(ts|tsx|Modelfile)$/.test(file.path) && /[çğıöşüÇĞİÖŞÜ]/.test(file.text),
+    ).map((f) => f.path);
+    expect(offenders).toEqual([]);
+  });
 });
 
 /**

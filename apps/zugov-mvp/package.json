@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "model:install": "ollama create zugov-grounding -f models/zugov-grounding.Modelfile",
     "verify": "tsx scripts/verify.ts",
-    "zincire-yaz": "tsx scripts/zincire-yaz.ts",
+    "anchor": "tsx scripts/anchor.ts",
     "migrate:decisions": "tsx scripts/migrate-decisions-to-postgres.ts"
   },
   "dependencies": {

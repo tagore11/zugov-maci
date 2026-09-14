@@ -18,9 +18,13 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
   // The curl example below has to name a real, reachable host. This app runs behind Vercel's own
   // proxy (and behind a friend's tunnel in a demo), so a hardcoded localhost:3400 is only ever
   // right when developing on this machine; everywhere else it would hand someone a dead command.
+  // Trusting the request's own Host header for this is deliberate, not an oversight: a tunnel's
+  // public hostname isn't knowable any other way, and the only consequence of a forged header
+  // here is a wrong hostname in a piece of copy-pasteable text, not a redirect or a trust decision.
   const requestHeaders = await headers();
   const host = requestHeaders.get("host") ?? "localhost:3400";
-  const origin = `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
+  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+  const origin = `${isLocal ? "http" : "https"}://${host}`;
 
   const mechanism = getMechanism(decision.mechanismId);
   const back = (
@@ -169,7 +173,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
 
         <div className="mt-5 overflow-x-auto">
           <pre className="w-fit min-w-full bg-sunk px-4 py-3 font-mono text-[12px] leading-relaxed">
-            {`curl -O ${origin}/api/decisions/${decision.id}/receipt\nnpm run verify -- receipt.json`}
+            {`curl -O ${origin}/api/decisions/${decision.id}/receipt\nnpm run verify -- receipt`}
           </pre>
         </div>
 

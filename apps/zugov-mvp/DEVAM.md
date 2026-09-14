@@ -50,8 +50,9 @@ açılınca çalışıyor.
 
 **Akış dört soru.** Seçenek başına bir tane, sonda bir önem sorusu. Önce yirmi yediydi.
 
-**Makbuz.** `/api/decisions/<id>/makbuz` pusulaları isimsiz olarak yayımlıyor.
-`npm run dogrula -- makbuz.json` hiçbir yere bağlanmadan sayımı tekrarlıyor. Kazananı
+**Makbuz.** `/api/decisions/<id>/receipt` pusulaları isimsiz olarak yayımlıyor
+(rota ve script'ler sonradan İngilizce'ye çevrildi, eskiden `makbuz`/`dogrula` idi).
+`npm run verify -- receipt` hiçbir yere bağlanmadan sayımı tekrarlıyor. Kazananı
 değiştirmek ve sonradan oy eklemek, ikisi de yakalanıyor.
 
 ## Bugün ne bitti (2 Eylül)
@@ -61,12 +62,13 @@ değiştirmek ve sonradan oy eklemek, ikisi de yakalanıyor.
 `/auth/verify` imzanın nereden geldiğini bilmiyor. Cüzdanı olan hâlâ cüzdanla girebiliyor.
 
 **Dil katmanı ayrıldı.** Üç dosya: `lib/copy.ts` (arayüz metni, 11 dosyanın tamamı),
-`lib/llm/lang/tr-prompts.ts` (modele giden her talimat), `lib/llm/lang/tr.ts` (gövde
-eşleştirme, cümle/madde bölme, kelime listeleri). `elicit.ts` ve `grounding.ts` artık
-Türkçe metin taşımıyor, `LANG` sabitine bakıyor. İkinci dil eklemek yeni bir dosya yazıp
-o sabiti değiştirmek.
+`lib/llm/lang/en-prompts.ts` (modele giden her talimat), `lib/llm/lang/en.ts` (gövde
+eşleştirme, cümle/madde bölme, kelime listeleri; eskiden Türkçe idi, 13 Eylül'de
+uygulama tamamen İngilizce'ye çevrildi). `elicit.ts` ve `grounding.ts` `LANG` sabitine
+bakıyor. İkinci dil eklemek yeni bir dosya yazıp o sabiti değiştirmek.
 
-**İmzayı zincire yazma betiği hazır**, `npm run zincire-yaz -- makbuz.json`. Makbuzu önce
+**İmzayı zincire yazma betiği hazır**, `npm run anchor -- receipt.json` (eskiden
+`zincire-yaz`). Makbuzu önce
 kendi kendine doğruluyor, sonra Scroll Sepolia'ya (534351) sıfır değerli bir işlemle imza
 özetini yazıyor. viem'in varsayılan RPC'si (`sepolia-rpc.scroll.io`) ölüydü,
 `scroll-sepolia-rpc.publicnode.com`'a çevrildi. **Tek eksik: fonlu bir anahtar**,

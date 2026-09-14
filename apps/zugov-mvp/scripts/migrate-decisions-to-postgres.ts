@@ -36,13 +36,13 @@ async function main() {
   try {
     raw = readFileSync(DATA_FILE, "utf8");
   } catch (error) {
-    console.error(`Okunamadı: ${DATA_FILE}`);
+    console.error(`Could not read: ${DATA_FILE}`);
     console.error(error instanceof Error ? error.message : String(error));
     process.exit(2);
   }
 
   const { decisions } = JSON.parse(raw) as { decisions: LegacyDecision[] };
-  console.log(`${decisions.length} karar bulundu, Postgres'e yazılıyor...`);
+  console.log(`${decisions.length} decisions found, writing to Postgres...`);
 
   for (const legacy of decisions) {
     const decision: Decision = {
@@ -54,7 +54,7 @@ async function main() {
     console.log(`  ${decision.id}  ${decision.title}`);
   }
 
-  console.log("Bitti.");
+  console.log("Done.");
   await pool.end();
 }
 
