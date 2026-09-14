@@ -97,14 +97,15 @@ describe("design rules", () => {
   });
 
   /**
-   * The app was translated to English on 2026-09-13. This guards against the
-   * translation eroding one file at a time: any source file that carries a
-   * Turkish diacritic is a regression, not a style choice. Scoped to .ts/.tsx/
-   * Modelfile, the app's actual runtime and prompt surface; .md files are left
-   * out because DEVAM.md and this app's own README.md are dated dev journals,
-   * kept in the language they were written in on purpose.
+   * The app was translated to English on 2026-09-13. This catches the
+   * translation eroding one file at a time by flagging any Turkish diacritic
+   * in application source (.ts/.tsx/Modelfile; .md is left out because
+   * DEVAM.md and this app's own README.md are dated dev journals, kept in the
+   * language they were written in on purpose). It is a diacritic scan, not a
+   * language classifier: a reintroduced Turkish sentence built entirely from
+   * unaccented words (e.g. "bir", "ve", "en") would not be caught here.
    */
-  it("carries no Turkish text in application source", () => {
+  it("carries no Turkish diacritic in application source", () => {
     const offenders = CODE.filter(
       (file) => /\.(ts|tsx|Modelfile)$/.test(file.path) && /[çğıöşüÇĞİÖŞÜ]/.test(file.text),
     ).map((f) => f.path);

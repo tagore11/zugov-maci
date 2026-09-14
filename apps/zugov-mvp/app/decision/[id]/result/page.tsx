@@ -23,7 +23,7 @@ export default async function ResultPage({ params }: { params: Promise<{ id: str
   // here is a wrong hostname in a piece of copy-pasteable text, not a redirect or a trust decision.
   const requestHeaders = await headers();
   const host = requestHeaders.get("host") ?? "localhost:3400";
-  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1") || host.startsWith("[::1]");
   const origin = `${isLocal ? "http" : "https"}://${host}`;
 
   const mechanism = getMechanism(decision.mechanismId);

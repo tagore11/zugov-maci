@@ -94,11 +94,14 @@ export const enLanguagePack: LanguagePack = {
 
   // Whole phrases, not bare "yes"/"no": short words like that are substrings of
   // "know", "now", or "yesterday" often enough to make the match untrustworthy.
-  // "want" itself is left out of positive on purpose: it is a substring of the
-  // negative phrase "don't want", so keeping it would score both at once and
-  // cancel out on every sentence that uses the negative form.
+  // Every positive/negative pair below is also checked to make sure neither
+  // word is a literal substring of the other. "want" is left out of positive
+  // for exactly that reason (it sits inside "don't want"), and "necessary" is
+  // "is needed" rather than the bare word for the same reason ("necessary"
+  // sits inside "unnecessary") -- either collision would score both signals
+  // on the same clause and cancel to zero every time the negative form is used.
   heuristicVocabulary: {
-    positive: ["support", "in favor", "should happen", "good idea", "necessary", "definitely"],
+    positive: ["support", "in favor", "should happen", "good idea", "is needed", "definitely"],
     negative: ["don't want", "against", "not good", "unnecessary", "shouldn't", "opposed", "bad idea"],
     redline: ["never", "can't accept", "will walk", "dealbreaker", "will leave", "won't accept"],
   },
